@@ -29,17 +29,33 @@ _rt_covered() {
     END { exit !f }' "$2"
 }
 
-# _rt_dropped <out>: every source of a deleted output is gone from the workspace manifest.
+# _rt_skill_src <out>: source of the rendered skill dir holding <out>: a .skill spec (built),
+# a native skill dir, or empty when that skill dir is not rendered.
+_rt_skill_src() {
+  local p=${1#"$HARNESS_SKILLS_DIR"/}
+  p="$HARNESS_SKILLS_DIR/${p%%/*}/"
+  awk -F'\t' -v p="$p" 'index($1, p) != 1 { next }
+    $4 ~ /^@gen:/ { g = substr($4, 6) }
+    $4 !~ /^@/ && d == "" { d = substr($4, 1, length($4) - length($1) + length(p) - 1) }
+    END { print (g != "" ? g : d) }' "$RT/lock"
+}
+
+# _rt_dropped <out>: the deleted output's sources are gone from the workspace manifest. Anything
+# in a built skill's dir counts as dropped only when its .skill spec is.
 _rt_dropped() {
   local s
-  for s in $(awk -F'\t' -v o="$1" '$1 == o { s = $4; if (s ~ /^@gen:.*\//) print substr(s, 6); else if (s !~ /^@/) print s }' "$RT/lock"); do
+  case $1 in "$HARNESS_SKILLS_DIR"/*/*)
+    s=$(_rt_skill_src "$1")
+    case $s in *.skill) ! _rt_covered "$s" "$RT/entries"; return ;; esac ;;
+  esac
+  for s in $(awk -F'\t' -v o="$1" '$1 == o && $4 !~ /^@/ { print $4 }' "$RT/lock"); do
     _rt_covered "$s" "$RT/entries" && return 1
   done
   return 0
 }
 
 route_plan() {
-  local rc lp st out p scope sk name rest dir n=0
+  local rc lp st out p scope sk name rest src n=0
   make_tmp; RT=$REPLY; mkdir -p "$RT/p"; : > "$RT/plan"; : > "$RT/unresolved.md"
   rc=$(meta render_commit); lp=$(meta layout_path)
   load_harness "$(meta harness)"
@@ -79,18 +95,13 @@ route_plan() {
               _rt_unres "$out" "new file: must be under context/<existing scope>/blocks/"
             fi ;;
           "$sk"/*/*)
-            rest=${out#"$sk"/}; name=${rest%%/*}; rest=${rest#*/}
-            if ! awk -F'\t' -v p="$sk/$name/" 'index($1, p) == 1 { f = 1 } END { exit !f }' "$RT/lock"; then
-              dir="${lp%layouts/*}harness/skills/$name"
-              _rt_row new "$out" "$dir/$rest" skills "$dir"
-            elif dir=$(awk -F'\t' -v p="$sk/$name/" '
-                index($1, p) == 1 && $4 ~ /^@gen:/ { exit 1 }
-                index($1, p) == 1 && !d { r = substr($1, length(p) + 1); d = substr($4, 1, length($4) - length(r) - 1) }
-                END { print d }' "$RT/lock"); then
-              _rt_row new "$out" "$dir/$rest"
-            else
-              _rt_unres "$out" "new file in a built (.skill) skill: add it as a block and list it in the spec"
-            fi ;;
+            name=${out#"$sk"/}; name=${name%%/*}; rest=${out#"$sk/$name/"}
+            src=$(_rt_skill_src "$out")
+            case $src in
+              "") src="${lp%layouts/*}harness/skills/$name"; _rt_row new "$out" "$src/$rest" skills "$src" ;;
+              *.skill) _rt_unres "$out" "new file in a built (.skill) skill: add it as a block and list it in the spec" ;;
+              *) _rt_row new "$out" "$src/$rest" ;;
+            esac ;;
           *) _rt_unres "$out" "new file: must be under context/<scope>/blocks/ or $sk/<name>/" ;;
         esac ;;
       *) _rt_unres "$out" "unsupported change type '$st'" ;;
