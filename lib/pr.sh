@@ -3,7 +3,8 @@
 #   pr_begin <branch> <start-commit>   temp worktree on <branch> (reset to <start>); sets PR_WT
 #   … caller edits files under $PR_WT …
 #   pr_commit <subject> [body]         stage everything, commit with provenance trailers
-#   pr_finish <title> <body> <force>   show, confirm, push, open or update the PR; PR_PUSHED=1 if pushed
+#   pr_finish <title> <body> [<lease>] show, confirm, push, open or update the PR; PR_PUSHED=1 if pushed.
+#                                      With <lease> (a sha, or empty = branch must be absent) force-push.
 # The user's own Delphi checkout is never touched. Requires provenance.sh (PROV_* resolved).
 
 pr_begin() {
@@ -34,9 +35,8 @@ EOF2
 
 pr_has_commits() { [ "$(git -C "$PR_WT" rev-parse HEAD)" != "$PR_START" ]; }
 
-# pr_finish <title> <body> <force: 0|1>
 pr_finish() {
-  local title=$1 body table lease me author num
+  local title=$1 body table me author num
   table=$(provenance_table)
   body="$2
 
@@ -46,13 +46,12 @@ $table"
     info "Not pushed. Branch $PR_BRANCH is committed locally in $DELPHI_ROOT."
     return 0
   fi
-  if [ "$3" = 1 ]; then
+  if [ $# -ge 3 ]; then
     me=$(gh api user --jq .login 2>/dev/null) || die "gh is not authenticated (run: gh auth login)"
     author=$(cd "$PR_WT" && gh pr list --head "$PR_BRANCH" --state open --json author --jq '.[0].author.login // empty' 2>/dev/null || true)
     [ -z "$author" ] || [ "$author" = "$me" ] || die "open PR on $PR_BRANCH belongs to $author; refusing to overwrite"
-    lease=$(dgit ls-remote --heads origin "refs/heads/$PR_BRANCH" | cut -f1)
-    git -C "$PR_WT" push --quiet --force-with-lease="refs/heads/$PR_BRANCH:$lease" origin "HEAD:refs/heads/$PR_BRANCH" ||
-      die "push failed"
+    git -C "$PR_WT" push --quiet --force-with-lease="refs/heads/$PR_BRANCH:$3" origin "HEAD:refs/heads/$PR_BRANCH" ||
+      die "the propose branch changed on GitHub (someone pushed to it); review the PR, then re-run"
   else
     git -C "$PR_WT" push --quiet origin "HEAD:refs/heads/$PR_BRANCH" || die "push failed"
   fi

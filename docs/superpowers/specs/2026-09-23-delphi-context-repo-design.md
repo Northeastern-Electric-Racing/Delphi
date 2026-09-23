@@ -215,7 +215,7 @@ CLAUDE.md	46	92	software/application-software/argos/harness/instructions/argos.m
 |---|---|---|
 | `.delphi/manifest.yml` | tracked (rendered) | Editable copy of the layout manifest; edits propose back to the layout. |
 | `.delphi/lock.tsv` | tracked (rendered) | Segment map of the render. Always read from `generated-merged`, never the working copy. |
-| `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `pending_since`, `render_commit` (the Delphi commit `generated-merged`'s content corresponds to — authoritative; may be newer than that commit's trailer when later renders were identical). |
+| `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `last_pushed`, `pending_since`, `render_commit` (the Delphi commit `generated-merged`'s content corresponds to — authoritative; may be newer than that commit's trailer when later renders were identical). |
 | `.git/info/exclude` | not tracked | `repos/`, `worktrees/`, `$HARNESS_IGNORE`. |
 | `.git/hooks/commit-msg` | not tracked | Provenance trailer hook (§9). |
 
@@ -357,7 +357,7 @@ All commands that modify the monorepo use one path:
 1. `git fetch --prune`; create a temporary worktree of Delphi on the command's branch, starting from a given commit (default `origin/main`). The user's own checkout is never touched.
 2. Caller applies changes inside it.
 3. Commit with provenance trailers (§9).
-4. Confirm `Push <branch> and open/update PR? [y/N]` unless `--yes`; then push and `gh pr create` / `gh pr edit` with the caller's body plus the provenance table. Propose branches are force-pushed with an explicit lease: `--force-with-lease=<branch>:<sha>` where `<sha>` comes from `git ls-remote` (empty if the branch is absent, e.g. auto-deleted after a merge).
+4. Confirm `Push <branch> and open/update PR? [y/N]` unless `--yes`; then push and `gh pr create` / `gh pr edit` with the caller's body plus the provenance table. Propose branches are force-pushed with an explicit lease: `--force-with-lease=<branch>:<sha>` where `<sha>` is `meta.last_pushed`, the commit this workspace last pushed (empty when the branch is absent on the remote, e.g. auto-deleted after a merge). If the remote branch exists but differs from `last_pushed`, someone else pushed to it: propose stops ("review the PR, then re-run"), records the remote sha, and the next run overwrites it.
 5. Remove the temp worktree via `trap` on success or failure.
 
 ## 8. Change routing (`lib/route.sh`)

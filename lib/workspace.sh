@@ -282,12 +282,20 @@ _ws_print_plan() {
 _ws_prov_rows() {
   local since f='%(trailers:key=Delphi-Harness,valueonly,separator=)|%(trailers:key=Delphi-Model,valueonly,separator=)|%(trailers:key=Delphi-Effort,valueonly,separator=)'
   since=$(meta pending_since)
-  wgit log --no-merges ${since:+--since=@$since} --format="$f" HEAD |
+  wgit log --no-merges --format="$f" "${since:+$since..}HEAD" |
     awk -v s="$PROV_HARNESS|$PROV_MODEL|$PROV_EFFORT" '$0 != "||" && $0 != s && !seen[$0]++'
 }
 
+# _ws_warn_open_pr <branch>: after an earlier push, warn if that PR is still open.
+_ws_warn_open_pr() {
+  local n=""
+  [ -n "$(meta last_pushed)" ] || return 0
+  n=$(cd "$DELPHI_ROOT" && gh pr list --head "$1" --state open --json number --jq '.[0].number // empty' 2>/dev/null) || true
+  [ -z "$n" ] || warn "PR #$n still contains earlier changes; close it with: gh pr close $n"
+}
+
 ws_propose() {
-  local user body
+  local user="" branch remote body
   if [ -n "$OPT_DRY" ]; then
     delphi_fetch
     [ "$(_ws_behind)" = no ] || warn "$WS_NAME is behind origin/$(meta ref); planning against the last render"
@@ -298,20 +306,32 @@ ws_propose() {
   delphi_fetch
   ws_refresh
   route_plan
-  if [ -z "$(sed '/^noop	/d' "$RT/plan")" ]; then info "nothing to propose"; return 0; fi
+  case $(dgit remote get-url origin 2>/dev/null) in *github.com*) user=$(gh api user --jq .login 2>/dev/null || true) ;; esac
+  branch="delphi/propose/${user:-${USER:-me}}/$WS_NAME"
+  if [ -z "$(sed '/^noop	/d' "$RT/plan")" ]; then info "nothing to propose"; _ws_warn_open_pr "$branch"; return 0; fi
+  # lease: the branch must be absent or exactly what we last pushed
+  remote=$(dgit ls-remote --heads origin "refs/heads/$branch" | cut -f1) || die "cannot reach origin"
+  if [ -n "$remote" ] && [ "$remote" != "$(meta last_pushed)" ]; then
+    meta_set last_pushed "$remote"
+    die "the propose branch changed on GitHub (someone pushed to it); review the PR, then re-run to overwrite it"
+  fi
   provenance_resolve "$OPT_MODEL" "$OPT_EFFORT" "$(meta harness)"
   PROV_EXTRA=$(printf 'Delphi-Layout: %s\nDelphi-Workspace: %s\nDelphi-Base: %.7s' "$(meta layout_path)" "$WS_NAME" "$(meta render_commit)")
   PROV_ROWS=$(_ws_prov_rows)
-  user=""
-  case $(dgit remote get-url origin 2>/dev/null) in *github.com*) user=$(gh api user --jq .login 2>/dev/null || true) ;; esac
-  pr_begin "delphi/propose/${user:-${USER:-me}}/$WS_NAME" "$(meta render_commit)"
+  pr_begin "$branch" "$(meta render_commit)"
   route_apply
-  if ! pr_has_commits; then _ws_print_plan; info "nothing routable to propose; resolve the items above in the workspace"; return 0; fi
+  if ! pr_has_commits; then
+    _ws_print_plan; info "nothing routable to propose; resolve the items above in the workspace"
+    _ws_warn_open_pr "$branch"; return 0
+  fi
   check_tree "$PR_WT" || die "check failed on the proposed tree; not pushed (branch $PR_BRANCH kept locally)"
   body=$(printf '## Routed changes\n\n'
-         awk -F'\t' '$1 != "unresolved" && $1 != "noop" { printf "- %s: `%s` (from workspace `%s`)\n", $1, $3, $2 }' "$RT/plan"
+         awk -F'\t' '{ printf "- %s: `%s` (from workspace `%s`)\n", $1, $3, $2 }' "$RT/applied"
          printf '\n## Unresolved\n\n'
          if [ -s "$RT/unresolved.md" ]; then cat "$RT/unresolved.md"; else echo None.; fi)
-  pr_finish "delphi: changes from workspace $WS_NAME ($(meta layout))" "$body" 1
-  if [ "$PR_PUSHED" = 1 ]; then meta_set last_proposed "$(now)"; meta_set last_proposed_hash "$(_ws_hash)"; fi
+  pr_finish "delphi: changes from workspace $WS_NAME ($(meta layout))" "$body" "$remote"
+  if [ "$PR_PUSHED" = 1 ]; then
+    meta_set last_proposed "$(now)"; meta_set last_proposed_hash "$(_ws_hash)"
+    meta_set last_pushed "$(git -C "$PR_WT" rev-parse HEAD)"
+  fi
 }
