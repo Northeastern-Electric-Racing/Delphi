@@ -45,7 +45,7 @@ _ck_entry() {
 
 check_tree() {
   _CK_ROOT=$1
-  local ctx="$1/context" errs f rel recs k p n names dup name hfile h
+  local ctx="$1/context" f rel recs k p n names dup name hfile h
   make_tmp; _CHECK_ERRS="$REPLY/errs"; : > "$_CHECK_ERRS"
   [ -d "$ctx" ] || { _ce "missing context/ directory"; cat "$_CHECK_ERRS" >&2; return 1; }
 

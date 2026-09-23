@@ -208,7 +208,7 @@ _ws_behind() {
   if [ -n "$(dgit log -1 --format=x "$rc..$tip" -- "$@" 2>/dev/null || echo x)" ]; then echo yes; else echo no; fi
 }
 
-# _ws_state: S_DIRTY S_STATE S_AGE S_STALE S_BEHIND S_NEXT for $WS.
+# _ws_state: S_DIRTY S_STATE S_AGE S_STALE for $WS.
 _ws_state() {
   local base days
   S_DIRTY=no; [ -z "$(wgit status --porcelain)" ] || S_DIRTY=yes
@@ -221,25 +221,24 @@ _ws_state() {
     days=$(( ($(now) - base) / 86400 )); S_AGE="${days}d"
     [ "$days" -gt "$(conf_get stale_days 14)" ] && S_STALE=1
   fi
-  S_BEHIND=$(_ws_behind)
-  if [ -f "$WS/.git/MERGE_HEAD" ]; then S_NEXT="resolve conflicts, commit, then: delphi ws refresh $WS_NAME"
-  elif [ "$S_DIRTY" = yes ]; then S_NEXT="commit your changes in $WS"
-  elif [ "$S_BEHIND" = gone ]; then S_NEXT="delphi ws refresh $WS_NAME --ref main"
-  elif [ "$S_BEHIND" = yes ]; then S_NEXT="delphi ws refresh $WS_NAME"
-  elif [ "$S_STATE" = unproposed ]; then S_NEXT="delphi ws propose $WS_NAME"
-  else S_NEXT="delphi ws open $WS_NAME"; fi
+  return 0
 }
 
 ws_status() {
-  local n c p u s=0 fmt='%-22s %-16s %-8s %-5s %-10s %-5s %-6s %s\n'
+  local behind next n=0 c=0 p=0 u=0 s=0 fmt='%-22s %-16s %-8s %-5s %-10s %-5s %-6s %s\n'
   delphi_fetch
-  n=0 c=0 p=0 u=0
   printf "$fmt" WORKSPACE LAYOUT REF DIRTY STATE AGE BEHIND NEXT
   for WS_NAME in $(ws_names); do
     WS="$(workspace_root)/$WS_NAME"
-    _ws_state
+    _ws_state; behind=$(_ws_behind)
+    if [ -f "$WS/.git/MERGE_HEAD" ]; then next="resolve conflicts, commit, then: delphi ws refresh $WS_NAME"
+    elif [ "$S_DIRTY" = yes ]; then next="commit your changes in $WS"
+    elif [ "$behind" = gone ]; then next="delphi ws refresh $WS_NAME --ref main"
+    elif [ "$behind" = yes ]; then next="delphi ws refresh $WS_NAME"
+    elif [ "$S_STATE" = unproposed ]; then next="delphi ws propose $WS_NAME"
+    else next="delphi ws open $WS_NAME"; fi
     [ "$S_STALE" = 1 ] && S_AGE="$S_AGE!" && s=$((s + 1))
-    printf "$fmt" "$WS_NAME" "$(meta layout)" "$(meta ref)" "$S_DIRTY" "$S_STATE" "$S_AGE" "$S_BEHIND" "$S_NEXT"
+    printf "$fmt" "$WS_NAME" "$(meta layout)" "$(meta ref)" "$S_DIRTY" "$S_STATE" "$S_AGE" "$behind" "$next"
     n=$((n + 1))
     case $S_STATE in clean) c=$((c + 1)) ;; proposed) p=$((p + 1)) ;; *) u=$((u + 1)) ;; esac
   done
@@ -254,9 +253,9 @@ ws_open() {
   for WS_NAME in $(ws_names); do
     WS="$(workspace_root)/$WS_NAME"; _ws_state
     [ "$S_STALE" = 1 ] && warn "$WS_NAME has been unproposed for $S_AGE; run: delphi ws propose $WS_NAME"
-    [ "$WS_NAME" = "$me" ] && [ "$S_BEHIND" != no ] && warn "$me is behind origin/$(meta ref); run: $S_NEXT"
   done
   WS_NAME=$me WS="$(workspace_root)/$me"
+  [ "$(_ws_behind)" = no ] || warn "$me is behind origin/$(meta ref) (or its branch is gone); run: delphi ws refresh $me"
   load_harness "$(meta harness)"
   DELPHI_HARNESS=$(harness_provenance 2>/dev/null | sed -n 1p)
   DELPHI_MODEL=${OPT_MODEL:-${DELPHI_MODEL:-}} DELPHI_EFFORT=${OPT_EFFORT:-${DELPHI_EFFORT:-}}
