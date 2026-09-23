@@ -1,5 +1,7 @@
 # check.sh — repo-wide validation. `check_tree <root>` prints every violation, returns 1 if any.
+# Layouts are validated by rendering them; the rules here cover what render doesn't enforce.
 . "$DELPHI_ROOT/lib/parse.sh"
+. "$DELPHI_ROOT/lib/render.sh"
 
 check_main() {
   [ $# -eq 0 ] || die "usage: delphi check"
@@ -8,44 +10,23 @@ check_main() {
 
 _ce() { printf '%s\n' "$*" >> "$_CHECK_ERRS"; }
 
-# _ck_entry <file> <key> <path> <kind>: kind is instructions|blocks|skills|mcp|settings|any
+# _ck_entry <file> <key> <path> <kind>: placement rule for the kind (instructions|skills|mcp|
+# settings|body); `body` (skill specs) and `any` (recommendations) must also exist.
 _ck_entry() {
-  local f=$1 key=$2 p=$3 kind=$4 abs dir
+  local f=$1 key=$2 p=$3 want='*'
   path_ok "${p%/\*}" || { _ce "$f: $key: unsafe path '$p'"; return 0; }
-  case $kind in
-    blocks)
-      case "/$p" in */blocks/*) ;; *) _ce "$f: blocks: '$p' is not under a blocks/ directory"; return 0 ;; esac
-      case $p in
-        */\*) dir="$_CK_ROOT/context/${p%/\*}"
-              [ -d "$dir" ] && [ -n "$(find "$dir" -maxdepth 1 -type f | head -1)" ] ||
-                _ce "$f: blocks: glob '$p' matches nothing" ;;
-        *)    [ -f "$_CK_ROOT/context/$p" ] || _ce "$f: blocks: missing file '$p'" ;;
-      esac ;;
-    instructions)
-      case "/$p" in */harness/instructions/*) ;; *) _ce "$f: instructions: '$p' is not under harness/instructions/" ;; esac
-      [ -f "$_CK_ROOT/context/$p" ] || _ce "$f: instructions: missing file '$p'" ;;
-    skills)
-      case "/$p" in */harness/skills/*) ;; *) _ce "$f: skills: '$p' is not under harness/skills/" ;; esac
-      abs="$_CK_ROOT/context/$p"
-      case $p in
-        *.skill) [ -f "$abs" ] || _ce "$f: skills: missing spec '$p'" ;;
-        *)       [ -f "$abs/SKILL.md" ] || _ce "$f: skills: '$p' is not a directory with SKILL.md" ;;
-      esac ;;
-    mcp)
-      case "/$p" in */harness/mcp/*.json) ;; *) _ce "$f: mcp: '$p' is not harness/mcp/*.json" ;; esac
-      [ -f "$_CK_ROOT/context/$p" ] || _ce "$f: mcp: missing file '$p'" ;;
-    settings)
-      case "/$p" in */harness/settings/*) ;; *) _ce "$f: settings: '$p' is not under harness/settings/" ;; esac
-      [ -f "$_CK_ROOT/context/$p" ] || _ce "$f: settings: missing file '$p'" ;;
-    any)
-      [ -e "$_CK_ROOT/context/$p" ] || _ce "$f: $key: missing '$p'" ;;
+  case $4 in
+    instructions) want='*/harness/instructions/*' ;; skills) want='*/harness/skills/*' ;;
+    mcp) want='*/harness/mcp/*.json' ;; settings) want='*/harness/settings/*' ;; body) want='*/blocks/*' ;;
   esac
+  case "/$p" in $want) ;; *) _ce "$f: $key: '$p' is not under ${want#\*/}" ;; esac
+  case $4 in body|any) [ -e "$_CK_ROOT/context/$p" ] || _ce "$f: $key: missing '$p'" ;; esac
   return 0
 }
 
 check_tree() {
   _CK_ROOT=$1
-  local ctx="$1/context" f rel recs k p n names dup name hfile h
+  local ctx="$1/context" f rel recs k p n names dup name hfile h i=0
   make_tmp; _CHECK_ERRS="$REPLY/errs"; : > "$_CHECK_ERRS"
   [ -d "$ctx" ] || { _ce "missing context/ directory"; cat "$_CHECK_ERRS" >&2; return 1; }
 
@@ -105,7 +86,7 @@ EOF
     for k in $(yaml_keys "$recs"); do
       case $k in name|description|body|references) ;; *) _ce "$rel: unknown key '$k'" ;; esac
     done
-    while IFS= read -r p; do [ -n "$p" ] && _ck_entry "$rel" body "$p" blocks; done <<EOF2
+    while IFS= read -r p; do [ -n "$p" ] && _ck_entry "$rel" body "$p" body; done <<EOF2
 $(yaml_list "$recs" body; yaml_list "$recs" references)
 EOF2
   done <<EOF
@@ -127,13 +108,17 @@ EOF
 $name"
     h=$(yaml_get "$recs" harness)
     if [ -z "$h" ]; then _ce "$rel: missing harness"
-    elif [ ! -f "$DELPHI_ROOT/lib/harness/$h.sh" ]; then _ce "$rel: unknown harness '$h'"; fi
+    elif [ ! -f "$DELPHI_ROOT/lib/harness/$h.sh" ]; then _ce "$rel: unknown harness '$h'"
+    else   # render it: catches missing paths, empty globs, duplicate outputs, bad skill specs
+      i=$((i + 1)); mkdir "$_CHECK_ERRS.$i"
+      ( render "$1" "$(dirname "${rel#context/}")" "$_CHECK_ERRS.$i" ) 2>&1 > /dev/null | sed "s#^delphi: #$rel: #" >> "$_CHECK_ERRS" || true
+    fi
     for k in $(yaml_keys "$recs"); do
       case $k in name|harness|instructions|blocks|skills|mcp|settings|repos) ;; *) _ce "$rel: unknown key '$k'" ;; esac
     done
     n=$(yaml_list "$recs" settings | awk 'NF' | awk 'END { print NR }')
     [ "$n" -le 1 ] || _ce "$rel: at most one settings file"
-    for k in instructions blocks skills mcp settings; do
+    for k in instructions skills mcp settings; do
       while IFS= read -r p; do [ -n "$p" ] && _ck_entry "$rel" "$k" "$p" "$k"; done <<EOF2
 $(yaml_list "$recs" "$k")
 EOF2
