@@ -1,7 +1,7 @@
 # check.sh — repo-wide validation. `check_tree <root>` prints every violation, returns 1 if any.
-# Layouts are validated by rendering them; the rules here cover what render doesn't enforce.
+# Layouts are validated by compiling them; the rules here cover what compile doesn't enforce.
 . "$DELPHI_ROOT/lib/parse.sh"
-. "$DELPHI_ROOT/lib/render.sh"
+. "$DELPHI_ROOT/lib/compile.sh"
 
 check_main() {
   [ $# -eq 0 ] || die "usage: delphi check"
@@ -109,9 +109,9 @@ $name"
     h=$(yaml_get "$recs" harness)
     if [ -z "$h" ]; then _ce "$rel: missing harness"
     elif [ ! -f "$DELPHI_ROOT/lib/harness/$h.sh" ]; then _ce "$rel: unknown harness '$h'"
-    else   # render it: catches missing paths, empty globs, duplicate outputs, bad skill specs
+    else   # compile it: catches missing paths, empty globs, duplicate outputs, bad skill specs
       i=$((i + 1)); mkdir "$_CHECK_ERRS.$i"
-      ( render "$1" "$(dirname "${rel#context/}")" "$_CHECK_ERRS.$i" ) 2>&1 > /dev/null | sed "s#^delphi: #$rel: #" >> "$_CHECK_ERRS" || true
+      ( compile "$1" "$(dirname "${rel#context/}")" "$_CHECK_ERRS.$i" ) 2>&1 > /dev/null | sed "s#^delphi: #$rel: #" >> "$_CHECK_ERRS" || true
     fi
     for k in $(yaml_keys "$recs"); do
       case $k in name|harness|instructions|blocks|skills|mcp|settings|repos) ;; *) _ce "$rel: unknown key '$k'" ;; esac

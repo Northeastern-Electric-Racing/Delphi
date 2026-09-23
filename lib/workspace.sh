@@ -1,10 +1,10 @@
 # workspace.sh — `delphi workspace new|open|refresh|propose|status` (alias: ws).
 #
-# A workspace is its own git repo outside Delphi. Refs: branch `generated` (renders only), tag
-# `generated-merged` (latest render merged into `working`), branch `working` (the user's).
-# Bookkeeping lives in .git/delphi/meta (key=value); meta.render_commit is authoritative.
+# A workspace is its own git repo outside Delphi. Refs: branch `generated` (compiles only), tag
+# `generated-merged` (latest compile merged into `working`), branch `working` (the user's).
+# Bookkeeping lives in .git/delphi/meta (key=value); meta.compile_commit is authoritative.
 . "$DELPHI_ROOT/lib/parse.sh"
-. "$DELPHI_ROOT/lib/render.sh"
+. "$DELPHI_ROOT/lib/compile.sh"
 . "$DELPHI_ROOT/lib/provenance.sh"
 . "$DELPHI_ROOT/lib/pr.sh"
 . "$DELPHI_ROOT/lib/route.sh"
@@ -41,7 +41,7 @@ meta_set() {
 ws_names() { local d; for d in "$(workspace_root)"/*; do [ -f "$d/.git/delphi/meta" ] && printf '%s\n' "${d##*/}"; done; return 0; }
 ws_name_ok() { case $1 in ""|.*|*[!A-Za-z0-9._-]*) die "invalid workspace name: '$1'" ;; esac; }
 
-# _ws_pending [diff opts]: the pending diff (everything changed since the latest merged render).
+# _ws_pending [diff opts]: the pending diff (everything changed since the latest merged compile).
 _ws_pending() { wgit diff --no-renames --no-ext-diff --no-color "$@" generated-merged HEAD -- . ':(exclude).delphi/lock.tsv'; }
 _ws_hash() { _ws_pending -U0 | sed '/^@@/d; /^index /d' | git hash-object --stdin; }
 
@@ -70,27 +70,27 @@ ws_resolve() {
   WS_NAME=${WS##*/}
 }
 
-# ---- rendering into the workspace ----
-# _ws_render <src-root> <layout-path>: render into a temp dir; path in REPLY.
-_ws_render() {
+# ---- compiling into the workspace ----
+# _ws_compile <src-root> <layout-path>: compile into a temp dir; path in REPLY.
+_ws_compile() {
   make_tmp; mkdir "$REPLY/out" || die "mkdir failed"
-  render "$1" "$2" "$REPLY/out"
+  compile "$1" "$2" "$REPLY/out"
   REPLY="$REPLY/out"
 }
 
-# _ws_commit_render <outdir> <delphi-commit>: commit outdir as the next `generated` commit
+# _ws_commit_compile <outdir> <delphi-commit>: commit outdir as the next `generated` commit
 # (plumbing, so no worktree or hooks). Returns 1 when content equals the current `generated`.
-_ws_commit_render() {
+_ws_commit_compile() {
   local idx tree parent c
   make_tmp; idx="$REPLY/index"
-  GIT_INDEX_FILE=$idx git -C "$1" --git-dir="$WS/.git" --work-tree=. add -A -f || die "cannot stage render"
-  tree=$(GIT_INDEX_FILE=$idx git --git-dir="$WS/.git" write-tree) || die "cannot write render tree"
+  GIT_INDEX_FILE=$idx git -C "$1" --git-dir="$WS/.git" --work-tree=. add -A -f || die "cannot stage compile"
+  tree=$(GIT_INDEX_FILE=$idx git --git-dir="$WS/.git" write-tree) || die "cannot write compile tree"
   if parent=$(wgit rev-parse -q --verify 'generated^{commit}'); then
     [ "$tree" = "$(wgit rev-parse 'generated^{tree}')" ] && return 1
     parent="-p $parent"
   fi
-  c=$(printf 'delphi: render %s@%.7s\n\nDelphi-Render: %s\n' "$(meta layout)" "$2" "$2" | wgit commit-tree $parent "$tree") ||
-    die "cannot commit render"
+  c=$(printf 'delphi: compile %s@%.7s\n\nDelphi-Compile: %s\n' "$(meta layout)" "$2" "$2" | wgit commit-tree $parent "$tree") ||
+    die "cannot commit compile"
   wgit update-ref refs/heads/generated "$c" || die "cannot update generated"
 }
 
@@ -117,15 +117,15 @@ ws_new() {
   delphi_worktree_at "$c"; src=$REPLY
   lp=$(find_layout "$src" "$layout") || exit 1
   recs=$(parse_yaml "$src/context/$lp/manifest.yml") || exit 1
-  _ws_render "$src" "$lp"; out=$REPLY
+  _ws_compile "$src" "$lp"; out=$REPLY
 
   mkdir -p "$WS" && git init -q "$WS" || die "git init failed: $WS"
   mkdir -p "$WS/.git/delphi" "$WS/repos" "$WS/worktrees"
   printf 'repos/\nworktrees/\n%s\n' "$HARNESS_IGNORE" >> "$WS/.git/info/exclude"
   _ws_hook
-  printf 'layout=%s\nlayout_path=%s\nref=%s\nharness=%s\ncreated=%s\nlast_proposed=\nlast_proposed_hash=\npending_since=\nrender_commit=%s\n' \
+  printf 'layout=%s\nlayout_path=%s\nref=%s\nharness=%s\ncreated=%s\nlast_proposed=\nlast_proposed_hash=\npending_since=\ncompile_commit=%s\n' \
     "$layout" "$lp" "$ref" "$R_HARNESS" "$(now)" "$c" > "$WS/.git/delphi/meta"
-  _ws_commit_render "$out" "$c" || die "empty render"
+  _ws_commit_compile "$out" "$c" || die "empty compile"
   wgit tag generated-merged generated && wgit checkout -q -B working generated || die "cannot create working branch"
 
   while IFS='	' read -r name url; do
@@ -142,18 +142,18 @@ EOF
 }
 
 # ---- refresh ----
-# _ws_render_ref: render origin/<meta.ref> onto `generated`. REPLY=changed|same.
-_ws_render_ref() {
+# _ws_compile_ref: compile origin/<meta.ref> onto `generated`. REPLY=changed|same.
+_ws_compile_ref() {
   local ref c src lp out
   ref=$(meta ref)
   c=$(dgit rev-parse -q --verify "origin/$ref^{commit}") || die "branch '$ref' is gone — run: delphi workspace refresh --ref main"
   delphi_worktree_at "$c"; src=$REPLY
-  moves_since "$(meta render_commit)" "$c"
+  moves_since "$(meta compile_commit)" "$c"
   lp=$(move_path "$REPLY" "$(meta layout_path)") || exit 1
   meta_set layout_path "$lp"
-  _ws_render "$src" "$lp"; out=$REPLY
+  _ws_compile "$src" "$lp"; out=$REPLY
   meta_set harness "$R_HARNESS"
-  if _ws_commit_render "$out" "$c"; then REPLY=changed; else _ws_apply_moves "$c"; REPLY=same; fi
+  if _ws_commit_compile "$out" "$c"; then REPLY=changed; else _ws_apply_moves "$c"; REPLY=same; fi
 }
 
 _ws_merge() {
@@ -165,11 +165,11 @@ _ws_merge() {
   exit 2
 }
 
-# _ws_apply_moves <commit>: rewrite paths moved since render_commit in .delphi/manifest.yml; the
-# workspace's render now corresponds to <commit>.
+# _ws_apply_moves <commit>: rewrite paths moved since compile_commit in .delphi/manifest.yml; the
+# workspace's compile now corresponds to <commit>.
 _ws_apply_moves() {
-  moves_since "$(meta render_commit)" "$1"
-  meta_set render_commit "$1"
+  moves_since "$(meta compile_commit)" "$1"
+  meta_set compile_commit "$1"
   if rewrite_moves "$REPLY" "$WS/.delphi/manifest.yml"; then
     wgit commit -q --no-verify -am "delphi: apply moves" || die "cannot commit moved paths"
   fi
@@ -177,11 +177,11 @@ _ws_apply_moves() {
 
 _ws_finalize() {
   wgit tag -f generated-merged generated > /dev/null || die "cannot move generated-merged"
-  _ws_apply_moves "$(wgit log -1 --format='%(trailers:key=Delphi-Render,valueonly)' generated | sed '/^$/d')"
-  info "$WS_NAME: merged render of origin/$(meta ref) ($(printf %.7s "$(meta render_commit)"))"
+  _ws_apply_moves "$(wgit log -1 --format='%(trailers:key=Delphi-Compile,valueonly)' generated | sed '/^$/d')"
+  info "$WS_NAME: merged compile of origin/$(meta ref) ($(printf %.7s "$(meta compile_commit)"))"
 }
 
-# _ws_catch_up: merge a pending render into HEAD (exits 2 on conflicts), then finalize it.
+# _ws_catch_up: merge a pending compile into HEAD (exits 2 on conflicts), then finalize it.
 _ws_catch_up() {
   wgit merge-base --is-ancestor generated HEAD || _ws_merge
   [ "$(wgit rev-parse generated)" = "$(wgit rev-parse 'generated-merged^{commit}')" ] || _ws_finalize
@@ -194,17 +194,17 @@ ws_refresh() {
   [ -z "$(wgit status --porcelain)" ] || die "$WS has uncommitted changes; commit or stash them first"
   [ -z "$OPT_REF" ] || meta_set ref "$OPT_REF"
   _ws_catch_up
-  _ws_render_ref
+  _ws_compile_ref
   if [ "$REPLY" = same ]; then info "$WS_NAME: up to date with origin/$(meta ref)"; else _ws_catch_up; fi
   if [ -z "$(_ws_pending --name-only)" ]; then meta_set pending_since "$(wgit rev-parse HEAD)"; fi
 }
 
 # ---- status ----
-# _ws_behind: yes if origin/<ref> has commits since render_commit touching this workspace's sources.
+# _ws_behind: yes if origin/<ref> has commits since compile_commit touching this workspace's sources.
 _ws_behind() {
   local rc tip IFS='
 '
-  rc=$(meta render_commit)
+  rc=$(meta compile_commit)
   tip=$(dgit rev-parse -q --verify "origin/$(meta ref)^{commit}") || { echo gone; return 0; }
   [ "$tip" = "$rc" ] && { echo no; return 0; }
   set -- $( { wgit show generated-merged:.delphi/lock.tsv |
@@ -298,7 +298,7 @@ ws_propose() {
   local user="" branch remote body
   if [ -n "$OPT_DRY" ]; then
     delphi_fetch
-    [ "$(_ws_behind)" = no ] || warn "$WS_NAME is behind origin/$(meta ref); planning against the last render"
+    [ "$(_ws_behind)" = no ] || warn "$WS_NAME is behind origin/$(meta ref); planning against the last compile"
     route_plan; _ws_print_plan
     return 0
   fi
@@ -316,9 +316,9 @@ ws_propose() {
     die "the propose branch changed on GitHub (someone pushed to it); review the PR, then re-run to overwrite it"
   fi
   provenance_resolve "$OPT_MODEL" "$OPT_EFFORT" "$(meta harness)"
-  PROV_EXTRA=$(printf 'Delphi-Layout: %s\nDelphi-Workspace: %s\nDelphi-Base: %.7s' "$(meta layout_path)" "$WS_NAME" "$(meta render_commit)")
+  PROV_EXTRA=$(printf 'Delphi-Layout: %s\nDelphi-Workspace: %s\nDelphi-Base: %.7s' "$(meta layout_path)" "$WS_NAME" "$(meta compile_commit)")
   PROV_ROWS=$(_ws_prov_rows)
-  pr_begin "$branch" "$(meta render_commit)"
+  pr_begin "$branch" "$(meta compile_commit)"
   route_apply
   if ! pr_has_commits; then
     _ws_print_plan; info "nothing routable to propose; resolve the items above in the workspace"

@@ -9,7 +9,7 @@
 
 FNR == NR { ns++; S[ns] = $2 + 0; E[ns] = $3 + 0; SRC[ns] = $4; next }
 /^@@ / { flush(); header($0); inh = 1; nb = 0; next }
-inh && /^[-+ ]/ { BODY[++nb] = $0; next }   # "\ No newline" lines are dropped: renders end in one
+inh && /^[-+ ]/ { BODY[++nb] = $0; next }   # "\ No newline" lines are dropped: compiles end in one
 END { flush(); emit() }
 
 function header(s,   p, q, c) {

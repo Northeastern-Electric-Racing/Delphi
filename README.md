@@ -3,7 +3,7 @@
 NER's AI-harness context (knowledge, instructions, skills, MCP, settings), stored compressed
 by org chart under `context/`, plus a small bash CLI:
 
-- **render** a *layout* into a local, git-initialized *workspace* where Claude Code runs,
+- **compile** a *layout* into a local, git-initialized *workspace* where Claude Code runs,
 - **refresh** the workspace when `main` moves,
 - **propose** workspace edits back as one PR, routed to the blocks they came from.
 
@@ -14,7 +14,7 @@ Design: `docs/superpowers/specs/2026-09-23-delphi-context-repo-design.md`.
 ```sh
 eval "$(/bin/bash dev/sandbox.sh /tmp/delphi-sb)"   # defines `d` (CLI under /bin/bash); stubs `gh`
 d check                                              # validate the sample repo
-d workspace new argos-dev                            # render into ../Delphi-workspaces/argos-dev
+d workspace new argos-dev                            # compile into ../Delphi-workspaces/argos-dev
 d ws status                                          # state, staleness, next command
 d ws open argos-dev                                  # launch Claude Code there (--shell for a shell)
 # … edit files in the workspace and commit …

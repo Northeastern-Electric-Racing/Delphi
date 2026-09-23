@@ -16,7 +16,7 @@ Run these inside the workspace. Drive the CLI. Don't edit the Delphi repo direct
    - **New file outside a recognised place:** move it under `context/<scope>/blocks/` (an
      existing scope), or `.claude/skills/<name>/` for a skill. Otherwise leave it out of the PR
      by deleting it or keeping it uncommitted.
-   - **Deleted file that is still rendered:** drop its entry from `.delphi/manifest.yml` instead.
+   - **Deleted file that is still compiled:** drop its entry from `.delphi/manifest.yml` instead.
      To replace a block, swap the manifest entry, delete the old file, and add the new one under
      `context/<scope>/blocks/`.
    - **Patch did not apply (same block edited in two places):** keep the edit in one place only.
