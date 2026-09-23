@@ -4,7 +4,8 @@
 #   eval "$(dev/sandbox.sh)"      # prints exports; then use:  d <command> …
 #
 # Creates, in a fresh temp dir ($SB):
-#   origin.git          bare "remote" for Delphi (stands in for GitHub; PR creation will fail — answer n)
+#   origin.git          bare "remote" for Delphi (stands in for GitHub)
+#   bin/gh              stub gh: logs to gh.log, remembers PRs in gh.prs (so --yes works end to end)
 #   Delphi/             clone with this checkout's bin/ lib/ delphi.conf moves.tsv + sample content
 #   argos.git           bare code repo referenced by the sample layout
 #   Delphi-workspaces/  where workspaces land (the default ../Delphi-workspaces)
@@ -78,9 +79,24 @@ git -C "$SB/Delphi" commit -qm "sandbox: code + sample content"
 git -C "$SB/Delphi" push -q origin HEAD:main 2>/dev/null
 git -C "$SB/Delphi" branch -q -u origin/main 2>/dev/null || true
 
+mkdir -p "$SB/bin"; : > "$SB/gh.prs"
+{ printf '#!/bin/sh\nSB=%q\n' "$SB"; cat <<'EOF'; } > "$SB/bin/gh"
+# stub gh for the Delphi sandbox: never contacts GitHub
+echo "gh $*" >> "$SB/gh.log"
+n=$(awk -v b="$4" '$1 == b { print $2 }' "$SB/gh.prs")   # args: pr list|create --head <branch> …
+case "$1 $2" in
+  "api user") echo sandbox-user ;;
+  "pr list") [ -z "$n" ] || { [ "$8" = author ] && echo sandbox-user || echo "$n"; } ;;
+  "pr create") n=$(($(wc -l < "$SB/gh.prs") + 1)); echo "$4 $n" >> "$SB/gh.prs"; echo "https://github.invalid/pr/$n" ;;
+esac
+exit 0
+EOF
+chmod +x "$SB/bin/gh"
+
 cat <<EOF
 export SB=$(printf %q "$SB")
 export DELPHI_MODEL=sandbox-model DELPHI_EFFORT=low DELPHI_HARNESS=sandbox
 d() { /bin/bash "\$SB/Delphi/bin/delphi" "\$@"; }
-echo "sandbox ready: \$SB"
+export PATH="\$SB/bin:\$PATH"
+echo "sandbox ready: \$SB (gh is stubbed in this shell; calls logged to \$SB/gh.log)"
 EOF
