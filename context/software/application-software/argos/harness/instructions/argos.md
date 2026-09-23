@@ -20,6 +20,10 @@ The Argos repo is checked out at `repos/argos/`. Paths below are relative to it,
 - Lint and format (frontend): `npx prettier --check "src/**/*.{ts,html,scss}" && npx ng lint`.
 - Build (backend): `cargo build`.
 
+## Workflow
+
+Idea to ship: `/grilling` → `/to-spec` → `/to-tickets` → `/implement` (drives `/tdd`, `/code-review`, `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
+
 ## PR Convention
 
 - The `/commit` skill applies the commit message format.
@@ -38,7 +42,7 @@ Frontend and backend conventions live alongside their code and auto-load when ed
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions, and `docs/agents/triage-labels.md` for labels. Specs and tickets avoid file paths and code snippets; they go stale.
 
 ## Domain docs
 
