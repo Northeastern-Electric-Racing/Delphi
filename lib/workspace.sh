@@ -11,9 +11,14 @@
 . "$DELPHI_ROOT/lib/check.sh"
 
 workspace_main() {
-  local verb=${1:-}
+  local verb=${1:-} flags
   [ $# -gt 0 ] && shift
-  parse_args "$@"; eval "set -- $ARGS"
+  case $verb in
+    new) flags="--as --ref" ;; open) flags="--model --effort --shell" ;; refresh) flags="--ref" ;;
+    propose) flags="--model --effort --yes --dry-run" ;; status) flags="--offline" ;;
+    *) die "usage: delphi workspace new|open|refresh|propose|status (see: delphi help)" ;;
+  esac
+  parse_args "$flags" "$@"; eval "set -- $ARGS"
   [ $# -le 1 ] || die "too many arguments (see: delphi help)"
   case $verb in
     new)     [ $# -eq 1 ] || die "usage: delphi workspace new <layout> [--as <ws>] [--ref <branch>]"; ws_new "$1" ;;
@@ -21,12 +26,11 @@ workspace_main() {
     refresh) ws_resolve "${1:-}"; delphi_fetch; ws_refresh ;;
     propose) ws_resolve "${1:-}"; ws_propose ;;
     status)  [ $# -eq 0 ] || die "usage: delphi workspace status [--offline]"; ws_status ;;
-    *) die "usage: delphi workspace new|open|refresh|propose|status (see: delphi help)" ;;
   esac
 }
 
 # ---- helpers ----
-wgit() { git -C "$WS" "$@"; }
+wgit() { git -c core.quotePath=false -C "$WS" "$@"; }
 now() { date +%s; }
 meta() { awk -F= -v k="$1" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "$WS/.git/delphi/meta"; }
 meta_set() {
@@ -38,7 +42,7 @@ ws_names() { local d; for d in "$(workspace_root)"/*; do [ -f "$d/.git/delphi/me
 ws_name_ok() { case $1 in ""|.*|*[!A-Za-z0-9._-]*) die "invalid workspace name: '$1'" ;; esac; }
 
 # _ws_pending [diff opts]: the pending diff (everything changed since the latest merged render).
-_ws_pending() { wgit diff --no-renames "$@" generated-merged HEAD -- . ':(exclude).delphi/lock.tsv'; }
+_ws_pending() { wgit diff --no-renames --no-ext-diff --no-color "$@" generated-merged HEAD -- . ':(exclude).delphi/lock.tsv'; }
 _ws_hash() { _ws_pending -U0 | sed '/^@@/d; /^index /d' | git hash-object --stdin; }
 
 # ws_resolve [<name>]: sets WS/WS_NAME from the name, the current directory, or a picker.

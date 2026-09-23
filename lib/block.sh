@@ -7,7 +7,7 @@
 block_main() {
   local verb=${1:-}
   [ $# -gt 0 ] && shift
-  parse_args "$@"; eval "set -- $ARGS"
+  parse_args "--model --effort --yes" "$@"; eval "set -- $ARGS"
   [ "$verb" = mv ] && [ $# -eq 2 ] || die "usage: delphi block mv <old> <new>"
   block_mv "${1%/}" "${2%/}"
 }

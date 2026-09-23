@@ -8,7 +8,8 @@
 layout_main() {
   local verb=${1:-}
   [ $# -gt 0 ] && shift
-  parse_args "$@"; eval "set -- $ARGS"
+  if [ "$verb" = new ]; then parse_args "--from --model --effort --yes" "$@"; else parse_args "" "$@"; fi
+  eval "set -- $ARGS"
   case "$verb:$#" in
     new:2)  layout_new "${1%/}" "$2" ;;
     list:0) layout_list ;;
@@ -102,6 +103,6 @@ layout_new() {
 
 \`\`\`yaml
 $(cat "$mf")
-\`\`\`" 0
+\`\`\`"
   printf '%s\n' "$PR_BRANCH"
 }

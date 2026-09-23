@@ -91,7 +91,7 @@ safe_path() {
 }
 
 # ---- Delphi repo access ----
-dgit() { git -C "$DELPHI_ROOT" "$@"; }
+dgit() { git -c core.quotePath=false -C "$DELPHI_ROOT" "$@"; }
 
 delphi_fetch() {
   [ "${DELPHI_OFFLINE:-}" = 1 ] && return 0
@@ -187,7 +187,6 @@ parse_args() {
       --shell) OPT_SHELL=1 ;;
       --dry-run) OPT_DRY=1 ;;
       --offline) DELPHI_OFFLINE=1 ;;
-      -*) die "unknown flag: $1" ;;
       *) ARGS="$ARGS $(printf %q "$1")" ;;
     esac
     shift

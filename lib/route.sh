@@ -17,7 +17,7 @@ _rt_row() { local IFS='	'; printf '%s\n' "$*" >> "$RT/plan"; }
 _rt_unres() {
   local d
   _rt_row unresolved "$1" "$2"
-  d=$(wgit diff --no-renames generated-merged HEAD -- "$1" | awk '/^@@|^Binary/ { p = 1 } p')
+  d=$(wgit diff --no-renames --no-ext-diff --no-color generated-merged HEAD -- "$1" | awk '/^@@|^Binary/ { p = 1 } p')
   printf '#### `%s`: %s\n\n```diff\n%s\n```\n\n' "$1" "$2" "$d" >> "$RT/unresolved.md"
 }
 
