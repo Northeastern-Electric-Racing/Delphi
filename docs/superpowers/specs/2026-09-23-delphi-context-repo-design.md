@@ -387,6 +387,10 @@ Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `
 | Inside `@gen:<path>.skill`, touching only `name:`/`description:` lines | rewrite those keys in the `.skill` spec |
 | Anything else: in `@glue`/other `@gen`, spanning segments, or `git apply` fails (e.g. the same block edited in two outputs) | unresolved |
 
+**Replacing a block** needs no special case: swap the entry in `.delphi/manifest.yml` (old path → new path), delete the old rendered file, and add the new one under `context/<scope>/blocks/`. The deletion is a no-op (rule 3), the manifest edit routes by rule 1, and the new file by rule 5.
+
+**Placement is strict by design:** a file not in a recognised location stays unresolved; Delphi never guesses where it belongs.
+
 All routed hunks for one (output file, block) pair are combined into a single patch so line offsets stay consistent.
 
 Unresolved items never block the PR; they are listed in it. They are resolved by changing the **workspace** so the change becomes routable (move text into a block's region, move a new file under `context/<scope>/blocks/`, edit `.delphi/manifest.yml`, or revert it), then proposing again.
