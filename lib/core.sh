@@ -1,0 +1,176 @@
+# core.sh — shared helpers: messages, cleanup, prompts, config, path safety, Delphi git access.
+# Sourced by bin/delphi. Bash 3.2 compatible: no associative arrays, no mapfile.
+# Critical commands use explicit `|| die` rather than relying on `set -e`, because errexit is
+# suspended inside functions called from conditionals.
+
+CONTEXT_DIR="$DELPHI_ROOT/context"
+
+die()  { printf 'delphi: %s\n' "$*" >&2; exit 1; }
+warn() { printf 'delphi: warning: %s\n' "$*" >&2; }
+info() { printf '%s\n' "$*" >&2; }
+
+# ---- cleanup: deferred commands run LIFO on exit ----
+_DEFERRED=""
+defer() { _DEFERRED="$1
+$_DEFERRED"; }
+_run_deferred() {
+  local IFS='
+' c
+  for c in $_DEFERRED; do eval "$c" >/dev/null 2>&1 || true; done
+}
+trap _run_deferred EXIT
+
+# Functions that register cleanup must not run inside $(...) (a subshell would lose the
+# registration), so they return their result in REPLY instead of printing it.
+
+# make_tmp: new temp dir in REPLY, removed on exit.
+make_tmp() {
+  REPLY=$(mktemp -d "${TMPDIR:-/tmp}/delphi.XXXXXX") || die "mktemp failed"
+  defer "rm -rf $(printf %q "$REPLY")"
+}
+
+# ---- prompts ----
+# stdin + stderr (prompts go to stderr), so prompting works inside $(...).
+is_tty() { [ -t 0 ] && [ -t 2 ]; }
+
+# confirm <question>: yes if DELPHI_YES=1; fails fast when non-interactive.
+confirm() {
+  [ "${DELPHI_YES:-}" = 1 ] && return 0
+  is_tty || die "non-interactive session: re-run with --yes (or DELPHI_YES=1)"
+  local a
+  read -r -p "$1 [y/N] " a
+  case $a in y|Y|yes) return 0 ;; *) return 1 ;; esac
+}
+
+# ask <question> [default]: prints the answer.
+ask() {
+  is_tty || die "non-interactive session: cannot ask '$1'"
+  local a
+  read -r -p "$1${2:+ [$2]} " a
+  printf '%s\n' "${a:-${2:-}}"
+}
+
+# ---- config ----
+# conf_get <key> <default>: reads delphi.conf (key=value lines; never sourced).
+conf_get() {
+  local v=""
+  [ -f "$DELPHI_ROOT/delphi.conf" ] &&
+    v=$(awk -F= -v k="$1" '$0 !~ /^#/ && $1==k { sub(/^[^=]*=/, ""); print; exit }' "$DELPHI_ROOT/delphi.conf")
+  printf '%s\n' "${v:-$2}"
+}
+
+workspace_root() {
+  local r=${DELPHI_WORKSPACE_ROOT:-$(conf_get workspace_root ../Delphi-workspaces)}
+  case $r in /*) ;; *) r="$DELPHI_ROOT/$r" ;; esac
+  printf '%s\n' "$r"
+}
+
+# ---- path safety ----
+# path_ok <rel>: relative, no '..' or '.' components, not empty.
+path_ok() {
+  case $1 in ""|/*) return 1 ;; esac
+  case "/$1/" in */../*|*/./*|*//*) return 1 ;; esac
+  return 0
+}
+
+# safe_path <root> <rel>: prints <root>/<rel> after proving it stays inside <root>
+# (lexically and through symlinks). Dies otherwise.
+safe_path() {
+  local root=$1 rel=$2 rroot probe real
+  path_ok "$rel" || die "unsafe path: '$rel'"
+  rroot=$(cd -P "$root" 2>/dev/null && pwd) || die "missing directory: $root"
+  probe="$rroot/$rel"
+  [ -L "$probe" ] && die "unsafe path (symlink): '$rel'"
+  while [ ! -e "$probe" ]; do probe=$(dirname "$probe"); done
+  [ -d "$probe" ] || probe=$(dirname "$probe")
+  real=$(cd -P "$probe" && pwd)
+  case "$real/" in "$rroot"/*) ;; *) die "unsafe path (escapes $root): '$rel'" ;; esac
+  printf '%s\n' "$rroot/$rel"
+}
+
+# ---- Delphi repo access ----
+dgit() { git -C "$DELPHI_ROOT" "$@"; }
+
+delphi_fetch() {
+  [ "${DELPHI_OFFLINE:-}" = 1 ] && return 0
+  dgit fetch --prune --quiet origin 2>/dev/null || warn "git fetch failed; using local refs"
+}
+
+# delphi_commit <branch>: full sha of origin/<branch>, or dies.
+delphi_commit() {
+  dgit rev-parse --verify --quiet "origin/$1^{commit}" || die "no such Delphi branch: origin/$1"
+}
+
+# delphi_worktree_at <commit>: detached temp worktree of Delphi; path in REPLY.
+delphi_worktree_at() {
+  local d
+  make_tmp; d="$REPLY/src"
+  dgit worktree add --quiet --detach "$d" "$1" >/dev/null 2>&1 || die "cannot check out Delphi at $1"
+  defer "git -C $(printf %q "$DELPHI_ROOT") worktree remove --force $(printf %q "$d")"
+  REPLY=$d
+}
+
+# resolve_move <moves.tsv> <path>: follows the move log until no entry matches.
+resolve_move() {
+  local f=$1 p=$2 next hops=0 max
+  [ -f "$f" ] || { printf '%s\n' "$p"; return 0; }
+  max=$(awk 'END { print NR }' "$f")
+  while :; do
+    next=$(awk -F'\t' -v p="$p" '
+      /^#/ || NF < 2 { next }
+      p == $1 { print $2; exit }
+      index(p, $1 "/") == 1 { print $2 substr(p, length($1) + 1); exit }' "$f")
+    [ -z "$next" ] && break
+    p=$next
+    hops=$((hops + 1))
+    [ "$hops" -gt "$max" ] && die "moves.tsv: cycle while resolving '$2'"
+  done
+  printf '%s\n' "$p"
+}
+
+# find_layout <tree-root> <name>: prints the layout dir relative to context/.
+find_layout() {
+  local root=$1 name=$2 hits n
+  case $name in *[!a-z0-9-]*|"") die "invalid layout name: '$name'" ;; esac
+  hits=$(cd "$root/context" && find . -path "*/layouts/$name/manifest.yml" -type f | sed 's#^\./##; s#/manifest.yml$##')
+  n=$(printf '%s' "$hits" | awk 'END { print NR }')
+  [ "$n" -eq 1 ] || { [ "$n" -eq 0 ] && die "layout not found: $name"; die "layout name not unique: $name"; }
+  printf '%s\n' "$hits"
+}
+
+# load_harness <name>: sources lib/harness/<name>.sh and checks the contract.
+load_harness() {
+  case $1 in *[!a-z0-9-]*|"") die "invalid harness name: '$1'" ;; esac
+  [ -f "$DELPHI_ROOT/lib/harness/$1.sh" ] || die "unknown harness: $1"
+  . "$DELPHI_ROOT/lib/harness/$1.sh"
+  : "${HARNESS_INSTRUCTIONS:?adapter $1: HARNESS_INSTRUCTIONS unset}"
+  : "${HARNESS_SKILLS_DIR:?adapter $1: HARNESS_SKILLS_DIR unset}"
+  : "${HARNESS_MCP_FILE:?adapter $1: HARNESS_MCP_FILE unset}"
+  : "${HARNESS_SETTINGS_FILE:?adapter $1: HARNESS_SETTINGS_FILE unset}"
+}
+
+# in_list <needle> <newline-separated list>
+in_list() { printf '%s\n' "$2" | grep -Fxq -- "$1"; }
+
+# rewrite_moves <moves.tsv> <file>: rewrites moved paths in `  - item` lines and `settings:`
+# values in place (trailing comments on rewritten lines are dropped). Returns 0 if it changed.
+rewrite_moves() {
+  local mv=$1 f=$2 line val new changed=1
+  [ -f "$mv" ] || return 1
+  : > "$f.tmp"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+      "  - "*|"settings: "*)
+        case $line in "  - "*) val=${line#"  - "} ;; *) val=${line#settings: } ;; esac
+        val=${val%% #*}; val=${val%"${val##*[! ]}"}
+        new=$(resolve_move "$mv" "$val") || exit 1
+        if [ "$new" != "$val" ]; then
+          case $line in "  - "*) line="  - $new" ;; *) line="settings: $new" ;; esac
+          changed=0
+        fi ;;
+    esac
+    printf '%s\n' "$line" >> "$f.tmp"
+  done < "$f"
+  if [ "$changed" = 0 ]; then mv "$f.tmp" "$f"; else rm -f "$f.tmp"; fi
+  return "$changed"
+}
