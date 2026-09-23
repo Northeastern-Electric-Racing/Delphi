@@ -1,0 +1,12 @@
+name: argos-dev
+harness: claude-code
+instructions:
+  - software/harness/instructions/base.md
+  - software/application-software/argos/harness/instructions/argos.md
+skills:
+  - software/application-software/argos/harness/skills/commit
+  - software/application-software/argos/harness/skills/open-pr.skill
+  - software/application-software/argos/harness/skills/update-pr.skill
+  - software/application-software/argos/harness/skills/run-local
+repos:
+  argos: https://github.com/Northeastern-Electric-Racing/Argos.git

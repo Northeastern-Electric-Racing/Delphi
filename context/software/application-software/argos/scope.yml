@@ -1,0 +1,6 @@
+name: Argos
+recommend:
+  - software/application-software/argos/harness/skills/commit
+  - software/application-software/argos/harness/skills/open-pr.skill
+  - software/application-software/argos/harness/skills/update-pr.skill
+  - software/application-software/argos/harness/skills/run-local
