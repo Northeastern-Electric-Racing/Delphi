@@ -7,7 +7,7 @@ disable-model-invocation: true
 Synthesize a spec from the conversation and the codebase. Don't interview the user.
 
 1. **Tracking issue.** Use the existing issue, or create a stub one. Its number names the branch (`{issue-number}-{slug}`).
-2. **Explore** the code in the area, using `CONTEXT.md` terms and respecting its ADRs.
+2. **Explore** the code in the area, using `docs/CONTEXT.md` terms and respecting its ADRs.
 3. **Test seams.** Propose where the feature will be tested: prefer existing seams, as high as possible, ideally one. Confirm with the user.
 4. **Write** `docs/spec/<name>/spec.md` from the template and open it as a PR. Follow `docs/agents/spec-review.md` for review, publishing to the issue with `ready-for-agent`, and removing the file afterwards.
 

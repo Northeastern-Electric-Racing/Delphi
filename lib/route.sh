@@ -102,6 +102,11 @@ route_plan() {
             else
               _rt_unres "$out" "new file: must be under context/<existing scope>/blocks/"
             fi ;;
+          docs/?*)
+            p=$(awk -F'\t' -v d="${out%/*}/" 'index($1, d) == 1 && index(substr($1, length(d) + 1), "/") == 0 && $4 ~ /\/docs\// {
+              sub(/[^\/]*$/, "", $4); print $4; exit }' "$RT/lock")
+            if [ -n "$p" ]; then p=$p${out##*/}; else p=${lp%layouts/*}$out; fi
+            if path_ok "$p"; then _rt_new "$out" "$p" docs "$p"; else _rt_unres "$out" "unsafe path"; fi ;;
           "$sk"/*/*)
             name=${out#"$sk"/}; name=${name%%/*}; rest=${out#"$sk/$name/"}
             src=$(_rt_skill_src "$out")
@@ -110,7 +115,7 @@ route_plan() {
               *.skill) _rt_unres "$out" "new file in a built (.skill) skill: add it as a block and list it in the spec" ;;
               *) _rt_new "$out" "$src/$rest" ;;
             esac ;;
-          *) _rt_unres "$out" "new file: must be under context/<scope>/blocks/ or $sk/<name>/" ;;
+          *) _rt_unres "$out" "new file: must be under context/<scope>/blocks/, docs/, or $sk/<name>/" ;;
         esac ;;
       *) _rt_unres "$out" "unsupported change type '$st'" ;;
     esac

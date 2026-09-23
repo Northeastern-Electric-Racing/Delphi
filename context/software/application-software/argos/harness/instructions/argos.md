@@ -22,7 +22,7 @@ The Argos repo is checked out at `repos/argos/`. Paths below are relative to it,
 
 ## Workflow
 
-Idea to ship: `/grilling` → `/to-spec` → `/to-tickets` → `/implement` (drives `/tdd`, `/code-review`, `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
+Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (drives `/tdd`, `/code-review`, `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
 
 ## PR Convention
 
@@ -46,4 +46,4 @@ Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh
 
 ## Domain docs
 
-Single-context: one `CONTEXT.md` and one `docs/adr/` at the repo root. Component-scoped decisions live in the same root `docs/adr/`, distinguished by descriptive titles. See `docs/agents/domain.md`, and `docs/agents/glossary.md` for workflow terminology.
+The glossary and ADRs are workspace docs, not files in `repos/argos/`: `docs/CONTEXT.md` and `docs/adr/` at the workspace root. Edit them there and they're proposed back to Delphi. Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR. ADR filenames follow `repos/argos/docs/agents/domain.md` (`<NNNN>-<prefix>-<topic-slug>.md`).

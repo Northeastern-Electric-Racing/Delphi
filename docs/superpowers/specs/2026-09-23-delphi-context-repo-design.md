@@ -21,6 +21,7 @@ High-level commands stay simple; complexity lives in `lib/`.
 | **Scope** | A directory under `context/` representing an org unit (club → area → subteam → team). Identified by its path. |
 | **Block** | A tracked unit of context, identified by its path relative to `context/`. |
 | **Basic block** | Text/markdown under a scope's `blocks/`. |
+| **Doc** | Project documentation (glossary, ADRs) under a scope's `docs/`, compiled into the workspace's `docs/`. |
 | **Harness block** | Under a scope's `harness/`: instruction fragments, skills, MCP fragments, settings. |
 | **Layout** | A `manifest.yml` under a scope's `layouts/<name>/` selecting blocks, a harness, and code repos. Compressed side. |
 | **Workspace** | A local git-initialized directory, outside the repo, compiled from a layout. Uncompressed side. Many workspaces may come from one layout. |
@@ -55,10 +56,10 @@ Delphi/
 │       └── claude-code.sh           # harness adapter
 └── context/                         # root scope = NER club-wide
     ├── scope.yml
-    ├── blocks/  harness/  layouts/
+    ├── blocks/  docs/  harness/  layouts/
     └── software/                    # child scope
         ├── scope.yml
-        ├── blocks/  harness/  layouts/
+        ├── blocks/  docs/  harness/  layouts/
         ├── finishline/
         ├── application-software/
         │   ├── argos/
@@ -75,6 +76,7 @@ Every scope directory contains a required `scope.yml` and any of these **reserve
 <scope>/
 ├── scope.yml
 ├── blocks/                          # basic blocks: *.md, *.txt (subdirs allowed)
+├── docs/                            # project docs: CONTEXT.md, adr/*.md (subdirs allowed)
 ├── harness/
 │   ├── instructions/*.md            # fragments stacked into the harness instruction file
 │   ├── skills/<name>/SKILL.md (+ any files)   # native skill
@@ -139,6 +141,9 @@ instructions:                         # stacked, in order, into $HARNESS_INSTRUC
   - software/application-software/argos/harness/instructions/argos.md
 blocks:                               # basic blocks; trailing * glob allowed (non-recursive, sorted)
   - software/application-software/argos/blocks/*
+docs:                                 # project docs; same entry rules as blocks
+  - software/application-software/argos/docs/CONTEXT.md
+  - software/application-software/argos/docs/adr/*
 skills:                               # native skill dir or .skill spec
   - software/application-software/argos/harness/skills/run-tests
 mcp:
@@ -241,6 +246,7 @@ The workspace repo is created with `git init` and shares no history with Delphi;
 |---|---|---|
 | `instructions` | `$HARNESS_INSTRUCTIONS`: delphi header, then fragments in order, one blank line between each. Emitted even when the list is empty (header only). | `@gen:delphi` header, `@glue` blank lines, block per fragment |
 | `blocks` | `context/<path>` — mirrors the block's path exactly (e.g. `software/application-software/argos/blocks/ops/x.md` → `context/software/application-software/argos/blocks/ops/x.md`) | one segment per file |
+| `docs` | `docs/<path below the scope's docs/>` (e.g. `software/application-software/argos/docs/adr/0001-x.md` → `docs/adr/0001-x.md`) | one segment per file |
 | `skills` (native) | `$HARNESS_SKILLS_DIR/<name>/…`, each file copied 1:1 | one segment per file |
 | `skills` (`.skill`) | `$HARNESS_SKILLS_DIR/<name>/SKILL.md` = generated frontmatter (`name`, `description`) + body blocks with `@glue` between; references copied to `references/<basename>` | `@gen:<spec>` frontmatter, block per body/reference |
 | `mcp` | `$HARNESS_MCP_FILE`: `{"mcpServers": {` + fragments separated by a `,` line + `}}`. Omitted when the list is empty. | `@gen:delphi` wrapper, block per fragment, `@glue` commas |
@@ -260,7 +266,7 @@ Compile errors (missing path, empty glob, parse error, duplicate output path, un
 ### 6.1 `delphi layout new <scope> <layout> [--from <file>]`
 
 1. Validate: scope has `scope.yml`; `<layout>` matches `[a-z0-9-]+` and is unique repo-wide.
-2. Without `--from` (basic script): collect `recommend` entries from the scope and each ancestor (closest first, deduped); ask y/n per item; ask harness (choices = `lib/harness/*.sh`); prompt for repos (`name url` lines until blank). Items are placed into manifest keys by path: `*/harness/instructions/*` → `instructions`, `*/harness/skills/*` → `skills`, `*/harness/mcp/*` → `mcp`, `*/harness/settings/*` → `settings` (more than one → re-ask), `*/blocks/*` → `blocks`.
+2. Without `--from` (basic script): collect `recommend` entries from the scope and each ancestor (closest first, deduped); ask y/n per item; ask harness (choices = `lib/harness/*.sh`); prompt for repos (`name url` lines until blank). Items are placed into manifest keys by path: `*/harness/instructions/*` → `instructions`, `*/harness/skills/*` → `skills`, `*/harness/mcp/*` → `mcp`, `*/harness/settings/*` → `settings` (more than one → re-ask), `*/blocks/*` → `blocks`, `*/docs/*` → `docs`.
 3. With `--from`: use the given manifest verbatim (used by the `delphi-new-layout` skill).
 4. Via `pr.sh` (§7): write `context/<scope>/layouts/<layout>/manifest.yml`, run `check`, commit, PR on branch `delphi/layout/<layout>`. Prints the branch name.
 
@@ -314,7 +320,7 @@ If a refresh is pending when `--ref` changes, the pending compile is merged and 
 5. Via `pr.sh`, building from `meta.compile_commit` (so patches apply exactly), in order:
    1. **Layout manifest** — if `.delphi/manifest.yml` changed, replace the layout manifest with it (moved paths resolved).
    2. **Block edits** — apply routed hunks.
-   3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`skills:` unless an existing entry or glob already covers it.
+   3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`docs:`/`skills:` unless an existing entry or glob already covers it.
    4. Run `check`; abort (no push) on failure, printing the violations.
    Each step with changes is one commit with provenance trailers.
 6. Push (force, with an explicit lease — §7); `gh pr create` if no open PR exists for the branch, otherwise `gh pr edit` to replace the body. Refuse if an open PR on the branch was authored by someone other than the current `gh` user. PR body: routed-change summary, provenance table (§9), **Unresolved** section (each item as a fenced diff with its workspace path and reason).
@@ -336,7 +342,7 @@ Age = days since `last_proposed` (or `created`) for `unproposed`. Behind = `orig
 
 ### 6.8 `delphi block mv <old> <new>`
 
-Only paths under a scope's `blocks/` or `harness/` (layouts cannot be moved in v1). Via `pr.sh`: validate `old` exists and `new` does not, both inside `context/`; `git mv`; append to `moves.tsv`; rewrite exact and directory-prefix references in every `manifest.yml`, `scope.yml`, and `.skill`; run `check`; commit; PR on branch `delphi/mv/<basename>-<YYYYMMDD>`. Existing workspaces pick up the move on their next `refresh`/`propose`.
+Only paths under a scope's `blocks/`, `docs/`, or `harness/` (layouts cannot be moved in v1). Via `pr.sh`: validate `old` exists and `new` does not, both inside `context/`; `git mv`; append to `moves.tsv`; rewrite exact and directory-prefix references in every `manifest.yml`, `scope.yml`, and `.skill`; run `check`; commit; PR on branch `delphi/mv/<basename>-<YYYYMMDD>`. Existing workspaces pick up the move on their next `refresh`/`propose`.
 
 ### 6.9 `delphi check`
 
@@ -371,6 +377,7 @@ Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `
 | 3 | Deleted | no-op if its source is no longer referenced by the workspace's `.delphi/manifest.yml` (dropped via the manifest); otherwise unresolved — blocks are dropped by editing `.delphi/manifest.yml` |
 | 4 | Modified, in lock | per-hunk routing (below) |
 | 5 | Added at `context/<p>` where `<p>` is `<scope>/blocks/…` and `<scope>` is an existing scope at `meta.compile_commit` | new block at `<p>` |
+| 5a | Added at `docs/<d>/<f>` | new doc beside the compiled docs already in `docs/<d>/` (their source directory), else at `<layout-scope>/docs/<d>/<f>` |
 | 6 | Added under `$HARNESS_SKILLS_DIR/<name>/` where `<name>` is a native skill in the lock | new file in that skill's source directory |
 | 7 | Added under `$HARNESS_SKILLS_DIR/<name>/` where `<name>` is not in the lock | new native skill at `<layout-scope>/harness/skills/<name>/` |
 | 8 | Anything else | unresolved |

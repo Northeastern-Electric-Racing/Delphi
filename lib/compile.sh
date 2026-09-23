@@ -100,6 +100,20 @@ EOF2
 $(yaml_list "$recs" blocks)
 EOF
 
+  # docs: at docs/<path below the scope's docs/>
+  while IFS= read -r item; do
+    [ -z "$item" ] && continue
+    files=$(_r_expand "$item") || exit 1
+    while IFS= read -r f; do
+      case "/$f" in */docs/?*) ;; *) die "compile: '$f' is listed under docs: but is not in a docs/ directory" ;; esac
+      sub="/$f"; _r_copy "docs/${sub#*/docs/}" "$f"
+    done <<EOF2
+$files
+EOF2
+  done <<EOF
+$(yaml_list "$recs" docs)
+EOF
+
   # skills: native dirs copied 1:1; .skill specs assembled
   while IFS= read -r item; do
     [ -z "$item" ] && continue

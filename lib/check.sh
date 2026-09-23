@@ -34,10 +34,10 @@ check_tree() {
   while IFS= read -r d; do
     [ -f "$d/scope.yml" ] || _ce "${d#$1/}: scope directory has no scope.yml"
     for f in "$d"/*; do
-      [ -f "$f" ] && [ "${f##*/}" != scope.yml ] && _ce "${f#$1/}: stray file (scopes hold only scope.yml, blocks/, harness/, layouts/, child scopes)"
+      [ -f "$f" ] && [ "${f##*/}" != scope.yml ] && _ce "${f#$1/}: stray file (scopes hold only scope.yml, blocks/, docs/, harness/, layouts/, child scopes)"
     done
   done <<EOF
-$(find "$ctx" -type d \( -name blocks -o -name harness -o -name layouts \) -prune -o -type d -print)
+$(find "$ctx" -type d \( -name blocks -o -name docs -o -name harness -o -name layouts \) -prune -o -type d -print)
 EOF
 
   # files: no symlinks, no empty files, trailing newline, no harness instruction file names
@@ -114,7 +114,7 @@ $name"
       ( compile "$1" "$(dirname "${rel#context/}")" "$_CHECK_ERRS.$i" ) 2>&1 > /dev/null | sed "s#^delphi: #$rel: #" >> "$_CHECK_ERRS" || true
     fi
     for k in $(yaml_keys "$recs"); do
-      case $k in name|harness|instructions|blocks|skills|mcp|settings|repos) ;; *) _ce "$rel: unknown key '$k'" ;; esac
+      case $k in name|harness|instructions|blocks|docs|skills|mcp|settings|repos) ;; *) _ce "$rel: unknown key '$k'" ;; esac
     done
     n=$(yaml_list "$recs" settings | awk 'NF' | awk 'END { print NR }')
     [ "$n" -le 1 ] || _ce "$rel: at most one settings file"
