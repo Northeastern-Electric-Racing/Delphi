@@ -62,7 +62,8 @@ conf_get() {
 workspace_root() {
   local r=${DELPHI_WORKSPACE_ROOT:-$(conf_get workspace_root ../Delphi-workspaces)}
   case $r in /*) ;; *) r="$DELPHI_ROOT/$r" ;; esac
-  if [ -d "$r" ]; then r=$(cd -P "$r" && pwd); fi
+  if [ -d "$r" ]; then r=$(cd -P "$r" && pwd)
+  elif [ -d "${r%/*}" ]; then r="$(cd -P "${r%/*}" && pwd)/${r##*/}"; fi
   printf '%s\n' "$r"
 }
 
