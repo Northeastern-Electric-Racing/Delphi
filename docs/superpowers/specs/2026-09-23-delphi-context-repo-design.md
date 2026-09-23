@@ -9,7 +9,7 @@
 Delphi is a monorepo that stores Northeastern Electric Racing's AI-harness context — knowledge, instructions, skills, MCP definitions, settings — in a **compressed** form organized by the org chart, plus a small bash CLI that:
 
 1. **Renders** a chosen combination of that context (a *layout*) into an **uncompressed**, local, git-initialized *workspace* where a harness (Claude Code first) runs for real development.
-2. **Refreshes** that workspace when `main` moves.
+2. **Refreshes** that workspace when Delphi's `main` moves.
 3. **Proposes** changes made in the workspace back to the monorepo as a PR, routing each edit to the block it came from and recording the model, harness, and effort level used.
 
 High-level commands stay simple; complexity lives in `lib/`.
@@ -27,7 +27,7 @@ High-level commands stay simple; complexity lives in `lib/`.
 | **Render** | The deterministic function `(delphi commit, layout) → files + lock`. |
 | **Lock** | `.delphi/lock.tsv`: segment map from rendered output line ranges to their sources. |
 | **Segment** | A contiguous line range of one output file that came from one source. |
-| **Pending diff** | `git diff delphi/base HEAD` over routable paths: everything the workspace has changed relative to its latest render. |
+| **Pending diff** | `git diff generated-merged HEAD` over routable paths: everything the workspace has changed relative to its latest render. |
 
 ## 3. Repository structure
 
@@ -214,7 +214,7 @@ CLAUDE.md	46	92	software/application-software/argos/harness/instructions/argos.m
 | Location | In workspace git? | Contents |
 |---|---|---|
 | `.delphi/manifest.yml` | tracked (rendered) | Editable copy of the layout manifest; edits propose back to the layout. |
-| `.delphi/lock.tsv` | tracked (rendered) | Segment map of the render. Always read from `delphi/base`, never the working copy. |
+| `.delphi/lock.tsv` | tracked (rendered) | Segment map of the render. Always read from `generated-merged`, never the working copy. |
 | `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `pending_since`. |
 | `.git/info/exclude` | not tracked | `repos/`, `worktrees/`, `$HARNESS_IGNORE`. |
 | `.git/hooks/commit-msg` | not tracked | Provenance trailer hook (§9). |
@@ -225,11 +225,13 @@ Keeping state inside `.git/` means Delphi bookkeeping never dirties the working 
 
 | Ref | Meaning |
 |---|---|
-| `delphi/upstream` (branch) | History of renders only. Each commit's message is `delphi: render <layout>@<short-sha>` with trailer `Delphi-Render: <full delphi commit>`. |
-| `delphi/base` (tag) | The latest render that has been **merged into `main`**. The Delphi commit it was rendered at is read from its `Delphi-Render` trailer. |
-| `main` | The user's working branch. |
+| `generated` (branch) | History of renders only. Each commit's message is `delphi: render <layout>@<short-sha>` with trailer `Delphi-Render: <full delphi commit>`. |
+| `generated-merged` (tag) | The latest render that has been **merged into `working`**. The Delphi commit it was rendered at is read from its `Delphi-Render` trailer. |
+| `working` | The user's branch, where all development happens. |
 
-`delphi/upstream` and `delphi/base` differ only while a refresh is pending (render committed, merge not yet completed).
+`generated` and `generated-merged` differ only while a refresh is pending (render committed, merge not yet completed).
+
+The workspace repo is created with `git init` and shares no history with Delphi; none of these refs are Delphi branches. `generated` holds only Delphi's rendered output (never user work); `working` starts from the first render and merges each later one. The only link back to Delphi is the `Delphi-Render` trailer text.
 
 ## 5. Rendering (`lib/render.sh`)
 
@@ -271,7 +273,7 @@ Prints `name<TAB>scope<TAB>harness` for every layout on `origin/main`.
 1. `git fetch`. Resolve the layout by name **in the tree of `origin/<ref>`** (default `main`), following `moves.tsv` at that commit. Workspace name defaults to the layout name; error if `<workspace_root>/<workspace>` exists.
 2. Render at `origin/<ref>` into a temp dir.
 3. `git init` the workspace; write `.git/info/exclude`, `.git/delphi/meta` (with `ref`, `pending_since` empty), and the `commit-msg` hook.
-4. Copy the render in, commit on `delphi/upstream`, tag `delphi/base`, create and check out `main` from it. The working tree is clean.
+4. Copy the render in, commit on `generated`, tag `generated-merged`, create and check out `working` from it. The working tree is clean.
 5. Clone each repo into `repos/<name>`; create empty `worktrees/`. Clone failures warn and are summarized at the end; the workspace is still usable.
 
 `--ref` lets you try a layout before its PR merges (`workspace new argos-dev --ref delphi/layout/argos-dev`). Such a workspace refreshes from that branch; `propose` refuses until the layout exists on `main` (§6.6), and `refresh --ref main` switches it over once merged.
@@ -288,13 +290,13 @@ Idempotent; re-running always picks up where it left off. No `--continue`.
 
 1. Require a clean working tree and no merge in progress. `--ref` updates `meta.ref` first.
 2. `git fetch` Delphi; resolve the layout path through `moves.tsv` at `origin/<ref>`; update `meta.layout_path`.
-3. **Render step** — skipped if `delphi/upstream` is ahead of `delphi/base` (a pending refresh): render at `origin/<ref>` commit `C` into a temporary worktree of the workspace repo checked out on `delphi/upstream`, replacing its tracked contents.
+3. **Render step** — skipped if `generated` is ahead of `generated-merged` (a pending refresh): render at `origin/<ref>` commit `C` into a temporary worktree of the workspace repo checked out on `generated`, replacing its tracked contents.
    - Content changed → commit with trailer `Delphi-Render: C`.
    - Content identical but `C` ≠ the recorded render commit → `git commit --allow-empty` with trailer `Delphi-Render: C` (keeps the recorded commit current, e.g. after a squash-merged layout PR or unrelated `main` activity).
    - Content identical and `C` = recorded commit → report "up to date", exit 0.
    If `origin/<ref>` no longer exists, fail with "branch `<ref>` is gone — run `refresh --ref main`".
-4. **Merge step** — skipped if `delphi/upstream` is already an ancestor of `HEAD`: `git merge --no-edit delphi/upstream`. On conflict, exit **2**: "resolve conflicts, commit, then re-run `delphi workspace refresh`."
-5. **Finalize** (only once `delphi/upstream` is an ancestor of `HEAD`): move tag `delphi/base` to `delphi/upstream`. Rewrite any moved paths in `.delphi/manifest.yml`; if changed, commit `delphi: apply moves`. If the pending diff is now empty, set `meta.pending_since = HEAD`. Exit 0.
+4. **Merge step** — skipped if `generated` is already an ancestor of `HEAD`: `git merge --no-edit generated`. On conflict, exit **2**: "resolve conflicts, commit, then re-run `delphi workspace refresh`."
+5. **Finalize** (only once `generated` is an ancestor of `HEAD`): move tag `generated-merged` to `generated`. Rewrite any moved paths in `.delphi/manifest.yml`; if changed, commit `delphi: apply moves`. If the pending diff is now empty, set `meta.pending_since = HEAD`. Exit 0.
 
 All commits Delphi itself makes in a workspace (renders, merges, `apply moves`) use `--no-verify` so the provenance hook never tags them.
 
@@ -306,11 +308,11 @@ If a refresh is pending when `--ref` changes, the pending render is merged and f
 
 **One live PR per workspace**, on branch `delphi/propose/<gh-user>/<workspace>` (`<gh-user>` from `gh api user --jq .login`; workspace names are local, so the user part prevents teammates' branches colliding). Each propose rebuilds that branch from scratch with the **entire** current pending diff and force-updates it, so the PR always equals "everything this workspace still differs from `main` by." Proposing twice never duplicates; a merged PR's changes drop out after the next refresh; a closed/rejected change keeps reappearing until it is reverted in the workspace (the documented escape hatch).
 
-1. `--dry-run`: skip refresh; route against the current `delphi/base` (warn if behind); print the plan and unresolved items; change nothing; stop.
+1. `--dry-run`: skip refresh; route against the current `generated-merged` (warn if behind); print the plan and unresolved items; change nothing; stop.
 2. Require a clean working tree and `meta.ref = main` (else: "layout not on main yet — merge its PR, then `refresh --ref main`"). Run `refresh`; continue only if it exits 0.
 3. Compute the pending diff and route it (§8) into a plan.
 4. If the plan has no routed changes and no unresolved items: print "nothing to propose", exit 0.
-5. Via `pr.sh`, building from the Delphi commit in `delphi/base`'s `Delphi-Render` trailer (so patches apply exactly), in order:
+5. Via `pr.sh`, building from the Delphi commit in `generated-merged`'s `Delphi-Render` trailer (so patches apply exactly), in order:
    1. **Layout manifest** — if `.delphi/manifest.yml` changed, replace the layout manifest with it (moved paths resolved).
    2. **Block edits** — apply routed hunks.
    3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`skills:` unless an existing entry or glob already covers it.
@@ -361,7 +363,7 @@ All commands that modify the monorepo use one path:
 
 ## 8. Change routing (`lib/route.sh`)
 
-Input: pending diff (`git diff --no-renames delphi/base HEAD`), excluding `repos/`, `worktrees/`, `.delphi/lock.tsv`. Lock read from `delphi/base`. Output: plan rows `kind<TAB>workspace-path<TAB>target[<TAB>reason]`. Checked in this order per file:
+Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `repos/`, `worktrees/`, `.delphi/lock.tsv`. Lock read from `generated-merged`. Output: plan rows `kind<TAB>workspace-path<TAB>target[<TAB>reason]`. Checked in this order per file:
 
 | # | Change | Result |
 |---|---|---|
@@ -407,7 +409,7 @@ Delphi-Base: 0cdd375                        # propose only: render commit
 
 **Workspace commit hook:** `.git/hooks/commit-msg` appends `Delphi-Harness/Model/Effort` trailers from `DELPHI_*` env vars when set and not already present.
 
-**Propose aggregation:** the PR table lists the proposing session's values plus each distinct trailer combination from non-merge workspace commits in `pending_since..HEAD` (all of `main` if `pending_since` is empty).
+**Propose aggregation:** the PR table lists the proposing session's values plus each distinct trailer combination from non-merge workspace commits in `pending_since..HEAD` (all of `working` if `pending_since` is empty).
 
 **Known gap:** if the model changes mid-session (e.g. `/model`), the env vars from `workspace open` go stale; flags on `propose` override.
 
