@@ -7,7 +7,7 @@ user-invocable: true
 
 ## Context
 
-Current directory:
+Current directory (Argos lives in `repos/argos/`):
 `!pwd`
 
 Running Angular instances:

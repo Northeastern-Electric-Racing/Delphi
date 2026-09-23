@@ -1,6 +1,7 @@
 name: argos-dev
 harness: claude-code
 instructions:
+  - harness/instructions/workspace.md
   - software/harness/instructions/base.md
   - software/application-software/argos/harness/instructions/argos.md
 skills:

@@ -1,23 +1,23 @@
 ---
 name: commit
 description: Stage and commit using this repo's commit message convention
-allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git commit:*), Bash(git diff:*)
+allowed-tools: Bash(git -C repos/argos:*), Bash(git add:*), Bash(git status:*), Bash(git commit:*), Bash(git diff:*)
 user-invocable: true
 ---
 
 ## Context
 
 Current branch:
-`!git branch --show-current`
+`!git -C repos/argos branch --show-current`
 
 Git status:
-`!git status`
+`!git -C repos/argos status`
 
 Staged + unstaged diff:
-`!git diff HEAD`
+`!git -C repos/argos diff HEAD`
 
 Recent commits:
-`!git log --oneline -5`
+`!git -C repos/argos log --oneline -5`
 
 ## Task
 
