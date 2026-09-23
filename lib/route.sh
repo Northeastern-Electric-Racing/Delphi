@@ -127,8 +127,10 @@ route_apply() {
             "$out" "$tgt" "$(sed '1,2d' "$a")" >> "$RT/unresolved.md"
         } ;;
       key)
+        case $b in *'"'*) _rt_unres "$out" "new $a value contains a double quote (not supported)"; continue ;; esac
+        case $b in *" #"*|[\[{\&\*\|\>\!#]*) b="\"$b\"" ;; esac
         dst=$(safe_path "$PR_WT/context" "$tgt") || exit 1
-        awk -v k="$a" -v v="$b" 'index($0, k ":") == 1 && !d { print k ": " v; d = 1; next } { print }' "$dst" > "$dst.tmp" &&
+        V=$b awk -v k="$a" 'index($0, k ":") == 1 && !d { print k ": " ENVIRON["V"]; d = 1; next } { print }' "$dst" > "$dst.tmp" &&
           mv "$dst.tmp" "$dst" || die "cannot update $tgt" ;;
     esac
   done < "$RT/plan"
