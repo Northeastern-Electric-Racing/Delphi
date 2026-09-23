@@ -7,7 +7,7 @@ by org chart under `context/`, plus a small bash CLI:
 - **refresh** the workspace when `main` moves,
 - **propose** workspace edits back as one PR, routed to the blocks they came from.
 
-Design: `docs/superpowers/specs/2026-09-23-delphi-context-repo-design.md`.
+Design: `context/docs/delphi-design.md`.
 
 ## Quick start (sandbox, no GitHub)
 

@@ -2,7 +2,7 @@
 
 Delphi stores NER's AI-harness context under `context/` and ships a small bash CLI that compiles
 layouts into workspaces, refreshes them, and proposes edits back as PRs. The design spec
-(`docs/superpowers/specs/2026-09-23-delphi-context-repo-design.md`) is the source of truth.
+(`context/docs/delphi-design.md`) is the source of truth.
 
 ## Layout
 
