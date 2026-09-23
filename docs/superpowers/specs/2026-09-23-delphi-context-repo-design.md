@@ -215,7 +215,7 @@ CLAUDE.md	46	92	software/application-software/argos/harness/instructions/argos.m
 |---|---|---|
 | `.delphi/manifest.yml` | tracked (rendered) | Editable copy of the layout manifest; edits propose back to the layout. |
 | `.delphi/lock.tsv` | tracked (rendered) | Segment map of the render. Always read from `generated-merged`, never the working copy. |
-| `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `pending_since`. |
+| `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `pending_since`, `render_commit` (the Delphi commit `generated-merged`'s content corresponds to — authoritative; may be newer than that commit's trailer when later renders were identical). |
 | `.git/info/exclude` | not tracked | `repos/`, `worktrees/`, `$HARNESS_IGNORE`. |
 | `.git/hooks/commit-msg` | not tracked | Provenance trailer hook (§9). |
 
@@ -226,12 +226,12 @@ Keeping state inside `.git/` means Delphi bookkeeping never dirties the working 
 | Ref | Meaning |
 |---|---|
 | `generated` (branch) | History of renders only. Each commit's message is `delphi: render <layout>@<short-sha>` with trailer `Delphi-Render: <full delphi commit>`. |
-| `generated-merged` (tag) | The latest render that has been **merged into `working`**. The Delphi commit it was rendered at is read from its `Delphi-Render` trailer. |
+| `generated-merged` (tag) | The latest render that has been **merged into `working`**. Its current Delphi commit is `meta.render_commit`. |
 | `working` | The user's branch, where all development happens. |
 
 `generated` and `generated-merged` differ only while a refresh is pending (render committed, merge not yet completed).
 
-The workspace repo is created with `git init` and shares no history with Delphi; none of these refs are Delphi branches. `generated` holds only Delphi's rendered output (never user work); `working` starts from the first render and merges each later one. The only link back to Delphi is the `Delphi-Render` trailer text.
+The workspace repo is created with `git init` and shares no history with Delphi; none of these refs are Delphi branches. `generated` holds only Delphi's rendered output (never user work); `working` starts from the first render and merges each later one. The only links back to Delphi are the `Delphi-Render` trailer text and `meta.render_commit`.
 
 ## 5. Rendering (`lib/render.sh`)
 
@@ -273,7 +273,7 @@ Prints `name<TAB>scope<TAB>harness` for every layout on `origin/main`.
 1. `git fetch`. Resolve the layout by name **in the tree of `origin/<ref>`** (default `main`), following `moves.tsv` at that commit. Workspace name defaults to the layout name; error if `<workspace_root>/<workspace>` exists.
 2. Render at `origin/<ref>` into a temp dir.
 3. `git init` the workspace; write `.git/info/exclude`, `.git/delphi/meta` (with `ref`, `pending_since` empty), and the `commit-msg` hook.
-4. Copy the render in, commit on `generated`, tag `generated-merged`, create and check out `working` from it. The working tree is clean.
+4. Copy the render in, commit on `generated`, tag `generated-merged`, create and check out `working` from it; set `meta.render_commit`. The working tree is clean.
 5. Clone each repo into `repos/<name>`; create empty `worktrees/`. Clone failures warn and are summarized at the end; the workspace is still usable.
 
 `--ref` lets you try a layout before its PR merges (`workspace new argos-dev --ref delphi/layout/argos-dev`). Such a workspace refreshes from that branch; `propose` refuses until the layout exists on `main` (§6.6), and `refresh --ref main` switches it over once merged.
@@ -292,17 +292,16 @@ Idempotent; re-running always picks up where it left off. No `--continue`.
 2. `git fetch` Delphi; resolve the layout path through `moves.tsv` at `origin/<ref>`; update `meta.layout_path`.
 3. **Render step** — skipped if `generated` is ahead of `generated-merged` (a pending refresh): render at `origin/<ref>` commit `C` into a temporary worktree of the workspace repo checked out on `generated`, replacing its tracked contents.
    - Content changed → commit with trailer `Delphi-Render: C`.
-   - Content identical but `C` ≠ the recorded render commit → `git commit --allow-empty` with trailer `Delphi-Render: C` (keeps the recorded commit current, e.g. after a squash-merged layout PR or unrelated `main` activity).
-   - Content identical and `C` = recorded commit → report "up to date", exit 0.
+   - Content identical → set `meta.render_commit = C` (no commits; keeps the recorded commit current, e.g. after a squash-merged layout PR or unrelated `main` activity), report "up to date", exit 0.
    If `origin/<ref>` no longer exists, fail with "branch `<ref>` is gone — run `refresh --ref main`".
 4. **Merge step** — skipped if `generated` is already an ancestor of `HEAD`: `git merge --no-edit generated`. On conflict, exit **2**: "resolve conflicts, commit, then re-run `delphi workspace refresh`."
-5. **Finalize** (only once `generated` is an ancestor of `HEAD`): move tag `generated-merged` to `generated`. Rewrite any moved paths in `.delphi/manifest.yml`; if changed, commit `delphi: apply moves`. If the pending diff is now empty, set `meta.pending_since = HEAD`. Exit 0.
+5. **Finalize** (only once `generated` is an ancestor of `HEAD`): move tag `generated-merged` to `generated`; set `meta.render_commit` from that commit's `Delphi-Render` trailer. Rewrite any moved paths in `.delphi/manifest.yml`; if changed, commit `delphi: apply moves`. If the pending diff is now empty, set `meta.pending_since = HEAD`. Exit 0.
 
 All commits Delphi itself makes in a workspace (renders, merges, `apply moves`) use `--no-verify` so the provenance hook never tags them.
 
 **Exit codes:** 0 = up to date or finalized; 2 = merge conflict awaiting resolution; 1 = error.
 
-If a refresh is pending when `--ref` changes, the pending render is merged and finalized first, then the render step runs once more against the new ref. Refreshes after unrelated `main` activity add an empty render commit plus a merge to workspace history; this is expected.
+If a refresh is pending when `--ref` changes, the pending render is merged and finalized first, then the render step runs once more against the new ref. Render and merge commits only appear in workspace history when the rendered content actually changed.
 
 ### 6.6 `delphi workspace propose [<workspace>] [--dry-run]`
 
@@ -312,7 +311,7 @@ If a refresh is pending when `--ref` changes, the pending render is merged and f
 2. Require a clean working tree and `meta.ref = main` (else: "layout not on main yet — merge its PR, then `refresh --ref main`"). Run `refresh`; continue only if it exits 0.
 3. Compute the pending diff and route it (§8) into a plan.
 4. If the plan has no routed changes and no unresolved items: print "nothing to propose", exit 0.
-5. Via `pr.sh`, building from the Delphi commit in `generated-merged`'s `Delphi-Render` trailer (so patches apply exactly), in order:
+5. Via `pr.sh`, building from `meta.render_commit` (so patches apply exactly), in order:
    1. **Layout manifest** — if `.delphi/manifest.yml` changed, replace the layout manifest with it (moved paths resolved).
    2. **Block edits** — apply routed hunks.
    3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`skills:` unless an existing entry or glob already covers it.
@@ -333,7 +332,7 @@ For each directory in `workspace_root` containing `.git/delphi/meta`, print: wor
 | `proposed` | pending diff hash = `last_proposed_hash` |
 | `unproposed` | otherwise |
 
-Age = days since `last_proposed` (or `created`) for `unproposed`. Behind = `origin/<ref>` has commits since the base render commit touching any lock source, the layout manifest, or a directory covered by a manifest glob. `--offline` skips `git fetch`. Status cannot see whether a PR was closed; a rejected workspace stays `proposed` until its change is reverted or re-proposed.
+Age = days since `last_proposed` (or `created`) for `unproposed`. Behind = `origin/<ref>` has commits since `meta.render_commit` touching any lock source, the layout manifest, or a directory covered by a manifest glob. `--offline` skips `git fetch`. Status cannot see whether a PR was closed; a rejected workspace stays `proposed` until its change is reverted or re-proposed.
 
 ### 6.8 `delphi block mv <old> <new>`
 
@@ -371,7 +370,7 @@ Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `
 | 2 | Binary | unresolved |
 | 3 | Deleted | no-op if its source is no longer referenced by the workspace's `.delphi/manifest.yml` (dropped via the manifest); otherwise unresolved — blocks are dropped by editing `.delphi/manifest.yml` |
 | 4 | Modified, in lock | per-hunk routing (below) |
-| 5 | Added at `context/<p>` where `<p>` is `<scope>/blocks/…` and `<scope>` is an existing scope at the base render commit | new block at `<p>` |
+| 5 | Added at `context/<p>` where `<p>` is `<scope>/blocks/…` and `<scope>` is an existing scope at `meta.render_commit` | new block at `<p>` |
 | 6 | Added under `$HARNESS_SKILLS_DIR/<name>/` where `<name>` is a native skill in the lock | new file in that skill's source directory |
 | 7 | Added under `$HARNESS_SKILLS_DIR/<name>/` where `<name>` is not in the lock | new native skill at `<layout-scope>/harness/skills/<name>/` |
 | 8 | Anything else | unresolved |
@@ -402,7 +401,7 @@ Delphi-Model: claude-opus-5-5
 Delphi-Effort: high
 Delphi-Layout: software/application-software/argos/layouts/argos-dev
 Delphi-Workspace: argos-dev--bug-612        # propose only
-Delphi-Base: 0cdd375                        # propose only: render commit
+Delphi-Base: 0cdd375                        # propose only: meta.render_commit
 ```
 
 **Resolution order** (`lib/provenance.sh`), per field: CLI flag → `DELPHI_*` env (set by `workspace open`) → adapter's `harness_provenance` fallback. If still missing: prompt when interactive (accepting `none` for runs without an LLM); error when non-interactive. Never written as "unknown".
