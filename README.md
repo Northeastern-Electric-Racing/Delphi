@@ -12,14 +12,14 @@ Design: `docs/superpowers/specs/2026-09-23-delphi-context-repo-design.md`.
 ## Quick start (sandbox, no GitHub)
 
 ```sh
-eval "$(/bin/bash dev/sandbox.sh /tmp/delphi-sb)"   # defines `d` (runs the CLI under /bin/bash)
+eval "$(/bin/bash dev/sandbox.sh /tmp/delphi-sb)"   # defines `d` (CLI under /bin/bash); stubs `gh`
 d check                                              # validate the sample repo
 d workspace new argos-dev                            # render into ../Delphi-workspaces/argos-dev
 d ws status                                          # state, staleness, next command
 d ws open argos-dev                                  # launch Claude Code there (--shell for a shell)
 # … edit files in the workspace and commit …
 d ws propose --dry-run                               # see how edits route; unresolved items listed
-d ws propose                                         # refresh, build the PR branch, confirm push (answer n)
+d ws propose --yes                                   # refresh, build the PR branch, push to the sandbox origin
 ```
 
 For real use, put `bin/` on `PATH` and run `delphi …` from a clone whose `origin` is the GitHub repo.

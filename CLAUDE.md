@@ -36,4 +36,4 @@ layouts into workspaces, refreshes them, and proposes edits back as PRs. The des
 - Every path from config, flags, lock, or `moves.tsv` goes through `safe_path` before use.
 - Never test against real GitHub repos. Use the sandbox:
   `eval "$(/bin/bash dev/sandbox.sh /tmp/sb1)"`, then `d <command>`.
-  Put a stub `gh` first on `PATH` to exercise the push path against the sandbox's bare origin.
+  The sandbox stubs `gh` (log in `$SB/gh.log`), so `--yes` pushes only to its bare origin.
