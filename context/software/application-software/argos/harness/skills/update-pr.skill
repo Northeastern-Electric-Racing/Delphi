@@ -2,4 +2,4 @@ name: update-pr
 description: Update the current branch's PR description to reflect the latest changes
 body:
   - software/application-software/argos/blocks/update-pr.md
-  - software/application-software/argos/blocks/pr-writing.md
+  - software/application-software/argos/blocks/pr-body.md

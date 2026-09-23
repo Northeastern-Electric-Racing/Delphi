@@ -1,5 +1,5 @@
 name: open-pr
-description: Run pre-PR checks, push the branch, and open a pull request
+description: Run pre-PR checks, push the branch, and open a draft pull request
 body:
   - software/application-software/argos/blocks/open-pr.md
-  - software/application-software/argos/blocks/pr-writing.md
+  - software/application-software/argos/blocks/pr-body.md

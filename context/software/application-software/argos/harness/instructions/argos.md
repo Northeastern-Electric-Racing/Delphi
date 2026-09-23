@@ -2,7 +2,7 @@
 
 Argos is a real-time telemetry platform for Northeastern Electric Racing (NER). Angular 19 frontend (`angular-client/`) and Rust backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in `siren-base/`.
 
-The Argos repo is checked out at `repos/argos/`. Paths below are relative to it, and every workflow here (commit, PR, run, test) runs from inside it or a worktree of it.
+The Argos repo is checked out at `repos/argos/`. Paths below are relative to it. Run every workflow (commit, PR, run, test) in the checkout for the task: `repos/argos/`, or `worktrees/<branch>/` if it has its own worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
 
 ## Local Development
 
@@ -22,7 +22,7 @@ The Argos repo is checked out at `repos/argos/`. Paths below are relative to it,
 
 ## Workflow
 
-Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (drives `/tdd`, `/code-review`, `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
+Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (test-first, then `/code-review` and `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
 
 ## PR Convention
 

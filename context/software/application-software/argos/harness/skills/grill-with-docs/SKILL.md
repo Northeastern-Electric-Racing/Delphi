@@ -9,5 +9,5 @@ Interview me about every aspect of this plan until we share an understanding. Wa
 - Look up facts in the code yourself. Put decisions to me. If the code contradicts what I say, point it out.
 - Hold me to `docs/CONTEXT.md`. Call out a term that conflicts with it, pin down fuzzy terms, and test boundaries with concrete edge-case scenarios.
 - When a term is resolved, update `docs/CONTEXT.md` right away. It's a glossary only, with no implementation details.
-- Offer an ADR in `docs/adr/` only when a decision is hard to reverse, surprising without context, and a real trade-off. Match the format of the existing entries.
+- Offer an ADR in `docs/adr/` only when a decision is hard to reverse, surprising without context, and a real trade-off. Name it per `docs/agents/domain.md` and cover context, decision, and the alternatives considered.
 - Don't enact the plan until I confirm we're aligned. Next step: `/to-spec`.
