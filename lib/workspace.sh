@@ -144,11 +144,12 @@ _ws_render_ref() {
   ref=$(meta ref)
   c=$(dgit rev-parse -q --verify "origin/$ref^{commit}") || die "branch '$ref' is gone — run: delphi workspace refresh --ref main"
   delphi_worktree_at "$c"; src=$REPLY
-  lp=$(resolve_move "$src/moves.tsv" "$(meta layout_path)") || exit 1
+  moves_since "$(meta render_commit)" "$c"
+  lp=$(move_path "$REPLY" "$(meta layout_path)") || exit 1
   meta_set layout_path "$lp"
   _ws_render "$src" "$lp"; out=$REPLY
   meta_set harness "$R_HARNESS"
-  if _ws_commit_render "$out" "$c"; then REPLY=changed; else meta_set render_commit "$c"; REPLY=same; fi
+  if _ws_commit_render "$out" "$c"; then REPLY=changed; else _ws_apply_moves "$c"; REPLY=same; fi
 }
 
 _ws_merge() {
@@ -160,37 +161,38 @@ _ws_merge() {
   exit 2
 }
 
-_ws_finalize() {
-  local rc mv
-  wgit tag -f generated-merged generated > /dev/null || die "cannot move generated-merged"
-  rc=$(wgit log -1 --format='%(trailers:key=Delphi-Render,valueonly)' generated | sed '/^$/d')
-  meta_set render_commit "$rc"
-  make_tmp; mv="$REPLY/moves.tsv"
-  dgit show "$rc:moves.tsv" > "$mv" 2>/dev/null || : > "$mv"
-  if rewrite_moves "$mv" "$WS/.delphi/manifest.yml"; then
+# _ws_apply_moves <commit>: rewrite paths moved since render_commit in .delphi/manifest.yml; the
+# workspace's render now corresponds to <commit>.
+_ws_apply_moves() {
+  moves_since "$(meta render_commit)" "$1"
+  meta_set render_commit "$1"
+  if rewrite_moves "$REPLY" "$WS/.delphi/manifest.yml"; then
     wgit commit -q --no-verify -am "delphi: apply moves" || die "cannot commit moved paths"
   fi
 }
 
+_ws_finalize() {
+  wgit tag -f generated-merged generated > /dev/null || die "cannot move generated-merged"
+  _ws_apply_moves "$(wgit log -1 --format='%(trailers:key=Delphi-Render,valueonly)' generated | sed '/^$/d')"
+  info "$WS_NAME: merged render of origin/$(meta ref) ($(printf %.7s "$(meta render_commit)"))"
+}
+
+# _ws_catch_up: merge a pending render into HEAD (exits 2 on conflicts), then finalize it.
+_ws_catch_up() {
+  wgit merge-base --is-ancestor generated HEAD || _ws_merge
+  [ "$(wgit rev-parse generated)" = "$(wgit rev-parse 'generated-merged^{commit}')" ] || _ws_finalize
+}
+
 # ws_refresh: idempotent. Returns 0 when up to date or finalized; exits 2 on conflicts.
 ws_refresh() {
-  local rendered=0
   wgit worktree prune
   [ -f "$WS/.git/MERGE_HEAD" ] && die "merge in progress in $WS: resolve conflicts, commit, then re-run 'delphi workspace refresh'"
   [ -z "$(wgit status --porcelain)" ] || die "$WS has uncommitted changes; commit or stash them first"
   [ -z "$OPT_REF" ] || meta_set ref "$OPT_REF"
-  while :; do
-    if [ "$(wgit rev-parse generated)" = "$(wgit rev-parse generated-merged^{commit})" ]; then
-      [ "$rendered" = 1 ] && break
-      rendered=1
-      _ws_render_ref
-      if [ "$REPLY" = same ]; then info "$WS_NAME: up to date with origin/$(meta ref)"; break; fi
-    fi
-    wgit merge-base --is-ancestor generated HEAD || _ws_merge
-    _ws_finalize
-    info "$WS_NAME: merged render of origin/$(meta ref) ($(printf %.7s "$(meta render_commit)"))"
-  done
-  if [ -z "$(_ws_pending --name-only)" ]; then meta_set pending_since "$(now)"; fi
+  _ws_catch_up
+  _ws_render_ref
+  if [ "$REPLY" = same ]; then info "$WS_NAME: up to date with origin/$(meta ref)"; else _ws_catch_up; fi
+  if [ -z "$(_ws_pending --name-only)" ]; then meta_set pending_since "$(wgit rev-parse HEAD)"; fi
 }
 
 # ---- status ----

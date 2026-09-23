@@ -142,16 +142,9 @@ EOF2
 $(find "$ctx" -type f -path '*/layouts/*/manifest.yml')
 EOF
 
-  # moves.tsv: three fields, no cycles
-  if [ -f "$1/moves.tsv" ]; then
+  # moves.tsv: three fields
+  [ ! -f "$1/moves.tsv" ] ||
     awk -F'\t' '!/^#/ && NF && NF != 3 { printf "moves.tsv:%d: expected old<TAB>new<TAB>date\n", NR }' "$1/moves.tsv" >> "$_CHECK_ERRS"
-    while IFS= read -r p; do
-      [ -z "$p" ] && continue
-      ( resolve_move "$1/moves.tsv" "$p" > /dev/null ) 2>> "$_CHECK_ERRS" || true
-    done <<EOF
-$(awk -F'\t' '!/^#/ && NF == 3 { print $1 }' "$1/moves.tsv")
-EOF
-  fi
 
   # MCP fragments are valid JSON (only if jq is installed)
   if command -v jq > /dev/null 2>&1; then

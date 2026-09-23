@@ -191,7 +191,7 @@ software/blocks/git.md	software/blocks/git-conventions.md	2026-10-02
 software/application-software/argos/blocks/old-dir	software/application-software/argos/blocks/ops	2026-10-05
 ```
 
-Append-only. A path resolves by repeatedly applying the first matching entry (exact match, or directory-prefix match for directory entries) until none match. Cycles are a `check` error.
+Append-only. Rows are applied **in order, each once** (exact match, or directory-prefix match for directory entries), and only the rows that are new to the consumer: `block mv` applies the row it appends; a workspace applies the rows added since its `render_commit`. Paths may therefore be reused, and a block can be moved back.
 
 ### 4.8 `lock.tsv`
 
@@ -347,7 +347,7 @@ Exits non-zero listing every violation:
 - Every referenced path exists (each glob matches ≥1 file) and resolves inside `context/`.
 - Entries are under the key matching their location (`skills` entries are a dir with `SKILL.md` or a `.skill` file, etc.).
 - No file under `context/` is named any adapter's `$HARNESS_INSTRUCTIONS`.
-- `moves.tsv` rows well-formed; no cycles.
+- `moves.tsv` rows well-formed.
 - MCP fragments form valid JSON when wrapped — only if `jq` is installed; otherwise skipped with a note.
 
 ## 7. Writing to Delphi (`lib/pr.sh`)

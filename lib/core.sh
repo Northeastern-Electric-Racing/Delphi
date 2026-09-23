@@ -112,24 +112,6 @@ delphi_worktree_at() {
   REPLY=$d
 }
 
-# resolve_move <moves.tsv> <path>: follows the move log until no entry matches.
-resolve_move() {
-  local f=$1 p=$2 next hops=0 max
-  [ -f "$f" ] || { printf '%s\n' "$p"; return 0; }
-  max=$(awk 'END { print NR }' "$f")
-  while :; do
-    next=$(awk -F'\t' -v p="$p" '
-      /^#/ || NF < 2 { next }
-      p == $1 { print $2; exit }
-      index(p, $1 "/") == 1 { print $2 substr(p, length($1) + 1); exit }' "$f")
-    [ -z "$next" ] && break
-    p=$next
-    hops=$((hops + 1))
-    [ "$hops" -gt "$max" ] && die "moves.tsv: cycle while resolving '$2'"
-  done
-  printf '%s\n' "$p"
-}
-
 # find_layout <tree-root> <name>: prints the layout dir relative to context/.
 find_layout() {
   local root=$1 name=$2 hits n
@@ -154,35 +136,45 @@ load_harness() {
 # in_list <needle> <newline-separated list>
 in_list() { printf '%s\n' "$2" | grep -Fxq -- "$1"; }
 
-# rewrite_moves <moves.tsv> <file>: rewrites moved paths in `  - item` lines and `settings:`
-# values in place (trailing comments on rewritten lines are dropped). Returns 0 if it changed.
-rewrite_moves() {
-  local mv=$1 f=$2 line val new changed=1
-  [ -f "$mv" ] || return 1
-  : > "$f.tmp"
-  while IFS= read -r line || [ -n "$line" ]; do
-    case $line in
-      "  - "*|"settings: "*)
-        case $line in "  - "*) val=${line#"  - "} ;; *) val=${line#settings: } ;; esac
-        val=${val%% #*}; val=${val%"${val##*[! ]}"}
-        new=$(resolve_move "$mv" "$val") || exit 1
-        if [ "$new" != "$val" ]; then
-          case $line in "  - "*) line="  - $new" ;; *) line="settings: $new" ;; esac
-          changed=0
-        fi ;;
-    esac
-    printf '%s\n' "$line" >> "$f.tmp"
-  done < "$f"
-  if [ "$changed" = 0 ]; then mv "$f.tmp" "$f"; else rm -f "$f.tmp"; fi
-  return "$changed"
+# ---- moves (moves.tsv is append-only; rows apply in order, each once) ----
+_MV_AWK='BEGIN { while ((getline l < M) > 0) if (l !~ /^#/ && split(l, f, "\t") >= 2) { n++; O[n] = f[1]; N[n] = f[2] } }
+  function mv(p,   i) {
+    for (i = 1; i <= n; i++)
+      if (p == O[i]) p = N[i]; else if (index(p, O[i] "/") == 1) p = N[i] substr(p, length(O[i]) + 1)
+    return p }'
+
+# moves_since <old-commit> <new-commit>: moves.tsv rows added between two Delphi commits; file in REPLY.
+moves_since() {
+  local n
+  n=$(dgit show "$1:moves.tsv" 2>/dev/null | awk 'END { print NR }') || true
+  make_tmp; REPLY="$REPLY/moves"
+  dgit show "$2:moves.tsv" 2>/dev/null | awk -v n="${n:-0}" 'NR > n' > "$REPLY" || true
 }
 
-# parse_args <args…>: common flags into OPT_* (valued: --as --ref --from --model --effort;
-# switches: --yes --shell --dry-run --offline); positionals, shell-quoted, into ARGS.
-# Callers: parse_args "$@"; eval "set -- $ARGS"
+# move_path <rows> <path>: prints the path with the move rows applied.
+move_path() { printf '%s\n' "$2" | awk -v M="$1" "$_MV_AWK"' { print mv($0) }'; }
+
+# rewrite_moves <rows> <file>: applies move rows to `  - item` lines and `settings:` values in
+# place (trailing comments on rewritten lines are dropped). Returns 0 if it changed anything.
+rewrite_moves() {
+  awk -v M="$1" "$_MV_AWK"'
+    { pre = $0 ~ /^  - / ? "  - " : $0 ~ /^settings: / ? "settings: " : ""
+      if (pre != "") { v = substr($0, length(pre) + 1); sub(/ #.*/, "", v); sub(/ +$/, "", v)
+        if (mv(v) != v) { $0 = pre mv(v); ch = 1 } }
+      print }
+    END { exit !ch }' "$2" > "$2.tmp" && mv "$2.tmp" "$2" && return 0
+  rm -f "$2.tmp"; return 1
+}
+
+# parse_args "<allowed flags>" <args…>: flags into OPT_* (valued: --as --ref --from --model
+# --effort; switches: --yes --shell --dry-run --offline); positionals, shell-quoted, into ARGS.
+# Callers: parse_args "--yes …" "$@"; eval "set -- $ARGS"
 parse_args() {
+  local ok=" $1 "
+  shift
   ARGS="" OPT_AS="" OPT_REF="" OPT_FROM="" OPT_MODEL="" OPT_EFFORT="" OPT_SHELL="" OPT_DRY=""
   while [ $# -gt 0 ]; do
+    case $1 in -*) case $ok in *" $1 "*) ;; *) die "unknown flag for this command: $1 (allowed:${ok% })" ;; esac ;; esac
     case $1 in
       --as|--ref|--from|--model|--effort)
         [ $# -ge 2 ] || die "$1 needs a value"
