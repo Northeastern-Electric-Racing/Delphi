@@ -4,7 +4,7 @@ You are in a Delphi workspace: a folder that pairs team context with the code re
 
 | Path | What it is | Changes go |
 |---|---|---|
-| `CLAUDE.md`, `.claude/`, `context/` | Context rendered from Delphi | Workspace git (`working` branch); `delphi workspace propose` opens the Delphi PR |
+| `CLAUDE.md`, `.claude/`, `context/` | Team context pulled from Delphi | Workspace git (`working` branch); `delphi workspace propose` opens the Delphi PR |
 | `repos/<name>/` | A normal clone of a code repo, with its own remote | That repo's git, branches, and PRs, per its conventions |
 | `worktrees/` | Empty; for extra checkouts of a repo (`git -C repos/<name> worktree add ../../worktrees/<branch> <branch>`) | Same as the repo it came from |
 
