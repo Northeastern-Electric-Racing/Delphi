@@ -8,7 +8,8 @@
 #                                  noop     <out> <reason>
 #                                  unresolved <out> <reason>
 #                   unresolved.md  one markdown section per unresolved item (for the PR body)
-#   route_apply   apply the plan inside $PR_WT, one commit per step (manifest, edits, new files)
+#   route_apply   apply the plan inside $PR_WT, one commit per step (manifest, edits, new files);
+#                 rows that applied go to $RT/applied, failures to the unresolved items
 # Requires workspace.sh helpers (wgit, meta) and pr.sh.
 
 _rt_row() { local IFS='	'; printf '%s\n' "$*" >> "$RT/plan"; }
@@ -48,10 +49,16 @@ _rt_dropped() {
     s=$(_rt_skill_src "$1")
     case $s in *.skill) ! _rt_covered "$s" "$RT/entries"; return ;; esac ;;
   esac
-  for s in $(awk -F'\t' -v o="$1" '$1 == o && $4 !~ /^@/ { print $4 }' "$RT/lock"); do
-    _rt_covered "$s" "$RT/entries" && return 1
+  awk -F'\t' -v o="$1" '$1 == o && $4 !~ /^@/ { print $4 }' "$RT/lock" | while IFS= read -r s; do
+    if _rt_covered "$s" "$RT/entries"; then exit 1; fi
   done
-  return 0
+}
+
+# _rt_new <out> <target> [<manifest key> <entry>]: a new file, unless the target exists upstream.
+_rt_new() {
+  if dgit cat-file -e "$(meta render_commit):context/$2" 2>/dev/null; then
+    _rt_unres "$1" "exists upstream; add it via the manifest instead"
+  else _rt_row new "$@"; fi
 }
 
 route_plan() {
@@ -81,7 +88,8 @@ route_plan() {
         awk -F'\t' -v o="$out" '$1 == o' "$RT/lock" > "$RT/seg"
         if [ ! -s "$RT/seg" ]; then _rt_unres "$out" "not a rendered file"; continue; fi
         n=$((n + 1))
-        wgit diff -U0 --no-renames generated-merged HEAD -- "$out" > "$RT/diff"
+        wgit diff -U0 --no-renames --no-ext-diff --no-color generated-merged HEAD -- "$out" > "$RT/diff"
+        if ! grep -q '^@@' "$RT/diff"; then _rt_unres "$out" "mode-only change"; continue; fi
         awk -F'\t' -v OUT="$out" -v PDIR="$RT/p" -v PID="$n" -v UMD="$RT/unresolved.md" \
           -f "$DELPHI_ROOT/lib/route.awk" "$RT/seg" "$RT/diff" >> "$RT/plan" || die "route.awk failed on $out" ;;
       A)
@@ -90,7 +98,7 @@ route_plan() {
             p=${out#context/}; scope="/$p"
             case $scope in */blocks/*) scope=${scope%%/blocks/*}; scope=${scope#/} ;; *) scope=-; esac
             if [ "$scope" != - ] && path_ok "$p" && dgit cat-file -e "$rc:context/${scope:+$scope/}scope.yml" 2>/dev/null; then
-              _rt_row new "$out" "$p" blocks "$p"
+              _rt_new "$out" "$p" blocks "$p"
             else
               _rt_unres "$out" "new file: must be under context/<existing scope>/blocks/"
             fi ;;
@@ -98,9 +106,9 @@ route_plan() {
             name=${out#"$sk"/}; name=${name%%/*}; rest=${out#"$sk/$name/"}
             src=$(_rt_skill_src "$out")
             case $src in
-              "") src="${lp%layouts/*}harness/skills/$name"; _rt_row new "$out" "$src/$rest" skills "$src" ;;
+              "") src="${lp%layouts/*}harness/skills/$name"; _rt_new "$out" "$src/$rest" skills "$src" ;;
               *.skill) _rt_unres "$out" "new file in a built (.skill) skill: add it as a block and list it in the spec" ;;
-              *) _rt_row new "$out" "$src/$rest" ;;
+              *) _rt_new "$out" "$src/$rest" ;;
             esac ;;
           *) _rt_unres "$out" "new file: must be under context/<scope>/blocks/ or $sk/<name>/" ;;
         esac ;;
@@ -120,30 +128,35 @@ _rt_list_add() {
 }
 
 route_apply() {
-  local k out tgt a b mf lay dst entries
+  local k out tgt a b mf lay dst entries patched=""
   lay=$(meta layout); mf=$(safe_path "$PR_WT/context" "$(meta layout_path)/manifest.yml") || exit 1
+  : > "$RT/applied"
 
-  if awk -F'\t' '$1 == "manifest" { f = 1 } END { exit !f }' "$RT/plan"; then
+  if awk -F'\t' '$1 == "manifest" { f = 1; print > A } END { exit !f }' A="$RT/applied" "$RT/plan"; then
     cp "$WS/.delphi/manifest.yml" "$mf" || die "cannot copy manifest"
-    rewrite_moves "$PR_WT/moves.tsv" "$mf" || true
     pr_commit "delphi: update layout $lay from workspace $WS_NAME" || true
   fi
 
   while IFS='	' read -r k out tgt a b; do
     case $k in
       patch)
-        git -C "$PR_WT" apply --unidiff-zero "$a" 2>/dev/null || {
-          _rt_row unresolved "$out" "patch for $tgt did not apply"
-          printf '#### `%s`: patch for `%s` did not apply (block edited in two places?)\n\n```diff\n%s\n```\n\n' \
+        if in_list "$tgt" "$patched" || ! git -C "$PR_WT" apply --unidiff-zero "$a" 2>/dev/null; then
+          _rt_row unresolved "$out" "patch for $tgt not applied"
+          printf '#### `%s`: patch for `%s` not applied (one patch per block per propose; edit it in one place)\n\n```diff\n%s\n```\n\n' \
             "$out" "$tgt" "$(sed '1,2d' "$a")" >> "$RT/unresolved.md"
-        } ;;
+          continue
+        fi
+        patched="$patched
+$tgt" ;;
       key)
         case $b in *'"'*) _rt_unres "$out" "new $a value contains a double quote (not supported)"; continue ;; esac
         case $b in *" #"*|[\[{\&\*\|\>\!#]*) b="\"$b\"" ;; esac
         dst=$(safe_path "$PR_WT/context" "$tgt") || exit 1
         V=$b awk -v k="$a" 'index($0, k ":") == 1 && !d { print k ": " ENVIRON["V"]; d = 1; next } { print }' "$dst" > "$dst.tmp" &&
           mv "$dst.tmp" "$dst" || die "cannot update $tgt" ;;
+      *) continue ;;
     esac
+    printf '%s\t%s\t%s\n' "$k" "$out" "$tgt" >> "$RT/applied"
   done < "$RT/plan"
   pr_commit "delphi: route block edits from workspace $WS_NAME" || true
 
@@ -152,6 +165,7 @@ route_apply() {
     [ "$k" = new ] || continue
     dst=$(safe_path "$PR_WT/context" "$tgt") || exit 1
     mkdir -p "$(dirname "$dst")" && cp "$WS/$out" "$dst" || die "cannot add $tgt"
+    printf '%s\t%s\t%s\n' "$k" "$out" "$tgt" >> "$RT/applied"
     [ -n "$a" ] || continue
     parse_yaml "$mf" | awk -F'\t' -v k="$a" 'NF == 2 && $1 == k { print $2 }' > "$entries" || exit 1
     _rt_covered "$b" "$entries" || _rt_list_add "$mf" "$a" "$b"

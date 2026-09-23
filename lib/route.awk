@@ -9,7 +9,7 @@
 
 FNR == NR { ns++; S[ns] = $2 + 0; E[ns] = $3 + 0; SRC[ns] = $4; next }
 /^@@ / { flush(); header($0); inh = 1; nb = 0; next }
-inh && (/^[-+ ]/ || /^\\/) { BODY[++nb] = $0; next }
+inh && /^[-+ ]/ { BODY[++nb] = $0; next }   # "\ No newline" lines are dropped: renders end in one
 END { flush(); emit() }
 
 function header(s,   p, q, c) {
@@ -34,6 +34,8 @@ function flush(   i, j, t, pos, hn) {
   inh = 0
   if (N > 0) {
     i = seg(A); j = seg(A + N - 1)
+    if (i && i == j && isblock(i) && M == 0 && A == S[i] && A + N - 1 == E[i]) {
+      unresolved("deletes a whole block; to drop a block, remove it from the manifest"); return }
     if (i && i == j && isblock(i)) { t = i; pos = A - S[i] + 1 }
     else if (i && i == j && SRC[i] ~ /^@gen:.*\.skill$/) { skillkeys(i); return }
     else { unresolved("change spans segments or touches generated/separator lines"); return }
