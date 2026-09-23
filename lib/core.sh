@@ -62,6 +62,7 @@ conf_get() {
 workspace_root() {
   local r=${DELPHI_WORKSPACE_ROOT:-$(conf_get workspace_root ../Delphi-workspaces)}
   case $r in /*) ;; *) r="$DELPHI_ROOT/$r" ;; esac
+  if [ -d "$r" ]; then r=$(cd -P "$r" && pwd); fi
   printf '%s\n' "$r"
 }
 
@@ -173,4 +174,29 @@ rewrite_moves() {
   done < "$f"
   if [ "$changed" = 0 ]; then mv "$f.tmp" "$f"; else rm -f "$f.tmp"; fi
   return "$changed"
+}
+
+# parse_args <args…>: common flags into OPT_* (valued: --as --ref --from --model --effort;
+# switches: --yes --shell --dry-run --offline); positionals, shell-quoted, into ARGS.
+# Callers: parse_args "$@"; eval "set -- $ARGS"
+parse_args() {
+  ARGS="" OPT_AS="" OPT_REF="" OPT_FROM="" OPT_MODEL="" OPT_EFFORT="" OPT_SHELL="" OPT_DRY=""
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --as|--ref|--from|--model|--effort)
+        [ $# -ge 2 ] || die "$1 needs a value"
+        case $1 in
+          --as) OPT_AS=$2 ;; --ref) OPT_REF=$2 ;; --from) OPT_FROM=$2 ;;
+          --model) OPT_MODEL=$2 ;; --effort) OPT_EFFORT=$2 ;;
+        esac
+        shift ;;
+      --yes) DELPHI_YES=1 ;;
+      --shell) OPT_SHELL=1 ;;
+      --dry-run) OPT_DRY=1 ;;
+      --offline) DELPHI_OFFLINE=1 ;;
+      -*) die "unknown flag: $1" ;;
+      *) ARGS="$ARGS $(printf %q "$1")" ;;
+    esac
+    shift
+  done
 }
