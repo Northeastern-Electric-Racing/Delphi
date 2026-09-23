@@ -3,9 +3,9 @@
 # awk -F'\t' -v OUT=<workspace path> -v PDIR=<patch dir> -v PID=<unique id> -v UMD=<unresolved.md> \
 #     -f route.awk <lock rows for OUT> <diff>
 #
-# stdout records:  P<TAB>block<TAB>patchfile      one combined patch per block (paths under context/)
-#                  K<TAB>spec<TAB>key<TAB>value   edited name:/description: of a built skill
-#                  U<TAB>reason                   hunk that could not be attributed (also written to UMD)
+# stdout plan rows:  patch<TAB>OUT<TAB>block<TAB>patchfile      one combined patch per block
+#                    key<TAB>OUT<TAB>spec<TAB>key<TAB>value     edited name:/description: of a built skill
+#                    unresolved<TAB>OUT<TAB>reason              also written to UMD as markdown
 
 FNR == NR { ns++; S[ns] = $2 + 0; E[ns] = $3 + 0; SRC[ns] = $4; next }
 /^@@ / { flush(); header($0); inh = 1; nb = 0; next }
@@ -25,8 +25,8 @@ function seg(l,   i) { for (i = 1; i <= ns; i++) if (S[i] <= l && l <= E[i]) ret
 function body(   k, s) { s = ""; for (k = 1; k <= nb; k++) s = s BODY[k] "\n"; return s }
 
 function unresolved(reason) {
-  print "U\t" reason
-  printf "#### `%s` (base line %d): %s\n\n```diff\n@@ -%d,%d +%d @@\n%s```\n\n", OUT, A, reason, A, N, M, body() >> UMD
+  print "unresolved\t" OUT "\t" reason
+  printf "#### `%s` (line %d): %s\n\n```diff\n%s```\n\n", OUT, A, reason, body() >> UMD
 }
 
 function flush(   i, j, t, pos, hn) {
@@ -60,7 +60,7 @@ function skillkeys(i,   k, l, ok, key, val, spec) {
     l = BODY[k]
     if (l !~ /^\+/) continue
     l = substr(l, 2); key = l; sub(/:.*/, "", key); val = l; sub(/^[^:]*: /, "", val)
-    print "K\t" spec "\t" key "\t" val
+    print "key\t" OUT "\t" spec "\t" key "\t" val
   }
 }
 
@@ -77,6 +77,6 @@ function emit(   t, k, f, off, a, c, n, m) {
       off += m - n
     }
     close(f)
-    print "P\t" SRC[t] "\t" f
+    print "patch\t" OUT "\t" SRC[t] "\t" f
   }
 }
