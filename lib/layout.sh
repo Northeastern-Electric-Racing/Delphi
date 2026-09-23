@@ -47,7 +47,7 @@ $(dgit ls-tree -r --name-only "$c" -- "context/$scope/blocks" | sed 's#^context/
   for it in $(printf '%s\n' "$items" | awk 'NF && !seen[$0]++'); do
     case "/$it" in
       */harness/instructions/*) key=instructions ;; */harness/skills/*) key=skills ;;
-      */harness/mcp/*) key=mcp ;; */harness/settings/*) key=settings ;; */blocks/*) key=blocks ;;
+      */harness/mcp/*) key=mcp ;; */harness/settings/*) key=settings ;; */blocks/*) key=blocks ;; */docs/*) key=docs ;;
       *) warn "skipping '$it': not a block or harness path"; continue ;;
     esac
     a=$(ask "Include $it? [y/N]") || exit 1
@@ -62,7 +62,7 @@ $key	$it"
   h=$hs
   case $hs in *"$IFS"*) h=$(ask "Harness ($(printf '%s' "$hs" | tr '\n' ' '))?" claude-code) || exit 1 ;; esac
   printf 'name: %s\nharness: %s\n' "$3" "$h"
-  for k in instructions blocks skills mcp; do
+  for k in instructions blocks docs skills mcp; do
     list=$(printf '%s\n' "$sel" | awk -F'\t' -v k="$k" '$1 == k { print "  - " $2 }')
     if [ -n "$list" ]; then printf '%s:\n%s\n' "$k" "$list"; fi
   done

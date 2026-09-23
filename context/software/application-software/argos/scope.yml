@@ -1,0 +1,9 @@
+name: Argos
+recommend:
+  - software/application-software/argos/harness/skills/grill-with-docs
+  - software/application-software/argos/harness/skills/to-spec
+  - software/application-software/argos/harness/skills/to-tickets
+  - software/application-software/argos/harness/skills/implement
+  - software/application-software/argos/harness/skills/commit
+  - software/application-software/argos/harness/skills/open-pr.skill
+  - software/application-software/argos/harness/skills/run-local

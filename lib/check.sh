@@ -1,7 +1,7 @@
 # check.sh — repo-wide validation. `check_tree <root>` prints every violation, returns 1 if any.
-# Layouts are validated by rendering them; the rules here cover what render doesn't enforce.
+# Layouts are validated by compiling them; the rules here cover what compile doesn't enforce.
 . "$DELPHI_ROOT/lib/parse.sh"
-. "$DELPHI_ROOT/lib/render.sh"
+. "$DELPHI_ROOT/lib/compile.sh"
 
 check_main() {
   [ $# -eq 0 ] || die "usage: delphi check"
@@ -34,10 +34,10 @@ check_tree() {
   while IFS= read -r d; do
     [ -f "$d/scope.yml" ] || _ce "${d#$1/}: scope directory has no scope.yml"
     for f in "$d"/*; do
-      [ -f "$f" ] && [ "${f##*/}" != scope.yml ] && _ce "${f#$1/}: stray file (scopes hold only scope.yml, blocks/, harness/, layouts/, child scopes)"
+      [ -f "$f" ] && [ "${f##*/}" != scope.yml ] && _ce "${f#$1/}: stray file (scopes hold only scope.yml, blocks/, docs/, harness/, layouts/, child scopes)"
     done
   done <<EOF
-$(find "$ctx" -type d \( -name blocks -o -name harness -o -name layouts \) -prune -o -type d -print)
+$(find "$ctx" -type d \( -name blocks -o -name docs -o -name harness -o -name layouts \) -prune -o -type d -print)
 EOF
 
   # files: no symlinks, no empty files, trailing newline, no harness instruction file names
@@ -109,12 +109,12 @@ $name"
     h=$(yaml_get "$recs" harness)
     if [ -z "$h" ]; then _ce "$rel: missing harness"
     elif [ ! -f "$DELPHI_ROOT/lib/harness/$h.sh" ]; then _ce "$rel: unknown harness '$h'"
-    else   # render it: catches missing paths, empty globs, duplicate outputs, bad skill specs
+    else   # compile it: catches missing paths, empty globs, duplicate outputs, bad skill specs
       i=$((i + 1)); mkdir "$_CHECK_ERRS.$i"
-      ( render "$1" "$(dirname "${rel#context/}")" "$_CHECK_ERRS.$i" ) 2>&1 > /dev/null | sed "s#^delphi: #$rel: #" >> "$_CHECK_ERRS" || true
+      ( compile "$1" "$(dirname "${rel#context/}")" "$_CHECK_ERRS.$i" ) 2>&1 > /dev/null | sed "s#^delphi: #$rel: #" >> "$_CHECK_ERRS" || true
     fi
     for k in $(yaml_keys "$recs"); do
-      case $k in name|harness|instructions|blocks|skills|mcp|settings|repos) ;; *) _ce "$rel: unknown key '$k'" ;; esac
+      case $k in name|harness|instructions|blocks|docs|skills|mcp|settings|repos) ;; *) _ce "$rel: unknown key '$k'" ;; esac
     done
     n=$(yaml_list "$recs" settings | awk 'NF' | awk 'END { print NR }')
     [ "$n" -le 1 ] || _ce "$rel: at most one settings file"

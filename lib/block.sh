@@ -16,7 +16,7 @@ block_mv() {
   local old=$1 new=$2 p src dst f row
   for p in "$old" "$new"; do
     path_ok "$p" || die "unsafe path: '$p'"
-    case "/$p" in */blocks/?*|*/harness/?*) ;; *) die "'$p' is not under a scope's blocks/ or harness/" ;; esac
+    case "/$p" in */blocks/?*|*/docs/?*|*/harness/?*) ;; *) die "'$p' is not under a scope's blocks/, docs/, or harness/" ;; esac
   done
   delphi_fetch
   p=$(delphi_commit main) || exit 1

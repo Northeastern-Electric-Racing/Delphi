@@ -8,7 +8,7 @@
 
 Delphi is a monorepo that stores Northeastern Electric Racing's AI-harness context — knowledge, instructions, skills, MCP definitions, settings — in a **compressed** form organized by the org chart, plus a small bash CLI that:
 
-1. **Renders** a chosen combination of that context (a *layout*) into an **uncompressed**, local, git-initialized *workspace* where a harness (Claude Code first) runs for real development.
+1. **Compiles** a chosen combination of that context (a *layout*) into an **uncompressed**, local, git-initialized *workspace* where a harness (Claude Code first) runs for real development.
 2. **Refreshes** that workspace when Delphi's `main` moves.
 3. **Proposes** changes made in the workspace back to the monorepo as a PR, routing each edit to the block it came from and recording the model, harness, and effort level used.
 
@@ -21,13 +21,14 @@ High-level commands stay simple; complexity lives in `lib/`.
 | **Scope** | A directory under `context/` representing an org unit (club → area → subteam → team). Identified by its path. |
 | **Block** | A tracked unit of context, identified by its path relative to `context/`. |
 | **Basic block** | Text/markdown under a scope's `blocks/`. |
+| **Doc** | Project documentation (glossary, ADRs) under a scope's `docs/`, compiled into the workspace's `docs/`. |
 | **Harness block** | Under a scope's `harness/`: instruction fragments, skills, MCP fragments, settings. |
 | **Layout** | A `manifest.yml` under a scope's `layouts/<name>/` selecting blocks, a harness, and code repos. Compressed side. |
-| **Workspace** | A local git-initialized directory, outside the repo, rendered from a layout. Uncompressed side. Many workspaces may come from one layout. |
-| **Render** | The deterministic function `(delphi commit, layout) → files + lock`. |
-| **Lock** | `.delphi/lock.tsv`: segment map from rendered output line ranges to their sources. |
+| **Workspace** | A local git-initialized directory, outside the repo, compiled from a layout. Uncompressed side. Many workspaces may come from one layout. |
+| **Compile** | The deterministic function `(delphi commit, layout) → files + lock`. |
+| **Lock** | `.delphi/lock.tsv`: segment map from compiled output line ranges to their sources. |
 | **Segment** | A contiguous line range of one output file that came from one source. |
-| **Pending diff** | `git diff generated-merged HEAD` over routable paths: everything the workspace has changed relative to its latest render. |
+| **Pending diff** | `git diff generated-merged HEAD` over routable paths: everything the workspace has changed relative to its latest compile. |
 
 ## 3. Repository structure
 
@@ -43,7 +44,7 @@ Delphi/
 ├── lib/
 │   ├── core.sh                      # config, logging, prompts, safe_path, layout lookup, move resolution
 │   ├── parse.sh                     # awk YAML-subset parser
-│   ├── render.sh                    # layout → files + lock
+│   ├── compile.sh                    # layout → files + lock
 │   ├── route.sh                     # pending diff + lock → routing plan
 │   ├── pr.sh                        # temp worktree, commit w/ trailers, push + gh PR
 │   ├── provenance.sh                # resolve harness/model/effort
@@ -55,10 +56,10 @@ Delphi/
 │       └── claude-code.sh           # harness adapter
 └── context/                         # root scope = NER club-wide
     ├── scope.yml
-    ├── blocks/  harness/  layouts/
+    ├── blocks/  docs/  harness/  layouts/
     └── software/                    # child scope
         ├── scope.yml
-        ├── blocks/  harness/  layouts/
+        ├── blocks/  docs/  harness/  layouts/
         ├── finishline/
         ├── application-software/
         │   ├── argos/
@@ -75,6 +76,7 @@ Every scope directory contains a required `scope.yml` and any of these **reserve
 <scope>/
 ├── scope.yml
 ├── blocks/                          # basic blocks: *.md, *.txt (subdirs allowed)
+├── docs/                            # project docs: CONTEXT.md, adr/*.md (subdirs allowed)
 ├── harness/
 │   ├── instructions/*.md            # fragments stacked into the harness instruction file
 │   ├── skills/<name>/SKILL.md (+ any files)   # native skill
@@ -90,7 +92,7 @@ Any other subdirectory is a child scope. Scope names follow the Fall 2026 roster
 
 ### 3.2 Workspace location
 
-Workspaces render **outside** the repo so Delphi's own `CLAUDE.md` is never loaded as an ancestor file:
+Workspaces compile **outside** the repo so Delphi's own `CLAUDE.md` is never loaded as an ancestor file:
 
 ```
 <workspace_root>/                    # default ../Delphi-workspaces (relative to repo root)
@@ -139,6 +141,9 @@ instructions:                         # stacked, in order, into $HARNESS_INSTRUC
   - software/application-software/argos/harness/instructions/argos.md
 blocks:                               # basic blocks; trailing * glob allowed (non-recursive, sorted)
   - software/application-software/argos/blocks/*
+docs:                                 # project docs; same entry rules as blocks
+  - software/application-software/argos/docs/CONTEXT.md
+  - software/application-software/argos/docs/adr/*
 skills:                               # native skill dir or .skill spec
   - software/application-software/argos/harness/skills/run-tests
 mcp:
@@ -191,7 +196,7 @@ software/blocks/git.md	software/blocks/git-conventions.md	2026-10-02
 software/application-software/argos/blocks/old-dir	software/application-software/argos/blocks/ops	2026-10-05
 ```
 
-Append-only. Rows are applied **in order, each once** (exact match, or directory-prefix match for directory entries), and only the rows that are new to the consumer: `block mv` applies the row it appends; a workspace applies the rows added since its `render_commit`. Paths may therefore be reused, and a block can be moved back.
+Append-only. Rows are applied **in order, each once** (exact match, or directory-prefix match for directory entries), and only the rows that are new to the consumer: `block mv` applies the row it appends; a workspace applies the rows added since its `compile_commit`. Paths may therefore be reused, and a block can be moved back.
 
 ### 4.8 `lock.tsv`
 
@@ -207,15 +212,15 @@ CLAUDE.md	46	92	software/application-software/argos/harness/instructions/argos.m
 .delphi/manifest.yml	1	20	software/application-software/argos/layouts/argos-dev/manifest.yml	0c1d2e…
 ```
 
-`sha` is the git blob id of the source at the rendered commit. Every line of every rendered file except `lock.tsv` itself belongs to exactly one segment. Source kinds: a path under `context/`, `@glue` (separator lines), `@gen:<origin>` (generated lines).
+`sha` is the git blob id of the source at the compiled commit. Every line of every compiled file except `lock.tsv` itself belongs to exactly one segment. Source kinds: a path under `context/`, `@glue` (separator lines), `@gen:<origin>` (generated lines).
 
 ### 4.9 Workspace state
 
 | Location | In workspace git? | Contents |
 |---|---|---|
-| `.delphi/manifest.yml` | tracked (rendered) | Editable copy of the layout manifest; edits propose back to the layout. |
-| `.delphi/lock.tsv` | tracked (rendered) | Segment map of the render. Always read from `generated-merged`, never the working copy. |
-| `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `last_pushed`, `pending_since`, `render_commit` (the Delphi commit `generated-merged`'s content corresponds to — authoritative; may be newer than that commit's trailer when later renders were identical). |
+| `.delphi/manifest.yml` | tracked (compiled) | Editable copy of the layout manifest; edits propose back to the layout. |
+| `.delphi/lock.tsv` | tracked (compiled) | Segment map of the compile. Always read from `generated-merged`, never the working copy. |
+| `.git/delphi/meta` | not tracked (inside `.git/`) | `key=value`: `layout`, `layout_path`, `ref` (Delphi branch the workspace tracks, default `main`), `created`, `last_proposed`, `last_proposed_hash`, `last_pushed`, `pending_since`, `compile_commit` (the Delphi commit `generated-merged`'s content corresponds to — authoritative; may be newer than that commit's trailer when later compiles were identical). |
 | `.git/info/exclude` | not tracked | `repos/`, `worktrees/`, `$HARNESS_IGNORE`. |
 | `.git/hooks/commit-msg` | not tracked | Provenance trailer hook (§9). |
 
@@ -225,31 +230,32 @@ Keeping state inside `.git/` means Delphi bookkeeping never dirties the working 
 
 | Ref | Meaning |
 |---|---|
-| `generated` (branch) | History of renders only. Each commit's message is `delphi: render <layout>@<short-sha>` with trailer `Delphi-Render: <full delphi commit>`. |
-| `generated-merged` (tag) | The latest render that has been **merged into `working`**. Its current Delphi commit is `meta.render_commit`. |
+| `generated` (branch) | History of compiles only. Each commit's message is `delphi: compile <layout>@<short-sha>` with trailer `Delphi-Compile: <full delphi commit>`. |
+| `generated-merged` (tag) | The latest compile that has been **merged into `working`**. Its current Delphi commit is `meta.compile_commit`. |
 | `working` | The user's branch, where all development happens. |
 
-`generated` and `generated-merged` differ only while a refresh is pending (render committed, merge not yet completed).
+`generated` and `generated-merged` differ only while a refresh is pending (compile committed, merge not yet completed).
 
-The workspace repo is created with `git init` and shares no history with Delphi; none of these refs are Delphi branches. `generated` holds only Delphi's rendered output (never user work); `working` starts from the first render and merges each later one. The only links back to Delphi are the `Delphi-Render` trailer text and `meta.render_commit`.
+The workspace repo is created with `git init` and shares no history with Delphi; none of these refs are Delphi branches. `generated` holds only Delphi's compiled output (never user work); `working` starts from the first compile and merges each later one. The only links back to Delphi are the `Delphi-Compile` trailer text and `meta.compile_commit`.
 
-## 5. Rendering (`lib/render.sh`)
+## 5. Compiling (`lib/compile.sh`)
 
-`render <commit> <layout-path> <outdir>`: deterministic. Reads sources from a temporary detached worktree of Delphi at `<commit>`, writes output files and `<outdir>/.delphi/lock.tsv`. Each source file's content is emitted with a trailing newline added if missing, so segments never share a line.
+`compile <commit> <layout-path> <outdir>`: deterministic. Reads sources from a temporary detached worktree of Delphi at `<commit>`, writes output files and `<outdir>/.delphi/lock.tsv`. Each source file's content is emitted with a trailing newline added if missing, so segments never share a line.
 
 | Manifest key | Output | Segments |
 |---|---|---|
 | `instructions` | `$HARNESS_INSTRUCTIONS`: delphi header, then fragments in order, one blank line between each. Emitted even when the list is empty (header only). | `@gen:delphi` header, `@glue` blank lines, block per fragment |
 | `blocks` | `context/<path>` — mirrors the block's path exactly (e.g. `software/application-software/argos/blocks/ops/x.md` → `context/software/application-software/argos/blocks/ops/x.md`) | one segment per file |
+| `docs` | `docs/<path below the scope's docs/>` (e.g. `software/application-software/argos/docs/adr/0001-x.md` → `docs/adr/0001-x.md`) | one segment per file |
 | `skills` (native) | `$HARNESS_SKILLS_DIR/<name>/…`, each file copied 1:1 | one segment per file |
 | `skills` (`.skill`) | `$HARNESS_SKILLS_DIR/<name>/SKILL.md` = generated frontmatter (`name`, `description`) + body blocks with `@glue` between; references copied to `references/<basename>` | `@gen:<spec>` frontmatter, block per body/reference |
 | `mcp` | `$HARNESS_MCP_FILE`: `{"mcpServers": {` + fragments separated by a `,` line + `}}`. Omitted when the list is empty. | `@gen:delphi` wrapper, block per fragment, `@glue` commas |
 | `settings` | `$HARNESS_SETTINGS_FILE`, copied 1:1 | one segment |
 | (always) | `.delphi/manifest.yml` copy of the layout manifest | one segment |
 
-**Delphi header** (top of the instruction file, placed first so appends at the end of the file land in a real block): a short note that this workspace was rendered by Delphi from layout `<name>`, that edits are expected, and that finished work should be committed so `delphi workspace propose` can send it upstream.
+**Delphi header** (top of the instruction file, placed first so appends at the end of the file land in a real block): a short note that this workspace was compiled by Delphi from layout `<name>`, that edits are expected, and that finished work should be committed so `delphi workspace propose` can send it upstream.
 
-Render errors (missing path, empty glob, parse error, duplicate output path, unsafe path) abort with no partial output.
+Compile errors (missing path, empty glob, parse error, duplicate output path, unsafe path) abort with no partial output.
 
 ## 6. Commands
 
@@ -260,7 +266,7 @@ Render errors (missing path, empty glob, parse error, duplicate output path, uns
 ### 6.1 `delphi layout new <scope> <layout> [--from <file>]`
 
 1. Validate: scope has `scope.yml`; `<layout>` matches `[a-z0-9-]+` and is unique repo-wide.
-2. Without `--from` (basic script): collect `recommend` entries from the scope and each ancestor (closest first, deduped); ask y/n per item; ask harness (choices = `lib/harness/*.sh`); prompt for repos (`name url` lines until blank). Items are placed into manifest keys by path: `*/harness/instructions/*` → `instructions`, `*/harness/skills/*` → `skills`, `*/harness/mcp/*` → `mcp`, `*/harness/settings/*` → `settings` (more than one → re-ask), `*/blocks/*` → `blocks`.
+2. Without `--from` (basic script): collect `recommend` entries from the scope and each ancestor (closest first, deduped); ask y/n per item; ask harness (choices = `lib/harness/*.sh`); prompt for repos (`name url` lines until blank). Items are placed into manifest keys by path: `*/harness/instructions/*` → `instructions`, `*/harness/skills/*` → `skills`, `*/harness/mcp/*` → `mcp`, `*/harness/settings/*` → `settings` (more than one → re-ask), `*/blocks/*` → `blocks`, `*/docs/*` → `docs`.
 3. With `--from`: use the given manifest verbatim (used by the `delphi-new-layout` skill).
 4. Via `pr.sh` (§7): write `context/<scope>/layouts/<layout>/manifest.yml`, run `check`, commit, PR on branch `delphi/layout/<layout>`. Prints the branch name.
 
@@ -271,9 +277,9 @@ Prints `name<TAB>scope<TAB>harness` for every layout on `origin/main`.
 ### 6.3 `delphi workspace new <layout> [--as <workspace>] [--ref <branch>]`
 
 1. `git fetch`. Resolve the layout by name **in the tree of `origin/<ref>`** (default `main`), following `moves.tsv` at that commit. Workspace name defaults to the layout name; error if `<workspace_root>/<workspace>` exists.
-2. Render at `origin/<ref>` into a temp dir.
+2. Compile at `origin/<ref>` into a temp dir.
 3. `git init` the workspace; write `.git/info/exclude`, `.git/delphi/meta` (with `ref`, `pending_since` empty), and the `commit-msg` hook.
-4. Copy the render in, commit on `generated`, tag `generated-merged`, create and check out `working` from it; set `meta.render_commit`. The working tree is clean.
+4. Copy the compile in, commit on `generated`, tag `generated-merged`, create and check out `working` from it; set `meta.compile_commit`. The working tree is clean.
 5. Clone each repo into `repos/<name>`; create empty `worktrees/`. Clone failures warn and are summarized at the end; the workspace is still usable.
 
 `--ref` lets you try a layout before its PR merges (`workspace new argos-dev --ref delphi/layout/argos-dev`). Such a workspace refreshes from that branch; `propose` refuses until the layout exists on `main` (§6.6), and `refresh --ref main` switches it over once merged.
@@ -281,7 +287,7 @@ Prints `name<TAB>scope<TAB>harness` for every layout on `origin/main`.
 ### 6.4 `delphi workspace open [<workspace>] [--model m] [--effort e] [--shell]`
 
 1. Resolve workspace (argument, current directory, or numbered picker over `status` output).
-2. Warn if the render is behind its ref (suggest `refresh`) or if any workspace is `unproposed` for more than `stale_days`.
+2. Warn if the compile is behind its ref (suggest `refresh`) or if any workspace is `unproposed` for more than `stale_days`.
 3. Export `DELPHI_HARNESS`, `DELPHI_MODEL`, `DELPHI_EFFORT` and `exec harness_launch` in the workspace directory; with `--shell`, `exec $SHELL` there instead.
 
 ### 6.5 `delphi workspace refresh [<workspace>] [--ref <branch>]`
@@ -290,18 +296,18 @@ Idempotent; re-running always picks up where it left off. No `--continue`.
 
 1. Require a clean working tree and no merge in progress. `--ref` updates `meta.ref` first.
 2. `git fetch` Delphi; resolve the layout path through `moves.tsv` at `origin/<ref>`; update `meta.layout_path`.
-3. **Render step** — skipped if `generated` is ahead of `generated-merged` (a pending refresh): render at `origin/<ref>` commit `C` into a temporary worktree of the workspace repo checked out on `generated`, replacing its tracked contents.
-   - Content changed → commit with trailer `Delphi-Render: C`.
-   - Content identical → set `meta.render_commit = C` (no commits; keeps the recorded commit current, e.g. after a squash-merged layout PR or unrelated `main` activity), report "up to date", exit 0.
+3. **Compile step** — skipped if `generated` is ahead of `generated-merged` (a pending refresh): compile at `origin/<ref>` commit `C` into a temporary worktree of the workspace repo checked out on `generated`, replacing its tracked contents.
+   - Content changed → commit with trailer `Delphi-Compile: C`.
+   - Content identical → set `meta.compile_commit = C` (no commits; keeps the recorded commit current, e.g. after a squash-merged layout PR or unrelated `main` activity), report "up to date", exit 0.
    If `origin/<ref>` no longer exists, fail with "branch `<ref>` is gone — run `refresh --ref main`".
 4. **Merge step** — skipped if `generated` is already an ancestor of `HEAD`: `git merge --no-edit generated`. On conflict, exit **2**: "resolve conflicts, commit, then re-run `delphi workspace refresh`."
-5. **Finalize** (only once `generated` is an ancestor of `HEAD`): move tag `generated-merged` to `generated`; set `meta.render_commit` from that commit's `Delphi-Render` trailer. Rewrite any moved paths in `.delphi/manifest.yml`; if changed, commit `delphi: apply moves`. If the pending diff is now empty, set `meta.pending_since = HEAD`. Exit 0.
+5. **Finalize** (only once `generated` is an ancestor of `HEAD`): move tag `generated-merged` to `generated`; set `meta.compile_commit` from that commit's `Delphi-Compile` trailer. Rewrite any moved paths in `.delphi/manifest.yml`; if changed, commit `delphi: apply moves`. If the pending diff is now empty, set `meta.pending_since = HEAD`. Exit 0.
 
-All commits Delphi itself makes in a workspace (renders, merges, `apply moves`) use `--no-verify` so the provenance hook never tags them.
+All commits Delphi itself makes in a workspace (compiles, merges, `apply moves`) use `--no-verify` so the provenance hook never tags them.
 
 **Exit codes:** 0 = up to date or finalized; 2 = merge conflict awaiting resolution; 1 = error.
 
-If a refresh is pending when `--ref` changes, the pending render is merged and finalized first, then the render step runs once more against the new ref. Render and merge commits only appear in workspace history when the rendered content actually changed.
+If a refresh is pending when `--ref` changes, the pending compile is merged and finalized first, then the compile step runs once more against the new ref. Compile and merge commits only appear in workspace history when the compiled content actually changed.
 
 ### 6.6 `delphi workspace propose [<workspace>] [--dry-run]`
 
@@ -311,10 +317,10 @@ If a refresh is pending when `--ref` changes, the pending render is merged and f
 2. Require a clean working tree and `meta.ref = main` (else: "layout not on main yet — merge its PR, then `refresh --ref main`"). Run `refresh`; continue only if it exits 0.
 3. Compute the pending diff and route it (§8) into a plan.
 4. If the plan has no routed changes and no unresolved items: print "nothing to propose", exit 0.
-5. Via `pr.sh`, building from `meta.render_commit` (so patches apply exactly), in order:
+5. Via `pr.sh`, building from `meta.compile_commit` (so patches apply exactly), in order:
    1. **Layout manifest** — if `.delphi/manifest.yml` changed, replace the layout manifest with it (moved paths resolved).
    2. **Block edits** — apply routed hunks.
-   3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`skills:` unless an existing entry or glob already covers it.
+   3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`docs:`/`skills:` unless an existing entry or glob already covers it.
    4. Run `check`; abort (no push) on failure, printing the violations.
    Each step with changes is one commit with provenance trailers.
 6. Push (force, with an explicit lease — §7); `gh pr create` if no open PR exists for the branch, otherwise `gh pr edit` to replace the body. Refuse if an open PR on the branch was authored by someone other than the current `gh` user. PR body: routed-change summary, provenance table (§9), **Unresolved** section (each item as a fenced diff with its workspace path and reason).
@@ -332,11 +338,11 @@ For each directory in `workspace_root` containing `.git/delphi/meta`, print: wor
 | `proposed` | pending diff hash = `last_proposed_hash` |
 | `unproposed` | otherwise |
 
-Age = days since `last_proposed` (or `created`) for `unproposed`. Behind = `origin/<ref>` has commits since `meta.render_commit` touching any lock source, the layout manifest, or a directory covered by a manifest glob. `--offline` skips `git fetch`. Status cannot see whether a PR was closed; a rejected workspace stays `proposed` until its change is reverted or re-proposed.
+Age = days since `last_proposed` (or `created`) for `unproposed`. Behind = `origin/<ref>` has commits since `meta.compile_commit` touching any lock source, the layout manifest, or a directory covered by a manifest glob. `--offline` skips `git fetch`. Status cannot see whether a PR was closed; a rejected workspace stays `proposed` until its change is reverted or re-proposed.
 
 ### 6.8 `delphi block mv <old> <new>`
 
-Only paths under a scope's `blocks/` or `harness/` (layouts cannot be moved in v1). Via `pr.sh`: validate `old` exists and `new` does not, both inside `context/`; `git mv`; append to `moves.tsv`; rewrite exact and directory-prefix references in every `manifest.yml`, `scope.yml`, and `.skill`; run `check`; commit; PR on branch `delphi/mv/<basename>-<YYYYMMDD>`. Existing workspaces pick up the move on their next `refresh`/`propose`.
+Only paths under a scope's `blocks/`, `docs/`, or `harness/` (layouts cannot be moved in v1). Via `pr.sh`: validate `old` exists and `new` does not, both inside `context/`; `git mv`; append to `moves.tsv`; rewrite exact and directory-prefix references in every `manifest.yml`, `scope.yml`, and `.skill`; run `check`; commit; PR on branch `delphi/mv/<basename>-<YYYYMMDD>`. Existing workspaces pick up the move on their next `refresh`/`propose`.
 
 ### 6.9 `delphi check`
 
@@ -370,7 +376,8 @@ Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `
 | 2 | Binary | unresolved |
 | 3 | Deleted | no-op if its source is no longer referenced by the workspace's `.delphi/manifest.yml` (dropped via the manifest); otherwise unresolved — blocks are dropped by editing `.delphi/manifest.yml` |
 | 4 | Modified, in lock | per-hunk routing (below) |
-| 5 | Added at `context/<p>` where `<p>` is `<scope>/blocks/…` and `<scope>` is an existing scope at `meta.render_commit` | new block at `<p>` |
+| 5 | Added at `context/<p>` where `<p>` is `<scope>/blocks/…` and `<scope>` is an existing scope at `meta.compile_commit` | new block at `<p>` |
+| 5a | Added at `docs/<d>/<f>` | new doc beside the compiled docs already in `docs/<d>/` (their source directory), else at `<layout-scope>/docs/<d>/<f>` |
 | 6 | Added under `$HARNESS_SKILLS_DIR/<name>/` where `<name>` is a native skill in the lock | new file in that skill's source directory |
 | 7 | Added under `$HARNESS_SKILLS_DIR/<name>/` where `<name>` is not in the lock | new native skill at `<layout-scope>/harness/skills/<name>/` |
 | 8 | Anything else | unresolved |
@@ -387,7 +394,7 @@ Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `
 | Inside `@gen:<path>.skill`, touching only `name:`/`description:` lines | rewrite those keys in the `.skill` spec |
 | Anything else: in `@glue`/other `@gen`, spanning segments, or `git apply` fails (e.g. the same block edited in two outputs) | unresolved |
 
-**Replacing a block** needs no special case: swap the entry in `.delphi/manifest.yml` (old path → new path), delete the old rendered file, and add the new one under `context/<scope>/blocks/`. The deletion is a no-op (rule 3), the manifest edit routes by rule 1, and the new file by rule 5.
+**Replacing a block** needs no special case: swap the entry in `.delphi/manifest.yml` (old path → new path), delete the old compiled file, and add the new one under `context/<scope>/blocks/`. The deletion is a no-op (rule 3), the manifest edit routes by rule 1, and the new file by rule 5.
 
 **Placement is strict by design:** a file not in a recognised location stays unresolved; Delphi never guesses where it belongs.
 
@@ -405,7 +412,7 @@ Delphi-Model: claude-opus-5-5
 Delphi-Effort: high
 Delphi-Layout: software/application-software/argos/layouts/argos-dev
 Delphi-Workspace: argos-dev--bug-612        # propose only
-Delphi-Base: 0cdd375                        # propose only: meta.render_commit
+Delphi-Base: 0cdd375                        # propose only: meta.compile_commit
 ```
 
 **Resolution order** (`lib/provenance.sh`), per field: CLI flag → `DELPHI_*` env (set by `workspace open`) → adapter's `harness_provenance` fallback. If still missing: prompt when interactive (accepting `none` for runs without an LLM); error when non-interactive. Never written as "unknown".
@@ -430,7 +437,7 @@ Delphi-Base: 0cdd375                        # propose only: meta.render_commit
 | `harness_provenance` | fn | prints 3 lines: `claude-code <version>`, model, effort (from `CLAUDE_CODE_EFFORT_LEVEL` when set) |
 | `harness_launch <model> <effort>` | fn | `exec claude` with `--model` when given and `CLAUDE_CODE_EFFORT_LEVEL` set |
 
-The generic renderer does all file work; adapters only supply names and two functions. New harnesses = new adapter file.
+The generic compiler does all file work; adapters only supply names and two functions. New harnesses = new adapter file.
 
 ## 11. LLM workflows (Delphi repo skills)
 

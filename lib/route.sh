@@ -30,8 +30,8 @@ _rt_covered() {
     END { exit !f }' "$2"
 }
 
-# _rt_skill_src <out>: source of the rendered skill dir holding <out>: a .skill spec (built),
-# a native skill dir, or empty when that skill dir is not rendered.
+# _rt_skill_src <out>: source of the compiled skill dir holding <out>: a .skill spec (built),
+# a native skill dir, or empty when that skill dir is not compiled.
 _rt_skill_src() {
   local p=${1#"$HARNESS_SKILLS_DIR"/}
   p="$HARNESS_SKILLS_DIR/${p%%/*}/"
@@ -56,7 +56,7 @@ _rt_dropped() {
 
 # _rt_new <out> <target> [<manifest key> <entry>]: a new file, unless the target exists upstream.
 _rt_new() {
-  if dgit cat-file -e "$(meta render_commit):context/$2" 2>/dev/null; then
+  if dgit cat-file -e "$(meta compile_commit):context/$2" 2>/dev/null; then
     _rt_unres "$1" "exists upstream; add it via the manifest instead"
   else _rt_row new "$@"; fi
 }
@@ -64,7 +64,7 @@ _rt_new() {
 route_plan() {
   local rc lp st out p scope sk name rest src n=0
   make_tmp; RT=$REPLY; mkdir -p "$RT/p"; : > "$RT/plan"; : > "$RT/unresolved.md"
-  rc=$(meta render_commit); lp=$(meta layout_path)
+  rc=$(meta compile_commit); lp=$(meta layout_path)
   load_harness "$(meta harness)"
   wgit show generated-merged:.delphi/lock.tsv | sed '/^#/d' > "$RT/lock" || die "cannot read lock"
   wgit show HEAD:.delphi/manifest.yml > "$RT/manifest.yml" || die "cannot read .delphi/manifest.yml"
@@ -83,10 +83,10 @@ route_plan() {
     case $st in
       D)
         if _rt_dropped "$out"; then _rt_row noop "$out" "deleted; its source was dropped from .delphi/manifest.yml"
-        else _rt_unres "$out" "deleted, but still rendered by .delphi/manifest.yml (drop blocks by editing the manifest)"; fi ;;
+        else _rt_unres "$out" "deleted, but still compiled by .delphi/manifest.yml (drop blocks by editing the manifest)"; fi ;;
       M)
         awk -F'\t' -v o="$out" '$1 == o' "$RT/lock" > "$RT/seg"
-        if [ ! -s "$RT/seg" ]; then _rt_unres "$out" "not a rendered file"; continue; fi
+        if [ ! -s "$RT/seg" ]; then _rt_unres "$out" "not a compiled file"; continue; fi
         n=$((n + 1))
         wgit diff -U0 --no-renames --no-ext-diff --no-color generated-merged HEAD -- "$out" > "$RT/diff"
         if ! grep -q '^@@' "$RT/diff"; then _rt_unres "$out" "mode-only change"; continue; fi
@@ -102,6 +102,11 @@ route_plan() {
             else
               _rt_unres "$out" "new file: must be under context/<existing scope>/blocks/"
             fi ;;
+          docs/?*)
+            p=$(awk -F'\t' -v d="${out%/*}/" 'index($1, d) == 1 && index(substr($1, length(d) + 1), "/") == 0 && $4 ~ /\/docs\// {
+              sub(/[^\/]*$/, "", $4); print $4; exit }' "$RT/lock")
+            if [ -n "$p" ]; then p=$p${out##*/}; else p=${lp%layouts/*}$out; fi
+            if path_ok "$p"; then _rt_new "$out" "$p" docs "$p"; else _rt_unres "$out" "unsafe path"; fi ;;
           "$sk"/*/*)
             name=${out#"$sk"/}; name=${name%%/*}; rest=${out#"$sk/$name/"}
             src=$(_rt_skill_src "$out")
@@ -110,7 +115,7 @@ route_plan() {
               *.skill) _rt_unres "$out" "new file in a built (.skill) skill: add it as a block and list it in the spec" ;;
               *) _rt_new "$out" "$src/$rest" ;;
             esac ;;
-          *) _rt_unres "$out" "new file: must be under context/<scope>/blocks/ or $sk/<name>/" ;;
+          *) _rt_unres "$out" "new file: must be under context/<scope>/blocks/, docs/, or $sk/<name>/" ;;
         esac ;;
       *) _rt_unres "$out" "unsupported change type '$st'" ;;
     esac
