@@ -25,10 +25,11 @@ _r_file() {
   _r_seg "$1" "$start" "$end" "$2" "$(git hash-object "$src")"
 }
 
-# _r_copy <out-rel> <src-rel>: 1:1 copy; the output path must not already exist.
+# _r_copy <out-rel> <src-rel>: 1:1 copy (keeps the executable bit); the output path must not already exist.
 _r_copy() {
   [ -e "$R_OUT/$1" ] && die "compile: two sources map to the same output '$1'"
   _r_file "$1" "$2"
+  if [ -x "$R_SRC/context/$2" ]; then chmod +x "$R_OUT/$1" || die "compile: cannot chmod $1"; fi
 }
 
 # _r_text <out-rel> <label> <text>: append generated (@gen:…) or separator (@glue) lines.
