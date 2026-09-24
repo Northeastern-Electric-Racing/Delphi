@@ -13,9 +13,8 @@ layouts into workspaces, refreshes them, and proposes edits back as PRs. The des
 - `lib/route.sh` + `lib/route.awk`: pending diff + lock → plan → edits in a PR worktree.
 - `lib/pr.sh`: the only write path to Delphi (temp worktree, commit with trailers, push, `gh`).
 - `lib/provenance.sh`: harness/model/effort resolution.
-- `lib/workspace.sh`, `lib/layout.sh`, `lib/block.sh`, `lib/check.sh`: the command groups.
+- `lib/workspace.sh`, `lib/layout.sh`, `lib/block.sh`, `lib/check.sh`, `lib/setup.sh`: the command groups.
 - `lib/harness/<name>.sh`: harness adapters (names + `harness_provenance` + `harness_launch`).
-- `setup.sh`: symlinks `bin/delphi` onto PATH (default `~/.local/bin`).
 - `dev/sandbox.sh`: throwaway end-to-end playground. It is the only test harness (no automated tests, no CI).
 - `.claude/skills/`: LLM workflows that drive the CLI (`delphi-new-layout`, `delphi-propose`).
 

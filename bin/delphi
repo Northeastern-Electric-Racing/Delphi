@@ -29,6 +29,7 @@ usage: delphi <command> [args]
   block mv <old> <new>                           move/rename a block
 
   check                                          validate the repo
+  setup [dir]                                    put `delphi` on PATH (default ~/.local/bin)
 
 Commands that write to Delphi accept --model, --effort, --yes.
 EOF
@@ -41,6 +42,7 @@ case $group in
   workspace|ws) . "$DELPHI_ROOT/lib/workspace.sh"; workspace_main "$@" ;;
   block)        . "$DELPHI_ROOT/lib/block.sh";     block_main "$@" ;;
   check)        . "$DELPHI_ROOT/lib/check.sh";     check_main "$@" ;;
+  setup)        . "$DELPHI_ROOT/lib/setup.sh";     setup_main "$@" ;;
   ""|-h|--help|help) usage ;;
   *) die "unknown command '$group' (see: delphi help)" ;;
 esac

@@ -356,6 +356,10 @@ Exits non-zero listing every violation:
 - `moves.tsv` rows well-formed.
 - MCP fragments form valid JSON when wrapped — only if `jq` is installed; otherwise skipped with a note.
 
+### 6.10 `delphi setup [dir]`
+
+Writes a two-line `delphi` wrapper (`exec <repo>/bin/delphi "$@"`) into `dir` (default `~/.local/bin`) and warns if `dir` is not on `PATH`. A wrapper rather than a symlink, because Git Bash copies on `ln -s` by default.
+
 ## 7. Writing to Delphi (`lib/pr.sh`)
 
 All commands that modify the monorepo use one path:

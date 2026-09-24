@@ -12,7 +12,7 @@ Design: `context/docs/delphi-design.md`.
 ## Quick start
 
 ```sh
-./setup.sh                    # once: links `delphi` into ~/.local/bin (or pass a dir)
+bin/delphi setup              # once: puts `delphi` on PATH (~/.local/bin, or pass a dir)
 
 delphi ws new argos-dev       # create the workspace
 delphi ws open argos-dev      # start Claude Code in it
@@ -32,6 +32,7 @@ delphi workspace new <layout> [--as <ws>] [--ref <branch>]
 delphi workspace open|refresh|propose|status         (alias: ws)
 delphi block mv <old> <new>                          move a block (branch + PR)
 delphi check                                         validate the repo
+delphi setup [dir]                                   put `delphi` on PATH
 ```
 
 Commands that write to Delphi accept `--model`, `--effort` (provenance) and `--yes`. Without
