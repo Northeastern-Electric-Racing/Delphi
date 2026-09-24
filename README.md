@@ -9,20 +9,19 @@ by org chart under `context/`, plus a small bash CLI:
 
 Design: `context/docs/delphi-design.md`.
 
-## Quick start (sandbox, no GitHub)
+## Quick start
 
 ```sh
-eval "$(/bin/bash dev/sandbox.sh /tmp/delphi-sb)"   # defines `d` (CLI under /bin/bash); stubs `gh`
-d check                                              # validate the sample repo
-d workspace new argos-dev                            # compile into ../Delphi-workspaces/argos-dev
-d ws status                                          # state, staleness, next command
-d ws open argos-dev                                  # launch Claude Code there (--shell for a shell)
-# … edit files in the workspace and commit …
-d ws propose --dry-run                               # see how edits route; unresolved items listed
-d ws propose --yes                                   # refresh, build the PR branch, push to the sandbox origin
+./setup.sh                    # once: links `delphi` into ~/.local/bin (or pass a dir)
+
+delphi ws new argos-dev       # create the workspace
+delphi ws open argos-dev      # start Claude Code in it
+delphi ws propose             # send context edits back as a PR (run inside the workspace)
+delphi ws refresh             # pull in Delphi updates
 ```
 
-For real use, put `bin/` on `PATH` and run `delphi …` from a clone whose `origin` is the GitHub repo.
+Code changes go in `repos/argos` with its own PRs. Context changes (CLAUDE.md, skills, docs) are
+committed in the workspace and sent back with `propose`.
 
 ## Commands
 
@@ -37,3 +36,8 @@ delphi check                                         validate the repo
 
 Commands that write to Delphi accept `--model`, `--effort` (provenance) and `--yes`. Without
 `--yes`, a non-interactive run fails fast instead of prompting.
+
+## Developing Delphi
+
+Test CLI changes in the sandbox, never against GitHub (see `CLAUDE.md`):
+`eval "$(/bin/bash dev/sandbox.sh /tmp/delphi-sb)"`, then `d <command>`.
