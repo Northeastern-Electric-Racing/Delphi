@@ -2,7 +2,14 @@
 
 Argos is a real-time telemetry platform for Northeastern Electric Racing (NER). Angular 19 frontend (`angular-client/`) and Rust backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in `siren-base/`.
 
-The Argos repo is checked out at `repos/argos/`. Paths below are relative to it. Run every workflow (commit, PR, run, test) in the checkout for the task: `repos/argos/`, or `worktrees/<branch>/` if it has its own worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
+The Argos repo is checked out at `repos/argos/`. Paths below are relative to a checkout of it. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
+
+## Worktrees
+
+- `repos/argos/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there. Only fetch, fast-forward `develop`, and manage worktrees from it.
+- Every ticket gets its own worktree at `worktrees/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Start one with `git -C repos/argos fetch origin && git -C repos/argos worktree add -b <branch> ../../worktrees/<branch> origin/develop`. For a branch that already exists, drop `-b` and pass the branch name.
+- A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
+- After the PR merges, remove it with `git -C repos/argos worktree remove ../../worktrees/<branch>`.
 
 ## Local Development
 
