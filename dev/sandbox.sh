@@ -45,6 +45,9 @@ printf '# Argos overview\n\nLine one.\nLine two.\nLine three.\n' > "$A/blocks/ov
 printf '# Testing\n\nRun `npm test` in angular-client.\nRun `cargo test` in the server.\n' > "$A/blocks/testing.md"
 printf -- '---\nname: run-tests\ndescription: Run the Argos test suites.\n---\n\nRun both suites and summarize failures.\n' \
   > "$A/harness/skills/run-tests/SKILL.md"
+mkdir -p "$A/harness/skills/run-tests/scripts"
+printf '#!/bin/sh\necho running tests\n' > "$A/harness/skills/run-tests/scripts/run.sh"
+chmod +x "$A/harness/skills/run-tests/scripts/run.sh"
 cat > "$A/harness/skills/triage.skill" <<'EOF'
 name: triage
 description: Triage a failing Argos test.

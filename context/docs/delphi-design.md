@@ -247,7 +247,7 @@ The workspace repo is created with `git init` and shares no history with Delphi;
 | `instructions` | `$HARNESS_INSTRUCTIONS`: delphi header, then fragments in order, one blank line between each. Emitted even when the list is empty (header only). | `@gen:delphi` header, `@glue` blank lines, block per fragment |
 | `blocks` | `context/<path>` — mirrors the block's path exactly (e.g. `software/application-software/argos/blocks/ops/x.md` → `context/software/application-software/argos/blocks/ops/x.md`) | one segment per file |
 | `docs` | `docs/<path below the scope's docs/>` (e.g. `software/application-software/argos/docs/adr/0001-x.md` → `docs/adr/0001-x.md`) | one segment per file |
-| `skills` (native) | `$HARNESS_SKILLS_DIR/<name>/…`, each file copied 1:1 | one segment per file |
+| `skills` (native) | `$HARNESS_SKILLS_DIR/<name>/…`, each file (subdirectories included, e.g. `scripts/`) copied 1:1, executable bit kept | one segment per file |
 | `skills` (`.skill`) | `$HARNESS_SKILLS_DIR/<name>/SKILL.md` = generated frontmatter (`name`, `description`) + body blocks with `@glue` between; references copied to `references/<basename>` | `@gen:<spec>` frontmatter, block per body/reference |
 | `mcp` | `$HARNESS_MCP_FILE`: `{"mcpServers": {` + fragments separated by a `,` line + `}}`. Omitted when the list is empty. | `@gen:delphi` wrapper, block per fragment, `@glue` commas |
 | `settings` | `$HARNESS_SETTINGS_FILE`, copied 1:1 | one segment |
