@@ -4,7 +4,7 @@ description: Implement a piece of work based on a spec or set of tickets.
 disable-model-invocation: true
 ---
 
-Implement the ticket(s) the user names, one ticket per fresh context, on its own branch.
+Implement the ticket(s) the user names, one ticket per fresh context, each in its own worktree at `worktrees/<branch>/` (never in `repos/argos/`). Create the worktree first if it doesn't exist.
 
 1. Work test-first at the spec's agreed seams, one behavior at a time: write a failing test, then the minimum code to pass it, and refactor only while green. Test behavior through public interfaces, and mock only at system boundaries.
 2. Check as you go:
