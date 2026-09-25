@@ -12,7 +12,8 @@ Run these inside the workspace. Drive the CLI. Don't edit the Delphi repo direct
    **Unresolved** items, each with its path, reason, and diff.
 3. For each unresolved item, suggest a fix *in the workspace* and apply it only after the user approves:
    - **Edit touches generated/separator lines or spans two blocks:** move the text wholly inside
-     one block's lines, or split it into two edits.
+     one block's lines, or split it into two edits. In `CLAUDE.md`, a section set off by blank
+     lines between fragments routes as a new fragment (`fragment` in the plan).
    - **New file outside a recognised place:** move it under `context/<scope>/blocks/` (an
      existing scope), `docs/` for a doc, or `.claude/skills/<name>/` for a skill. Otherwise leave it out of the PR
      by deleting it or keeping it uncommitted.

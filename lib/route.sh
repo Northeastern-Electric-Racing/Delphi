@@ -5,6 +5,8 @@
 #                                  patch    <out> <block> <patchfile>
 #                                  key      <out> <spec> <key> <value>
 #                                  new      <out> <target> [<manifest key> <entry>]
+#                                  fragment <out> <target> <file> <after: instructions entry or ->
+#                                           (a new section of the instruction file)
 #                                  noop     <out> <reason>
 #                                  unresolved <out> <reason>
 #                   unresolved.md  one markdown section per unresolved item (for the PR body)
@@ -61,8 +63,20 @@ _rt_new() {
   else _rt_row new "$@"; fi
 }
 
+# _rt_fragment <out> <slug> <file> <after>: a new instruction fragment at the layout scope's
+# harness/instructions/<slug>.md, suffixed -2, -3, … past names taken upstream or in this plan.
+_rt_fragment() {
+  local base="${lp%layouts/*}harness/instructions/$2" t n=1
+  t=$base.md
+  while dgit cat-file -e "$rc:context/$t" 2>/dev/null ||
+        awk -F'\t' -v t="$t" '$1 == "fragment" && $3 == t { f = 1 } END { exit !f }' "$RT/plan"; do
+    n=$((n + 1)); t=$base-$n.md
+  done
+  _rt_row fragment "$1" "$t" "$3" "$4"
+}
+
 route_plan() {
-  local rc lp st out p scope sk name rest src n=0
+  local rc lp st out p scope sk name rest src nf k o t a b n=0
   make_tmp; RT=$REPLY; mkdir -p "$RT/p"; : > "$RT/plan"; : > "$RT/unresolved.md"
   rc=$(meta compile_commit); lp=$(meta layout_path)
   load_harness "$(meta harness)"
@@ -90,8 +104,13 @@ route_plan() {
         n=$((n + 1))
         wgit diff -U0 --no-renames --no-ext-diff --no-color generated-merged HEAD -- "$out" > "$RT/diff"
         if ! grep -q '^@@' "$RT/diff"; then _rt_unres "$out" "mode-only change"; continue; fi
-        awk -F'\t' -v OUT="$out" -v PDIR="$RT/p" -v PID="$n" -v UMD="$RT/unresolved.md" \
-          -f "$DELPHI_ROOT/lib/route.awk" "$RT/seg" "$RT/diff" >> "$RT/plan" || die "route.awk failed on $out" ;;
+        nf=""; [ "$out" != "$HARNESS_INSTRUCTIONS" ] || nf=1
+        awk -F'\t' -v OUT="$out" -v PDIR="$RT/p" -v PID="$n" -v UMD="$RT/unresolved.md" -v NEWOK="$nf" \
+          -f "$DELPHI_ROOT/lib/route.awk" "$RT/seg" "$RT/diff" > "$RT/rows" || die "route.awk failed on $out"
+        sed '/^fragment	/d' "$RT/rows" >> "$RT/plan"
+        while IFS='	' read -r k o t a b; do
+          [ "$k" != fragment ] || _rt_fragment "$o" "$t" "$a" "$b"
+        done < "$RT/rows" ;;
       A)
         case $out in
           context/*)
@@ -122,18 +141,21 @@ route_plan() {
   done < "$RT/files"
 }
 
-# _rt_list_add <file> <key> <entry>: append `  - entry` to a top-level list, creating the key.
+# _rt_list_add <file> <key> <entry> [<after>]: add `  - entry` to a top-level list, creating the
+# key: after item <after> (- = first), else at the end.
 _rt_list_add() {
-  awk -v k="$2" -v v="$3" '
-    ins && !/^  - / { print "  - " v; ins = 0; done = 1 }
+  awk -v k="$2" -v v="$3" -v a="${4:-}" '
+    function put() { if (!done) print "  - " v; done = 1 }
+    ins && !/^  - / { put(); ins = 0 }
     { print }
-    $0 ~ "^" k ":[ ]*(#.*)?$" { ins = 1 }
-    END { if (ins) print "  - " v; else if (!done) { print k ":"; print "  - " v } }' "$1" > "$1.tmp" &&
+    ins && a != "" && $0 == "  - " a { put() }
+    $0 ~ "^" k ":[ ]*(#.*)?$" { ins = 1; if (a == "-") put() }
+    END { if (ins) put(); if (!done) { print k ":"; print "  - " v } }' "$1" > "$1.tmp" &&
     mv "$1.tmp" "$1" || die "cannot update $1"
 }
 
 route_apply() {
-  local k out tgt a b mf lay dst entries patched=""
+  local k out tgt a b mf lay src dst entries patched="" fa="" ft=""
   lay=$(meta layout); mf=$(safe_path "$PR_WT/context" "$(meta layout_path)/manifest.yml") || exit 1
   : > "$RT/applied"
 
@@ -167,10 +189,15 @@ $tgt" ;;
 
   make_tmp; entries="$REPLY/entries"
   while IFS='	' read -r k out tgt a b; do
-    [ "$k" = new ] || continue
+    case $k in new) src="$WS/$out" ;; fragment) src=$a ;; *) continue ;; esac
     dst=$(safe_path "$PR_WT/context" "$tgt") || exit 1
-    mkdir -p "$(dirname "$dst")" && cp "$WS/$out" "$dst" || die "cannot add $tgt"
+    mkdir -p "$(dirname "$dst")" && cp "$src" "$dst" || die "cannot add $tgt"
     printf '%s\t%s\t%s\n' "$k" "$out" "$tgt" >> "$RT/applied"
+    if [ "$k" = fragment ]; then
+      # fragments after the same entry keep their file order
+      if [ "$b" = "$fa" ]; then b=$ft; else fa=$b; fi
+      _rt_list_add "$mf" instructions "$tgt" "$b"; ft=$tgt; continue
+    fi
     [ -n "$a" ] || continue
     parse_yaml "$mf" | awk -F'\t' -v k="$a" 'NF == 2 && $1 == k { print $2 }' > "$entries" || exit 1
     _rt_covered "$b" "$entries" || _rt_list_add "$mf" "$a" "$b"
