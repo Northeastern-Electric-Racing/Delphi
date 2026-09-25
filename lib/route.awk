@@ -1,10 +1,12 @@
 # route.awk — map one output file's `git diff -U0` hunks onto its lock segments.
 #
 # awk -F'\t' -v OUT=<workspace path> -v PDIR=<patch dir> -v PID=<unique id> -v UMD=<unresolved.md> \
-#     -f route.awk <lock rows for OUT> <diff>
+#     [-v NEWOK=1] -f route.awk <lock rows for OUT> <diff>
 #
 # stdout plan rows:  patch<TAB>OUT<TAB>block<TAB>patchfile      one combined patch per block
 #                    key<TAB>OUT<TAB>spec<TAB>key<TAB>value     edited name:/description: of a built skill
+#                    fragment<TAB>OUT<TAB>slug<TAB>file<TAB>after   new section (NEWOK: the instruction file);
+#                                                               after = preceding fragment's source, or -
 #                    unresolved<TAB>OUT<TAB>reason              also written to UMD as markdown
 
 FNR == NR { ns++; S[ns] = $2 + 0; E[ns] = $3 + 0; SRC[ns] = $4; next }
@@ -39,6 +41,7 @@ function flush(   i, j, t, pos, hn) {
     if (i && i == j && isblock(i)) { t = i; pos = A - S[i] + 1 }
     else if (i && i == j && SRC[i] ~ /^@gen:.*\.skill$/) { skillkeys(i); return }
     else { unresolved("change spans segments or touches generated/separator lines"); return }
+  } else if (NEWOK && fragment()) { return
   } else if (A == 0) {
     i = seg(1)
     if (isblock(i)) { t = i; pos = 0 }
@@ -50,7 +53,36 @@ function flush(   i, j, t, pos, hn) {
     else if (!isblock(i) && isblock(j)) { t = j; pos = 0 }               # prepend to next block
     else { unresolved(isblock(i) ? "insertion between two blocks" : "insertion inside generated/separator lines"); return }
   }
-  hn = ++HC[t]; HP[t, hn] = pos; HN[t, hn] = N; HM[t, hn] = M; HB[t, hn] = body()
+  hunk(t, pos, N, M, body())
+}
+
+function hunk(t, pos, n, m, b,   hn) { hn = ++HC[t]; HP[t, hn] = pos; HN[t, hn] = n; HM[t, hn] = m; HB[t, hn] = b }
+function blank(k) { return BODY[k] ~ /^\+[ \t]*$/ }
+function rng(lo, hi,   k, s) { s = ""; for (k = lo; k <= hi; k++) s = s BODY[k] "\n"; return s }
+
+# fragment(): an insertion at a segment boundary is a new instruction fragment, except the lines
+# touching a neighbouring block with no blank line between, which extend that block.
+# Writes the fragment to a file and prints its row.
+function fragment(   i, j, t, k, lo, hi, a, z, s, f) {
+  i = seg(A); j = seg(A + 1)
+  if (A > 0 && A != E[i]) return 0
+  lo = 1; hi = nb
+  if (isblock(i)) while (lo <= nb && !blank(lo)) lo++
+  if (isblock(j)) while (hi >= 1 && !blank(hi)) hi--
+  a = lo - 1; z = hi + 1                      # 1..a extends block i, z..nb extends block j
+  while (lo <= hi && blank(lo)) lo++
+  while (hi >= lo && blank(hi)) hi--
+  if (lo > hi) return 0
+  if (a) hunk(i, E[i] - S[i] + 1, 0, a, rng(1, a))
+  if (z <= nb) hunk(j, 0, 0, nb - z + 1, rng(z, nb))
+  for (t = ns; t > 0; t--) if (isblock(t) && E[t] <= A) break
+  s = tolower(substr(BODY[lo], 2)); sub(/^[ \t]*#+/, "", s); gsub(/[^a-z0-9]+/, "-", s)
+  gsub(/^-+|-+$/, "", s); s = substr(s, 1, 40); sub(/-+$/, "", s); if (s == "") s = "section"
+  f = PDIR "/" PID ".f" A ".md"
+  for (k = lo; k <= hi; k++) print substr(BODY[k], 2) > f
+  close(f)
+  print "fragment\t" OUT "\t" s "\t" f "\t" (t ? SRC[t] : "-")
+  return 1
 }
 
 function skillkeys(i,   k, l, ok, key, val, spec) {

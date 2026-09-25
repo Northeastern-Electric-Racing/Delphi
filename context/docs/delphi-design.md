@@ -320,7 +320,7 @@ If a refresh is pending when `--ref` changes, the pending compile is merged and 
 5. Via `pr.sh`, building from `meta.compile_commit` (so patches apply exactly), in order:
    1. **Layout manifest** — if `.delphi/manifest.yml` changed, replace the layout manifest with it (moved paths resolved).
    2. **Block edits** — apply routed hunks.
-   3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`docs:`/`skills:` unless an existing entry or glob already covers it.
+   3. **New blocks** — add files; append each to the layout manifest's `blocks:`/`docs:`/`skills:` unless an existing entry or glob already covers it. New instruction fragments (§8) are inserted into `instructions:` at their position.
    4. Run `check`; abort (no push) on failure, printing the violations.
    Each step with changes is one commit with provenance trailers.
 6. Push (force, with an explicit lease — §7); `gh pr create` if no open PR exists for the branch, otherwise `gh pr edit` to replace the body. Refuse if an open PR on the branch was authored by someone other than the current `gh` user. PR body: routed-change summary, provenance table (§9), **Unresolved** section (each item as a fenced diff with its workspace path and reason).
@@ -390,6 +390,7 @@ Input: pending diff (`git diff --no-renames generated-merged HEAD`), excluding `
 
 | Hunk | Result |
 |---|---|
+| Insertion (`n = 0`) in `$HARNESS_INSTRUCTIONS` at a segment boundary (`a = 0` or `a = seg.end`) | **new fragment**, except the leading/trailing lines touching a neighbouring block with no blank line between, which extend that block (rows below). The rest, trimmed of blank lines, goes to `<layout-scope>/harness/instructions/<slug>.md` (slug from its first line; `-2`, `-3`, … when taken) and is listed in the layout's `instructions:` after the preceding fragment (first when none) |
 | All base lines `a..a+n-1` inside one block segment | patch that block (`block_line = base_line − seg.start + 1`) |
 | Insertion (`n = 0`) after line `a`, where `seg.start ≤ a < seg.end` of a block segment | patch that block |
 | Insertion after the last line of a block segment (`a = seg.end`), when the next line is end-of-file or a non-block segment | append to that block |
