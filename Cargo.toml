@@ -1,0 +1,13 @@
+[package]
+name = "delphi"
+version = "0.1.0"
+edition = "2021"
+description = "Delphi CLI: compile layouts into workspaces, refresh them, propose edits back as PRs"
+publish = false
+
+[[bin]]
+name = "delphi"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
