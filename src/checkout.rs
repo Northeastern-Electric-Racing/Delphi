@@ -5,22 +5,19 @@
 
 use crate::check::check_tree;
 use crate::core::{
-    ask, cwd, defer, delphi_fetch, dgit, env_nonempty, exit, git, is_tty, join, kv, make_tmp, need_yes_or_tty, ok,
-    ok_q, out, out_q, parse_args, root, run_deferred, safe_path, under, workspace_root, write_replace, Fail, Opts,
-    OFFLINE,
+    ask, cwd, env_nonempty, exit, fetch, fetch_main, git, is_tty, join, kv, need_yes_or_tty, ok, ok_q, out, out_q,
+    parse_args, root, run_deferred, safe_path, under, workspace_root, worktree, write_file, write_replace, Fail, Opts,
 };
 use crate::parse::parse_yaml;
 use crate::pr::{open_pr, user, Pr};
-use crate::sync::{merge_base, sync, Report};
+use crate::sync::{merge_base, sync};
 use crate::workspace::{self, sharing, YML};
 use crate::{die, harness, info, provenance, warn};
 use anyhow::Result;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::atomic::Ordering;
 
 pub fn main(cmd: &str, args: &[String]) -> Result<()> {
     let flags = match cmd {
@@ -43,10 +40,7 @@ pub fn main(cmd: &str, args: &[String]) -> Result<()> {
             let co = resolve(name)?;
             match cmd {
                 "open" => open(&co, &o),
-                "refresh" => {
-                    co.fetch();
-                    refresh(&co)
-                }
+                "refresh" => refresh(&co),
                 "diff" => diff(&co, o.upstream),
                 _ => propose(&co, &o),
             }
@@ -96,9 +90,7 @@ impl Co {
         self.dir.join(".git/MERGE_HEAD").is_file()
     }
     fn fetch(&self) {
-        if !OFFLINE.load(Ordering::Relaxed) && !ok_q(self.git().args(["fetch", "--quiet", "--prune", "origin"])) {
-            warn!("git fetch failed in {}; using local refs", self.name);
-        }
+        fetch(&self.dir, &format!(" in {}", self.name));
     }
     fn count(&self, revs: &[&str], folder_only: bool) -> usize {
         let mut c = self.git();
@@ -157,7 +149,7 @@ fn resolve(name: &str) -> Result<Co> {
         for (i, n) in list.iter().enumerate() {
             info!("  {}) {n}", i + 1);
         }
-        let n = ask("Checkout number?", "")?;
+        let n = ask("Checkout number?")?;
         match n.parse::<usize>().ok().filter(|&i| i >= 1).and_then(|i| list.get(i - 1)) {
             Some(d) => workspace_root().join(d),
             None => die!("no checkout #{n}"),
@@ -182,7 +174,7 @@ exit 0
 
 /// Delphi's origin URL; local paths become `file://` so `--filter` works.
 fn origin_url() -> Result<String> {
-    let Some(u) = out_q(&mut dgit(["remote", "get-url", "origin"])) else {
+    let Some(u) = out_q(git(root()).args(["remote", "get-url", "origin"])) else {
         die!("the Delphi repo has no origin remote")
     };
     let scp = u.find(':').is_some_and(|i| !u[..i].contains('/'));
@@ -204,40 +196,50 @@ fn checkout(name: &str, o: &Opts) -> Result<()> {
     if co.dir.exists() {
         die!("checkout already exists: {}", co.dir.display());
     }
-    delphi_fetch();
-    let all = workspace::on_main()?;
+    let all = workspace::all_at(root(), &fetch_main()?, true);
     let Some(w) = all.iter().find(|w| w.name() == name) else {
         die!("no workspace named '{name}' on origin/main (see: delphi list)")
     };
-    let (url, folder) = (origin_url()?, w.path("").trim_end_matches('/').to_string());
+    let (folder, branch) = (w.path("").trim_end_matches('/').to_string(), format!("ws/{}/{cname}", user()));
+    let remote = clone_sparse(&co, &folder, &branch)?;
+    let g = co.dir.join(".git");
+    let mut ex = fs::read(g.join("info/exclude")).unwrap_or_default();
+    ex.extend(format!("/{folder}/repos/\n/{folder}/{}\n", w.h.ignore).bytes());
+    fs::write(g.join("info/exclude"), ex)?;
+    write_file(&g.join("hooks/commit-msg"), HOOK.as_bytes(), true, "the commit-msg hook")?;
+    let meta =
+        format!("workspace={name}\nfolder={folder}\nharness={}\nbranch={branch}\nlast_pushed={remote}\n", w.h.name);
+    write_file(&co.meta_file(), meta.as_bytes(), false, "the checkout's meta")?;
+    if !remote.is_empty() {
+        info!("continuing {branch} from origin");
+    }
+    let fd = co.folder_dir()?;
+    clone_repos(&fd)?;
+    info!("checkout ready: {}\nnext: delphi open {cname}", fd.display());
+    Ok(())
+}
+
+/// Blob-filtered clone of Delphi's origin with a non-cone sparse pattern for `folder`, on
+/// `branch` (continued from origin if it is there). Returns the branch's sha on origin, or "".
+fn clone_sparse(co: &Co, folder: &str, branch: &str) -> Result<String> {
+    let url = origin_url()?;
     let _ = fs::create_dir_all(workspace_root());
     let clone = ["clone", "--quiet", "--filter=blob:none", "--no-checkout", "--"];
     if !ok(Command::new("git").args(clone).arg(&url).arg(&co.dir)) {
         die!("cannot clone {url}");
     }
-    let branch = format!("ws/{}/{cname}", user());
     let remote = co.rev(&format!("refs/remotes/origin/{branch}"));
     let start = if remote.is_empty() { "origin/main".to_string() } else { format!("origin/{branch}") };
     if !(ok(co.git().args(["sparse-checkout", "set", "--no-cone", &format!("/{folder}/")]))
-        && ok_q(co.git().args(["switch", "--quiet", "--no-track", "-c", &branch, &start])))
+        && ok_q(co.git().args(["switch", "--quiet", "--no-track", "-c", branch, &start])))
     {
         die!("cannot check out {folder} on {branch} in {}", co.dir.display());
     }
-    let g = co.dir.join(".git");
-    fs::create_dir_all(g.join("delphi"))?;
-    fs::create_dir_all(g.join("hooks"))?;
-    let mut ex = fs::read(g.join("info/exclude")).unwrap_or_default();
-    ex.extend(format!("/{folder}/repos/\n/{folder}/{}\n", w.h.ignore).bytes());
-    fs::write(g.join("info/exclude"), ex)?;
-    fs::write(g.join("hooks/commit-msg"), HOOK)?;
-    fs::set_permissions(g.join("hooks/commit-msg"), fs::Permissions::from_mode(0o755))?;
-    let meta =
-        format!("workspace={name}\nfolder={folder}\nharness={}\nbranch={branch}\nlast_pushed={remote}\n", w.h.name);
-    fs::write(co.meta_file(), meta)?;
-    if !remote.is_empty() {
-        info!("continuing {branch} from origin");
-    }
-    let fd = co.folder_dir()?;
+    Ok(remote)
+}
+
+/// Clone the workspace's `repos:` into `<folder>/repos/`; failures are only warnings.
+fn clone_repos(fd: &Path) -> Result<()> {
     let mut failed = String::new();
     for (n, url) in parse_yaml(&fd.join(YML))?.map("repos") {
         if !plain_name(&n) {
@@ -253,7 +255,6 @@ fn checkout(name: &str, o: &Opts) -> Result<()> {
     if !failed.is_empty() {
         warn!("repos not cloned:{failed} (clone them into repos/ yourself)");
     }
-    info!("checkout ready: {}\nnext: delphi open {cname}", fd.display());
     Ok(())
 }
 
@@ -281,8 +282,9 @@ fn open(co: &Co, o: &Opts) -> Result<()> {
 }
 
 // ---- refresh ----
-/// Merge origin/main into the checkout's branch; exit 2 on conflicts.
+/// Fetch and merge origin/main into the checkout's branch; exit 2 on conflicts.
 fn refresh(co: &Co) -> Result<()> {
+    co.fetch();
     if co.merging() {
         die!(
             "merge in progress in {}: resolve conflicts, commit, then re-run: delphi refresh {}",
@@ -350,6 +352,12 @@ fn listing(dir: &Path, folder: &str, args: &[&str], md: bool) -> Result<String> 
     Ok(s)
 }
 
+fn warn_uncommitted(co: &Co) {
+    if !co.clean() {
+        warn!("uncommitted changes in {} are not included; commit them first", co.dir.display());
+    }
+}
+
 fn diff(co: &Co, upstream: bool) -> Result<()> {
     co.fetch();
     let (base, f) = (merge_base(&co.dir)?, co.folder());
@@ -365,9 +373,7 @@ fn diff(co: &Co, upstream: bool) -> Result<()> {
         }
         return Ok(());
     }
-    if !co.clean() {
-        warn!("uncommitted changes in {} are not included; commit them first", co.dir.display());
-    }
+    warn_uncommitted(co);
     let s = listing(&co.dir, &f, &[&base, "HEAD"], false)?;
     if s.is_empty() {
         info!("{}: no changes vs main", co.name);
@@ -381,16 +387,11 @@ fn diff(co: &Co, upstream: bool) -> Result<()> {
 /// the last pushed commit (already reconciled) merged with origin/main, so edits since it (even
 /// reverts) are the new states; else the merge-base with origin/main (plus the last pushed commit
 /// when that merge conflicts).
-fn synced(co: &Co) -> Result<(PathBuf, String, Report)> {
-    let wt = make_tmp()?.join("wt");
-    let made = ok_q(co.git().args(["worktree", "add", "--quiet", "--detach"]).arg(&wt).arg("HEAD"));
-    let wd = wt.clone();
-    let cd = co.dir.clone();
-    defer(move || {
-        ok_q(git(&cd).args(["worktree", "remove", "--force"]).arg(&wd));
-    });
-    if !made || !ok_q(git(&wt).args(["sparse-checkout", "disable"])) {
-        die!("cannot make a full worktree of {} (offline?)", co.dir.display());
+fn synced(co: &Co) -> Result<(PathBuf, String)> {
+    let err = format!("cannot make a full worktree of {} (offline?)", co.dir.display());
+    let wt = worktree(&co.dir, &["--detach"], "HEAD", &err)?;
+    if !ok_q(git(&wt).args(["sparse-checkout", "disable"])) {
+        die!("{err}");
     }
     let base = merge_base(&wt)?;
     let mut bases = vec![base.clone()];
@@ -407,7 +408,7 @@ fn synced(co: &Co) -> Result<(PathBuf, String, Report)> {
         let m = "resolve them by making the copies agree (or edit only one), commit, then re-run";
         return Err(Fail(1, format!("sync: {} conflict(s); nothing proposed — {m}", r.conflicts.len())).into());
     }
-    Ok((wt, base, r))
+    Ok((wt, base))
 }
 
 fn title(co: &Co) -> String {
@@ -425,7 +426,7 @@ fn body(co: &Co, list: &str) -> String {
 }
 
 /// Distinct harness|model|effort trailers of the branch's commits since `base`, except `me`.
-fn prov_rows(dir: &Path, base: &str, me: &str) -> String {
+fn prov_rows(dir: &Path, base: &str, me: &str) -> Vec<String> {
     let f = "%(trailers:key=Delphi-Harness,valueonly,separator=)|%(trailers:key=Delphi-Model,valueonly,separator=)|%(trailers:key=Delphi-Effort,valueonly,separator=)";
     let log = out(git(dir).args(["log", "--no-merges", &format!("--format={f}"), &format!("{base}..HEAD")]));
     let mut seen: Vec<String> = vec![];
@@ -434,42 +435,60 @@ fn prov_rows(dir: &Path, base: &str, me: &str) -> String {
             seen.push(l.to_string());
         }
     }
-    seen.join("\n")
+    seen
+}
+
+/// `propose --dry-run`: no refresh or push; the sync writes, then the PR body.
+fn propose_dry(co: &Co) -> Result<()> {
+    co.fetch();
+    warn_uncommitted(co);
+    if co.behind() > 0 {
+        warn!("{} is behind origin/main; propose will refresh (merge origin/main) first", co.name);
+    }
+    let (wt, base) = synced(co)?;
+    ok(git(&wt).args(["add", "-A"]));
+    let list = listing(&wt, &co.folder(), &["--cached", &base], true)?;
+    if list.is_empty() {
+        info!("nothing to propose");
+        return Ok(());
+    }
+    let passed = check_tree(&wt)?;
+    println!("---- {} (to {})\n{}\n----", title(co), co.meta("branch"), body(co, &list));
+    if passed {
+        Ok(())
+    } else {
+        Err(Fail(1, "check would fail; fix the errors above".into()).into())
+    }
+}
+
+/// The branch's sha on origin ("" if absent); it must be absent or what we last pushed.
+fn lease(wt: &Path, branch: &str, last_pushed: &str) -> Result<String> {
+    let Some(ls) = out(git(wt).args(["ls-remote", "--heads", "origin", &format!("refs/heads/{branch}")])) else {
+        die!("cannot reach origin")
+    };
+    let remote = ls.split('\t').next().unwrap_or("").to_string();
+    if !remote.is_empty() && remote != last_pushed {
+        die!("{branch} changed on origin (someone else pushed to it); review it, then merge it into your branch (git merge origin/{branch}) and re-run");
+    }
+    Ok(remote)
 }
 
 fn propose(co: &Co, o: &Opts) -> Result<()> {
-    let branch = co.meta("branch");
     if o.dry {
-        co.fetch();
-        if !co.clean() {
-            warn!("uncommitted changes in {} are not included; commit them first", co.dir.display());
-        }
-        if co.behind() > 0 {
-            warn!("{} is behind origin/main; propose will refresh (merge origin/main) first", co.name);
-        }
-        let (wt, base, _) = synced(co)?;
-        ok(git(&wt).args(["add", "-A"]));
-        let list = listing(&wt, &co.folder(), &["--cached", &base], true)?;
-        if list.is_empty() {
-            info!("nothing to propose");
-            return Ok(());
-        }
-        let passed = check_tree(&wt)?;
-        println!("---- {} (to {branch})\n{}\n----", title(co), body(co, &list));
-        return if passed { Ok(()) } else { Err(Fail(1, "check would fail; fix the errors above".into()).into()) };
+        return propose_dry(co);
     }
     need_yes_or_tty()?;
+    let (branch, last_pushed) = (co.meta("branch"), co.meta("last_pushed"));
     let mut prov = provenance::resolve(&o.model, &o.effort, &co.meta("harness"))?;
-    co.fetch();
     refresh(co)?;
-    let (wt, base, _) = synced(co)?;
-    prov.extra = format!("Delphi-Workspace: {}", co.folder());
+    let (wt, base) = synced(co)?;
+    prov.workspace = co.folder();
     prov.rows = prov_rows(&wt, &base, &format!("{}|{}|{}", prov.harness, prov.model, prov.effort));
     let pr = Pr { branch: branch.clone(), wt: wt.clone(), prov };
-    pr.commit("delphi: sync shared files", "")?;
+    pr.commit("delphi: sync shared files")?;
     if ok_q(git(&wt).args(["diff", "--quiet", "origin/main", "HEAD"])) {
         info!("nothing to propose");
-        if !co.meta("last_pushed").is_empty() && !open_pr(&branch, "number").is_empty() {
+        if !last_pushed.is_empty() && !open_pr(&branch, "number").is_empty() {
             warn!("the open PR from {branch} still has earlier changes; close it if they are no longer wanted");
         }
         return Ok(());
@@ -477,14 +496,7 @@ fn propose(co: &Co, o: &Opts) -> Result<()> {
     if !check_tree(&wt)? {
         die!("check failed on the proposed tree; nothing pushed");
     }
-    // lease: the branch must be absent on origin or exactly what we last pushed
-    let Some(ls) = out(git(&wt).args(["ls-remote", "--heads", "origin", &format!("refs/heads/{branch}")])) else {
-        die!("cannot reach origin")
-    };
-    let remote = ls.split('\t').next().unwrap_or("").to_string();
-    if !remote.is_empty() && remote != co.meta("last_pushed") {
-        die!("{branch} changed on origin (someone else pushed to it); review it, then merge it into your branch (git merge origin/{branch}) and re-run");
-    }
+    let remote = lease(&wt, &branch, &last_pushed)?;
     let list = listing(&wt, &co.folder(), &[&base, "HEAD"], true)?;
     if pr.finish(&title(co), &body(co, &list), Some(&remote))? {
         let head = out(git(&wt).args(["rev-parse", "HEAD"])).unwrap_or_default();

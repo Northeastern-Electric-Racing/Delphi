@@ -1,6 +1,6 @@
 //! Harness adapters: file names, provenance fallback, launch. Adding a harness = one entry here.
 
-use crate::core::{name_ok, out_q};
+use crate::core::out_q;
 use anyhow::Result;
 use std::process::Command;
 
@@ -49,11 +49,5 @@ fn claude_launch(model: &str, effort: &str) -> Command {
 
 /// Look up an adapter by name.
 pub fn load(name: &str) -> Result<&'static Harness> {
-    if !name_ok(name) {
-        crate::die!("invalid harness name: '{name}'");
-    }
-    match HARNESSES.iter().find(|h| h.name == name) {
-        Some(h) => Ok(h),
-        None => crate::die!("unknown harness: {name}"),
-    }
+    HARNESSES.iter().find(|h| h.name == name).ok_or_else(|| anyhow::anyhow!("unknown harness: {name}"))
 }

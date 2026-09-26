@@ -1,24 +1,25 @@
 # Delphi — developing the CLI
 
-Delphi stores NER's AI-harness context under `context/`, including workspace folders
-(`context/<scope>/workspaces/<name>/`), and ships a small Rust CLI that syncs linked files across
-workspaces, checks workspaces out sparsely, refreshes them, and proposes edits back as PRs. The design spec
-(`docs/design.md`) is the source of truth; `docs/goals.md` lists what any change must keep.
+Delphi stores NER's AI-harness context under `context/`. Every workspace is a materialized folder
+(`context/<scope>/workspaces/<name>/`); shared files are linked to one source and kept identical by
+`delphi sync`. A small Rust CLI checks out one workspace folder sparsely, refreshes it, and proposes
+edits back as PRs. The design spec (`docs/design.md`) is the source of truth; `docs/goals.md` lists
+what any change must keep.
 
 ## Layout
 
 - `src/main.rs`: dispatcher. Resolves the Delphi repo, then runs the command.
-- `src/core.rs`: messages (`die!`, `warn!`, `info!`), deferred cleanup, prompts, config, `safe_path`, git helpers, Delphi git access, `parse_args`.
+- `src/core.rs`: messages (`die!`, `warn!`, `info!`), deferred cleanup, prompts, config, `safe_path`, running git, fetch/commit/worktree helpers, `parse_args`, path helpers.
 - `src/parse.rs`: strict YAML-subset parser.
-- `src/workspace.rs`: `workspace.yml` model: links (`<source> [-> <dest>]`, default dests), workspaces at a revision, who shares a source.
-- `src/sync.rs`: `delphi sync`: per-file reconciliation of link sources and copies against base revisions; generated instruction files.
-- `src/checkout.rs`: local checkouts: `checkout`, `open`, `refresh`, `diff`, `propose`, `status`.
-- `src/manage.rs`: `create`, `list`, `mv` (PRs against Delphi).
+- `src/workspace.rs`: `workspace.yml` (links `<source> [-> <dest>]`, default dests) and listing workspaces at a revision.
+- `src/sync.rs`: `delphi sync`: reconcile linked files across workspaces against base revisions; regenerate instruction files.
+- `src/check.rs`: `delphi check`: repo validation.
+- `src/checkout.rs`: local checkouts and `checkout`, `open`, `refresh`, `diff`, `propose`, `status`.
+- `src/manage.rs`: `create`, `list`, `mv`.
 - `src/pr.rs`: the only write path to Delphi (temp worktree, commit with trailers, push, `gh`).
 - `src/provenance.rs`: harness/model/effort resolution.
-- `src/check.rs`, `src/setup.rs`: `check`, `setup`.
 - `src/harness.rs`: harness adapters (file names + provenance + launch).
-- `.github/workflows/delphi.yml`: CI (check + `sync --check` on PRs; `sync` on `main`).
+- `src/setup.rs`: `delphi setup`.
 - `tests/`: end-to-end tests. `tests/common` builds a throwaway sandbox (temp dir, bare origin, sample
   context, stub `gh` on PATH); `tests/cli.rs` drives the binary against it.
 - `.claude/skills/`: LLM workflows that drive the CLI (`delphi-new-workspace`, `delphi-propose`).

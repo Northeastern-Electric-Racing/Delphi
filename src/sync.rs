@@ -4,7 +4,7 @@
 //! from `instructions:`. Works on any full Delphi working tree; deterministic and idempotent.
 
 use crate::core::{
-    exit, find, git, join, out, out_q, out_stdin, parse_args, rel_to, root, safe_path, under, write_file,
+    commit, exit, find, git, join, out, out_q, out_stdin, parse_args, rel_to, root, safe_path, under, write_file,
 };
 use crate::workspace::{self, folder_of, Ws, YML};
 use crate::{die, info};
@@ -19,7 +19,10 @@ pub fn main(args: &[String]) -> Result<()> {
     if !pos.is_empty() {
         die!("usage: delphi sync [--check] [--base <rev>]");
     }
-    let base = if o.base.is_empty() { merge_base(root())? } else { commit(root(), &o.base)? };
+    let base = match o.base.as_str() {
+        "" => merge_base(root())?,
+        rev => commit(root(), rev).ok_or_else(|| anyhow::anyhow!("not a revision: {rev}"))?,
+    };
     let r = sync(root(), &[base], o.check)?;
     r.print(o.check);
     if !r.conflicts.is_empty() {
@@ -35,14 +38,6 @@ pub fn main(args: &[String]) -> Result<()> {
         (n, false) => info!("sync: {n} file(s) written"),
     }
     Ok(())
-}
-
-/// A revision of the repo at `dir` as a commit sha.
-pub fn commit(dir: &Path, rev: &str) -> Result<String> {
-    match out_q(git(dir).args(["rev-parse", "--verify", "--quiet", "--end-of-options", &format!("{rev}^{{commit}}")])) {
-        Some(c) => Ok(c),
-        None => die!("not a revision: {rev}"),
-    }
 }
 
 /// The default base: merge-base of HEAD and origin/main.
@@ -208,16 +203,16 @@ fn assemble(dir: &Path, parts: &[String]) -> Result<Result<Vec<u8>, String>> {
     Ok(Ok(text))
 }
 
-/// Reconcile the working tree at `dir` against base commits; with `check`, change nothing.
-pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
-    let wss = workspaces(dir)?;
-    let bases: Vec<Base> = base_revs.iter().map(|r| load_base(dir, r)).collect();
-    // group every linked file by its source: (copy path, whether its link existed at a base)
-    let mut groups: BTreeMap<String, Vec<(String, bool)>> = BTreeMap::new();
+/// Every linked file grouped by its source (relative to context/): (copy path, whether its link
+/// existed at a base). A directory link covers the files under its source and under every copy.
+type Groups = BTreeMap<String, Vec<(String, bool)>>;
+
+fn groups(dir: &Path, wss: &[Ws], bases: &[Base]) -> Groups {
+    let mut groups = Groups::new();
     let mut dir_links = vec![];
     let in_base = |p: &str| bases.iter().any(|b| b.tree.contains_key(p));
     let under_base = |p: &str| bases.iter().any(|b| b.tree.keys().any(|k| under(k, p).is_some()));
-    let add = |groups: &mut BTreeMap<String, Vec<(String, bool)>>, w: &Ws, s: String, d: String| {
+    let add = |groups: &mut Groups, w: &Ws, s: String, d: String| {
         let mut old = bases.iter().filter_map(|b| b.links.get(&w.folder)).flatten();
         let old = old.any(|(bs, bd)| under(&s, bs).is_some_and(|r| join(bd, r) == d));
         let m = groups.entry(s).or_default();
@@ -225,7 +220,7 @@ pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
             m.push((w.path(&d), old));
         }
     };
-    for w in &wss {
+    for w in wss {
         for (src, dest) in &w.links {
             let (sp, dp) = (format!("context/{src}"), w.path(dest));
             let is_dir = match (dir.join(&sp).is_file(), dir.join(&sp).is_dir()) {
@@ -237,7 +232,7 @@ pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
                 add(&mut groups, w, src.clone(), dest.clone());
                 continue;
             }
-            for rel in files_below(dir, &bases, &sp).into_iter().chain(files_below(dir, &bases, &dp)) {
+            for rel in files_below(dir, bases, &sp).into_iter().chain(files_below(dir, bases, &dp)) {
                 add(&mut groups, w, join(src, &rel), join(dest, &rel));
             }
             dir_links.push((w, src, dest));
@@ -252,6 +247,43 @@ pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
             add(&mut groups, w, k, d);
         }
     }
+    groups
+}
+
+/// Regenerate each workspace's instruction file from `instructions:`; a hand edit is a conflict.
+fn instructions(dir: &Path, wss: &[Ws], bases: &[Base], check: bool, r: &mut Report) -> Result<()> {
+    for w in wss.iter().filter(|w| !w.parts.is_empty()) {
+        let text = match assemble(dir, &w.parts)? {
+            Ok(t) => t,
+            Err(p) => {
+                r.conflicts.push(format!("{}: instructions: missing context/{p}", w.path(YML)));
+                continue;
+            }
+        };
+        let ip = w.path(w.h.instructions);
+        let f = safe_path(dir, &ip)?;
+        let now = fs::read(&f).ok();
+        if now.as_deref() == Some(&text[..]) {
+            continue;
+        }
+        let st = states(dir, [&ip])?.remove(&ip).flatten();
+        if now.is_some() && !bases.iter().any(|b| b.tree.get(&ip).cloned() == st) {
+            r.conflicts.push(format!("{ip}: generated from instructions: in {YML} (don't hand-edit it; edit a part)"));
+            continue;
+        }
+        if !check {
+            write_file(&f, &text, false, &ip)?;
+        }
+        r.writes.push((if now.is_none() { "created" } else { "updated" }, ip));
+    }
+    Ok(())
+}
+
+/// Reconcile the working tree at `dir` against base commits; with `check`, change nothing.
+pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
+    let wss = workspaces(dir)?;
+    let bases: Vec<Base> = base_revs.iter().map(|r| load_base(dir, r)).collect();
+    let groups = groups(dir, &wss, &bases);
     let paths: BTreeSet<String> = groups
         .iter()
         .flat_map(|(s, m)| std::iter::once(format!("context/{s}")).chain(m.iter().map(|x| x.0.clone())))
@@ -282,29 +314,6 @@ pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
             r.writes.push((verb, p));
         }
     }
-    for w in wss.iter().filter(|w| !w.parts.is_empty()) {
-        let text = match assemble(dir, &w.parts)? {
-            Ok(t) => t,
-            Err(p) => {
-                r.conflicts.push(format!("{}: instructions: missing context/{p}", w.path(YML)));
-                continue;
-            }
-        };
-        let ip = w.path(w.h.instructions);
-        let f = safe_path(dir, &ip)?;
-        let now = fs::read(&f).ok();
-        if now.as_deref() == Some(&text[..]) {
-            continue;
-        }
-        let st = states(dir, [&ip])?.remove(&ip).flatten();
-        if now.is_some() && !bases.iter().any(|b| b.tree.get(&ip).cloned() == st) {
-            r.conflicts.push(format!("{ip}: generated from instructions: in {YML} (don't hand-edit it; edit a part)"));
-            continue;
-        }
-        if !check {
-            write_file(&f, &text, false, &ip)?;
-        }
-        r.writes.push((if now.is_none() { "created" } else { "updated" }, ip));
-    }
+    instructions(dir, &wss, &bases, check, &mut r)?;
     Ok(r)
 }

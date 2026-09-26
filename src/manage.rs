@@ -3,8 +3,7 @@
 
 use crate::check::check_tree;
 use crate::core::{
-    basename, date, delphi_commit, delphi_fetch, dgit, find, git, join, name_ok, ok, ok_q, parse_args, path_ok,
-    safe_path, under, write_replace, Opts,
+    basename, fetch_main, find, git, join, ok, ok_q, parse_args, path_ok, root, safe_path, under, write_replace, Opts,
 };
 use crate::parse::parse_yaml;
 use crate::pr::{self, Pr};
@@ -31,8 +30,7 @@ pub fn main(cmd: &str, args: &[String]) -> Result<()> {
 
 /// `<name>\t<scope>\t<harness>` per workspace on origin/main.
 fn list() -> Result<()> {
-    delphi_fetch();
-    for w in workspace::on_main()? {
+    for w in workspace::all_at(root(), &fetch_main()?, true) {
         println!("{}\t{}\t{}", w.name(), w.scope(), w.h.name);
     }
     Ok(())
@@ -48,7 +46,7 @@ fn finish(pr: &Pr, base: &str, title: &str, body: &str) -> Result<()> {
     if !check_tree(&pr.wt)? {
         die!("check failed; nothing pushed");
     }
-    if !pr.commit(title, "")? {
+    if !pr.commit(title)? {
         die!("nothing to commit");
     }
     pr.finish(title, body, None)?;
@@ -57,7 +55,7 @@ fn finish(pr: &Pr, base: &str, title: &str, body: &str) -> Result<()> {
 }
 
 fn create(scope: &str, name: &str, o: &Opts) -> Result<()> {
-    if !name_ok(name) {
+    if name.is_empty() || !name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-') {
         die!("invalid workspace name: '{name}' (use a-z, 0-9, -)");
     }
     if !path_ok(scope) && scope != "." {
@@ -72,14 +70,13 @@ fn create(scope: &str, name: &str, o: &Opts) -> Result<()> {
         die!("{}: name must be '{name}'", o.from);
     }
     let h = harness::load(&y.get("harness"))?;
-    delphi_fetch();
-    let c = delphi_commit("main")?;
+    let c = fetch_main()?;
     let folder = if scope == "." { format!("workspaces/{name}") } else { format!("{scope}/workspaces/{name}") };
     let scope_yml = if scope == "." { "context/scope.yml".into() } else { format!("context/{scope}/scope.yml") };
-    if !ok_q(&mut dgit(["cat-file", "-e", &format!("{c}:{scope_yml}")])) {
+    if !ok_q(git(root()).args(["cat-file", "-e", &format!("{c}:{scope_yml}")])) {
         die!("not a scope on origin/main: {scope}");
     }
-    if workspace::on_main()?.iter().any(|w| w.name() == name) {
+    if workspace::all_at(root(), &c, true).iter().any(|w| w.name() == name) {
         die!("workspace name already used: {name}");
     }
     let prov = provenance::resolve(&o.model, &o.effort, h.name)?;
@@ -132,10 +129,10 @@ fn mv(old: &str, new: &str, o: &Opts) -> Result<()> {
             die!("'{p}' is a scope or workspace file; move its directory instead");
         }
     }
-    delphi_fetch();
-    let c = delphi_commit("main")?;
+    let c = fetch_main()?;
     let prov = provenance::resolve(&o.model, &o.effort, "claude-code")?;
-    let pr = pr::begin(&format!("delphi/mv/{}-{}", basename(old), date("%Y%m%d%H%M%S")), &c, prov)?;
+    let time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let pr = pr::begin(&format!("delphi/mv/{}-{time}", basename(old)), &c, prov)?;
     let ctx = pr.wt.join("context");
     let (src, dst) = (safe_path(&ctx, old)?, safe_path(&ctx, new)?);
     if !src.exists() {

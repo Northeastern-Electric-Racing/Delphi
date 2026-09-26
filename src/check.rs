@@ -1,9 +1,5 @@
-//! Repo-wide validation (spec §6). `check_tree(root)` prints every violation and returns false if
-//! any: scopes have scope.yml; workspace.yml files parse, use known keys, a known harness, and
-//! `name` = folder (unique); instruction parts and link sources exist, sources neither inside nor
-//! containing workspace folders; dests are unique, don't nest in a directory link's dest, and aren't
-//! the generated instruction file or workspace.yml; instruction file names only inside workspace
-//! folders; no symlinks.
+//! `delphi check`: repo-wide validation (spec §6). `check_tree(root)` prints every violation and
+//! returns false if any.
 
 use crate::core::{basename, exit, find, path_ok, rel_to, root, under};
 use crate::harness::HARNESSES;
@@ -51,9 +47,8 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
         }
     }
 
-    let all = find(&ctx, &|_| false);
     let mut folders: Vec<String> = vec![];
-    for (p, ft) in &all {
+    for (p, ft) in &find(&ctx, &|_| false) {
         let r = rel(p);
         let parent = r.rsplit_once('/').map_or("", |x| x.0);
         if ft.is_symlink() {
@@ -76,64 +71,70 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
     }
 
     // workspaces
-    let mut names: Vec<String> = vec![];
     folders.sort();
+    let mut names: Vec<String> = vec![];
     for f in &folders {
-        let label = format!("context/{f}/{YML}");
-        let (y, name) = (ctx.join(f).join(YML), basename(f).to_string());
-        if !y.is_file() || folder_of(&label).is_none() {
-            errs.push(format!("context/{f}: workspace folder has no {YML}"));
-            continue;
-        }
-        let w = match load(f, &String::from_utf8_lossy(&std::fs::read(&y)?), &label) {
-            Ok(w) => w,
-            Err(e) => {
-                errs.push(format!("{e:#}"));
-                continue;
-            }
-        };
-        let e = |m: String| format!("{label}: {m}");
-        if w.y.get("name") != name {
-            errs.push(e(format!("name '{}' must equal its folder '{name}'", w.y.get("name"))));
-        }
-        if names.contains(&name) {
-            errs.push(e(format!("workspace name '{name}' is not unique")));
-        }
-        names.push(name);
-        for k in w.y.keys().into_iter().filter(|k| !KEYS.contains(&k.as_str())) {
-            errs.push(e(format!("unknown key '{k}'")));
-        }
-        for p in w.parts.iter().filter(|p| !ctx.join(p).is_file()) {
-            errs.push(e(format!("instructions: missing context/{p}")));
-        }
-        let mut dests: Vec<(&str, bool)> = vec![];
-        for (s, d) in &w.links {
-            let sp = ctx.join(s);
-            if !sp.is_file() && !sp.is_dir() {
-                errs.push(e(format!("links: missing source context/{s}")));
-            } else if in_workspace(s).is_some() {
-                errs.push(e(format!("links: source context/{s} is inside a workspace folder")));
-            } else if let Some(f) = folders.iter().find(|f| under(f, s).is_some()) {
-                errs.push(e(format!("links: source context/{s} contains workspace folder context/{f}")));
-            }
-            if !w.parts.is_empty() && d == w.h.instructions {
-                errs.push(e(format!("links: {d} is generated from instructions:")));
-            }
-            for (o, dir) in &dests {
-                let nested = |a: &str, b: &str, is_dir: bool| is_dir && under(a, b).is_some();
-                if o == d || nested(d, o, *dir) || nested(o, d, sp.is_dir()) {
-                    errs.push(e(format!("links: dests overlap: '{o}' and '{d}'")));
-                }
-            }
-            dests.push((d, sp.is_dir()));
-        }
-        for (n, _) in w.y.map("repos").iter().filter(|(n, _)| n.starts_with('.') || n.contains('/')) {
-            errs.push(e(format!("repos: invalid name '{n}'")));
-        }
+        check_ws(&ctx, f, &folders, &mut names, &mut errs)?;
     }
 
     for e in &errs {
         eprintln!("check: {e}");
     }
     Ok(errs.is_empty())
+}
+
+/// Violations in workspace folder `f` (relative to context/); `names` collects names seen so far.
+fn check_ws(ctx: &Path, f: &str, folders: &[String], names: &mut Vec<String>, errs: &mut Vec<String>) -> Result<()> {
+    let label = format!("context/{f}/{YML}");
+    let (y, name) = (ctx.join(f).join(YML), basename(f).to_string());
+    if !y.is_file() || folder_of(&label).is_none() {
+        errs.push(format!("context/{f}: workspace folder has no {YML}"));
+        return Ok(());
+    }
+    let w = match load(f, &String::from_utf8_lossy(&std::fs::read(&y)?), &label) {
+        Ok(w) => w,
+        Err(e) => {
+            errs.push(format!("{e:#}"));
+            return Ok(());
+        }
+    };
+    let mut err = |m: String| errs.push(format!("{label}: {m}"));
+    if w.y.get("name") != name {
+        err(format!("name '{}' must equal its folder '{name}'", w.y.get("name")));
+    }
+    if names.contains(&name) {
+        err(format!("workspace name '{name}' is not unique"));
+    }
+    names.push(name);
+    for k in w.y.keys().into_iter().filter(|k| !KEYS.contains(&k.as_str())) {
+        err(format!("unknown key '{k}'"));
+    }
+    for p in w.parts.iter().filter(|p| !ctx.join(p).is_file()) {
+        err(format!("instructions: missing context/{p}"));
+    }
+    let mut dests: Vec<(&str, bool)> = vec![];
+    for (s, d) in &w.links {
+        let sp = ctx.join(s);
+        if !sp.is_file() && !sp.is_dir() {
+            err(format!("links: missing source context/{s}"));
+        } else if in_workspace(s).is_some() {
+            err(format!("links: source context/{s} is inside a workspace folder"));
+        } else if let Some(f) = folders.iter().find(|f| under(f, s).is_some()) {
+            err(format!("links: source context/{s} contains workspace folder context/{f}"));
+        }
+        if !w.parts.is_empty() && d == w.h.instructions {
+            err(format!("links: {d} is generated from instructions:"));
+        }
+        for (o, dir) in &dests {
+            let nested = |a: &str, b: &str, is_dir: bool| is_dir && under(a, b).is_some();
+            if o == d || nested(d, o, *dir) || nested(o, d, sp.is_dir()) {
+                err(format!("links: dests overlap: '{o}' and '{d}'"));
+            }
+        }
+        dests.push((d, sp.is_dir()));
+    }
+    for (n, _) in w.y.map("repos").iter().filter(|(n, _)| n.starts_with('.') || n.contains('/')) {
+        err(format!("repos: invalid name '{n}'"));
+    }
+    Ok(())
 }

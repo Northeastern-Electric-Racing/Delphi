@@ -1,12 +1,9 @@
-//! The single path for writing to the Delphi monorepo.
-//!
-//! A `Pr` is a temp worktree (`begin`: of the Delphi checkout, on a branch from a start commit; or
-//! a checkout's worktree built by propose) plus a branch name and provenance. `commit` stages
-//! everything and commits with provenance trailers; `finish` shows, confirms, pushes, and opens
-//! or updates the PR. With a lease (a sha, or empty = the branch must be absent) it force-pushes.
-//! The user's own Delphi checkout is never touched.
+//! The single write path to Delphi. A `Pr` is a temp worktree (`begin`: of Delphi on a new branch;
+//! or propose's worktree of a checkout), a branch and provenance. `commit` adds trailers; `finish`
+//! confirms, pushes (with a lease: sha, or "" = branch must be absent), and opens or updates the
+//! PR. The user's own Delphi checkout is never touched.
 
-use crate::core::{confirm, delphi_worktree, dgit, env_nonempty, git, need_yes_or_tty, ok, out_q, out_stdin, root};
+use crate::core::{confirm, env_nonempty, git, need_yes_or_tty, ok, out_q, out_stdin, root, worktree};
 use crate::provenance::Prov;
 use crate::{die, info};
 use anyhow::Result;
@@ -21,9 +18,9 @@ pub struct Pr {
 
 pub fn begin(branch: &str, start: &str, prov: Prov) -> Result<Pr> {
     need_yes_or_tty()?;
-    ok(&mut dgit(["worktree", "prune"]));
+    ok(git(root()).args(["worktree", "prune"]));
     let err = format!("cannot create branch {branch} (is it checked out elsewhere?)");
-    let wt = delphi_worktree(&["-B", branch], start, &err)?;
+    let wt = worktree(root(), &["-B", branch], start, &err)?;
     Ok(Pr { branch: branch.into(), wt, prov })
 }
 
@@ -34,13 +31,13 @@ fn gh() -> Command {
 }
 
 /// The GitHub login `gh` is authenticated as.
-pub fn gh_user() -> Option<String> {
+fn gh_user() -> Option<String> {
     out_q(gh().args(["api", "user", "--jq", ".login"])).filter(|u| !u.is_empty())
 }
 
 /// The user name in checkout branches: the GitHub login when origin is on GitHub, else $USER.
 pub fn user() -> String {
-    let on_github = out_q(&mut dgit(["remote", "get-url", "origin"])).unwrap_or_default().contains("github.com");
+    let on_github = out_q(git(root()).args(["remote", "get-url", "origin"])).unwrap_or_default().contains("github.com");
     let u = on_github.then(gh_user).flatten().or_else(|| env_nonempty("USER")).unwrap_or_default();
     let u: String = u.chars().filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect();
     if u.is_empty() || u.starts_with('.') {
@@ -59,15 +56,14 @@ pub fn open_pr(branch: &str, field: &str) -> String {
 
 impl Pr {
     /// Stage everything and commit. False (nothing committed) when nothing is staged.
-    pub fn commit(&self, subject: &str, body: &str) -> Result<bool> {
+    pub fn commit(&self, subject: &str) -> Result<bool> {
         if !ok(git(&self.wt).args(["add", "-A"])) {
             die!("git add failed");
         }
         if ok(git(&self.wt).args(["diff", "--cached", "--quiet"])) {
             return Ok(false);
         }
-        let body = if body.is_empty() { String::new() } else { format!("\n{body}\n") };
-        let msg = format!("{subject}\n{body}\n{}\n", self.prov.trailers());
+        let msg = format!("{subject}\n\n{}\n", self.prov.trailers());
         if out_stdin(git(&self.wt).args(["commit", "--quiet", "-F", "-"]), msg.as_bytes()).is_none() {
             die!("git commit failed");
         }

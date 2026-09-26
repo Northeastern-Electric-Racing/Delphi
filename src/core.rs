@@ -1,5 +1,5 @@
 //! Shared helpers: messages, deferred cleanup, prompts, config, repo-root discovery, path safety,
-//! running git, Delphi repo access, flag parsing, and small path helpers.
+//! running git, fetch/worktree helpers, flag parsing, and small path helpers.
 
 use anyhow::Result;
 use std::collections::hash_map::RandomState;
@@ -177,17 +177,12 @@ pub fn confirm(q: &str) -> Result<bool> {
     Ok(yes() || matches!(read_answer(&format!("{q} [y/N] ")).as_deref(), Some("y" | "Y" | "yes")))
 }
 
-/// Ask a question; empty answer gives the default.
-pub fn ask(q: &str, default: &str) -> Result<String> {
+/// Ask a question on the terminal.
+pub fn ask(q: &str) -> Result<String> {
     if !is_tty() {
         die!("non-interactive session: cannot ask '{q}'");
     }
-    let prompt = if default.is_empty() { format!("{q} ") } else { format!("{q} [{default}] ") };
-    match read_answer(&prompt) {
-        None => Err(exit(1)),
-        Some(a) if a.is_empty() => Ok(default.to_string()),
-        Some(a) => Ok(a),
-    }
+    read_answer(&format!("{q} ")).ok_or_else(|| exit(1))
 }
 
 // ---- config ----
@@ -196,14 +191,13 @@ pub fn kv<'a>(text: &'a str, key: &str) -> Option<&'a str> {
     text.lines().filter(|l| !l.starts_with('#')).find_map(|l| l.split_once('=').filter(|(k, _)| *k == key)).map(|x| x.1)
 }
 
-/// A delphi.conf value, or `default` when unset or empty.
-pub fn conf_get(key: &str, default: &str) -> String {
-    let text = fs::read_to_string(root().join("delphi.conf")).unwrap_or_default();
-    kv(&text, key).filter(|v| !v.is_empty()).unwrap_or(default).to_string()
-}
-
+/// Where checkouts live: $DELPHI_WORKSPACE_ROOT, else `workspace_root` in delphi.conf (relative
+/// to the repo root).
 pub fn workspace_root() -> PathBuf {
-    let r = env_nonempty("DELPHI_WORKSPACE_ROOT").unwrap_or_else(|| conf_get("workspace_root", "../Delphi-workspaces"));
+    let conf = fs::read_to_string(root().join("delphi.conf")).unwrap_or_default();
+    let r = env_nonempty("DELPHI_WORKSPACE_ROOT").unwrap_or_else(|| {
+        kv(&conf, "workspace_root").filter(|v| !v.is_empty()).unwrap_or("../Delphi-workspaces").into()
+    });
     let p = root().join(r);
     if p.is_dir() {
         return fs::canonicalize(&p).unwrap_or(p);
@@ -275,13 +269,6 @@ pub fn git(dir: &Path) -> Command {
     c
 }
 
-/// git on the Delphi repo.
-pub fn dgit<I: IntoIterator<Item = S>, S: AsRef<std::ffi::OsStr>>(args: I) -> Command {
-    let mut c = git(root());
-    c.args(args);
-    c
-}
-
 /// Raw stdout on success. Quiet: no stdin, stderr discarded; else both inherited.
 pub fn run(c: &mut Command, quiet: bool) -> Option<Vec<u8>> {
     let io = || if quiet { Stdio::null() } else { Stdio::inherit() };
@@ -321,56 +308,44 @@ pub fn ok_q(c: &mut Command) -> bool {
     ok(c.stdout(Stdio::null()).stderr(Stdio::null()))
 }
 
-/// A file at a revision of the repo at `dir` (`git show <rev>:<path>`).
-pub fn show_in(dir: &Path, rev: &str, path: &str) -> Option<Vec<u8>> {
-    run(git(dir).args(["show", &format!("{rev}:{path}")]), true)
-}
-
 /// Whether a command is on PATH (`command -v`).
 pub fn have(prog: &str) -> bool {
     let exec = |p: &Path| fs::metadata(p).is_ok_and(|m| m.is_file() && m.permissions().mode() & 0o111 != 0);
     std::env::var_os("PATH").is_some_and(|p| std::env::split_paths(&p).any(|d| exec(&d.join(prog))))
 }
 
-/// `date +<fmt>` (local time).
-pub fn date(fmt: &str) -> String {
-    out(Command::new("date").arg(format!("+{fmt}"))).unwrap_or_default()
-}
-
-// ---- Delphi repo access ----
-pub fn delphi_fetch() {
-    if OFFLINE.load(Ordering::Relaxed) {
-        return;
-    }
-    if !ok(dgit(["fetch", "--prune", "--quiet", "origin"]).stderr(Stdio::null())) {
-        warn!("git fetch failed; using local refs");
+// ---- git remotes and worktrees ----
+/// `git fetch` origin in `dir` unless offline; on failure warns (`place` names the repo) and
+/// keeps the local refs.
+pub fn fetch(dir: &Path, place: &str) {
+    if !OFFLINE.load(Ordering::Relaxed) && !ok_q(git(dir).args(["fetch", "--prune", "--quiet", "origin"])) {
+        warn!("git fetch failed{place}; using local refs");
     }
 }
 
-/// Full sha of origin/<branch>.
-pub fn delphi_commit(branch: &str) -> Result<String> {
-    match out_q(&mut dgit(["rev-parse", "--verify", "--quiet", &format!("origin/{branch}^{{commit}}")])) {
-        Some(c) => Ok(c),
-        None => die!("no such Delphi branch: origin/{branch}"),
-    }
+/// A revision of the repo at `dir` as a full commit sha.
+pub fn commit(dir: &Path, rev: &str) -> Option<String> {
+    out_q(git(dir).args(["rev-parse", "--verify", "--quiet", "--end-of-options", &format!("{rev}^{{commit}}")]))
 }
 
-/// Temp worktree of Delphi (`git worktree add <opts> <dir> <start>`), removed on exit; `err` if
-/// it cannot be made.
-pub fn delphi_worktree(opts: &[&str], start: &str, err: &str) -> Result<PathBuf> {
+/// Fetch Delphi's origin; the sha of origin/main.
+pub fn fetch_main() -> Result<String> {
+    fetch(root(), "");
+    commit(root(), "origin/main").ok_or_else(|| anyhow::anyhow!("no such Delphi branch: origin/main"))
+}
+
+/// Temp worktree of the repo at `repo` (`git worktree add <opts> <dir> <start>`), removed on exit;
+/// `err` if it cannot be made.
+pub fn worktree(repo: &Path, opts: &[&str], start: &str, err: &str) -> Result<PathBuf> {
     let d = make_tmp()?.join("wt");
-    if !ok_q(dgit(["worktree", "add", "--quiet"]).args(opts).arg(&d).arg(start)) {
+    let (r, dd) = (repo.to_path_buf(), d.clone());
+    defer(move || {
+        ok_q(git(&r).args(["worktree", "remove", "--force"]).arg(&dd));
+    });
+    if !ok_q(git(repo).args(["worktree", "add", "--quiet"]).args(opts).arg(&d).arg(start)) {
         die!("{err}");
     }
-    let dd = d.clone();
-    defer(move || {
-        ok_q(dgit(["worktree", "remove", "--force"]).arg(&dd));
-    });
     Ok(d)
-}
-
-pub fn name_ok(name: &str) -> bool {
-    !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
 // ---- flags ----

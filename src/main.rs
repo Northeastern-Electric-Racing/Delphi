@@ -39,25 +39,22 @@ else the one recorded by `delphi setup`.
 fn run(args: &[String]) -> anyhow::Result<()> {
     let cmd = args.first().map(String::as_str).unwrap_or("");
     let rest = args.get(1..).unwrap_or(&[]);
-    match cmd {
+    let group: fn(&str, &[String]) -> anyhow::Result<()> = match cmd {
         "" | "-h" | "--help" | "help" => {
             print!("{USAGE}");
             return Ok(());
         }
         "setup" => return setup::main(rest),
-        "create" | "list" | "mv" | "checkout" | "open" | "refresh" | "diff" | "propose" | "status" | "sync"
-        | "check" => {}
+        "create" | "list" | "mv" => manage::main,
+        "checkout" | "open" | "refresh" | "diff" | "propose" | "status" => checkout::main,
+        "sync" => |_, a| sync::main(a),
+        "check" => |_, a| check::main(a),
         _ => die!("unknown command '{cmd}' (see: delphi help)"),
-    }
+    };
     YES.store(std::env::var("DELPHI_YES").as_deref() == Ok("1"), Ordering::Relaxed);
     OFFLINE.store(std::env::var("DELPHI_OFFLINE").as_deref() == Ok("1"), Ordering::Relaxed);
     crate::core::resolve_root()?;
-    match cmd {
-        "create" | "list" | "mv" => manage::main(cmd, rest),
-        "sync" => sync::main(rest),
-        "check" => check::main(rest),
-        _ => checkout::main(cmd, rest),
-    }
+    group(cmd, rest)
 }
 
 fn main() {

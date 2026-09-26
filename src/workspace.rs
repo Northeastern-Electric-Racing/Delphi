@@ -2,7 +2,7 @@
 //! `harness`, `instructions`, `links` (`<source> [-> <dest>]`) and `repos`. Paths in a `Ws` are
 //! relative to `context/`; link dests are relative to the folder.
 
-use crate::core::{basename, delphi_commit, git, out, path_ok, root, show_in, under};
+use crate::core::{basename, git, out, path_ok, run, under};
 use crate::die;
 use crate::harness::{self, Harness};
 use crate::parse::{parse_text, Yaml};
@@ -88,29 +88,22 @@ pub fn load(folder: &str, text: &str, label: &str) -> Result<Ws> {
     Ok(Ws { folder: folder.into(), y, h, parts, links })
 }
 
-/// workspace.yml paths (repo-relative) at a revision of the repo at `dir`.
-pub fn ymls_at(dir: &Path, rev: &str) -> Vec<String> {
-    let t = out(git(dir).args(["ls-tree", "-r", "--name-only", rev, "--", "context"])).unwrap_or_default();
-    t.lines().filter(|p| folder_of(p).is_some()).map(String::from).collect()
-}
-
-/// Every workspace at a revision; unparsable ones are skipped (or reported, if `warn`).
+/// Every workspace at a revision of the repo at `dir`; unparsable ones are skipped (or reported,
+/// if `warn`).
 pub fn all_at(dir: &Path, rev: &str, warn: bool) -> Vec<Ws> {
+    let t = out(git(dir).args(["ls-tree", "-r", "--name-only", rev, "--", "context"])).unwrap_or_default();
     let mut v = vec![];
-    for p in ymls_at(dir, rev) {
-        let text = String::from_utf8_lossy(&show_in(dir, rev, &p).unwrap_or_default()).into_owned();
-        match load(folder_of(&p).unwrap_or(""), &text, &p) {
+    for p in t.lines() {
+        let Some(f) = folder_of(p) else { continue };
+        let blob = run(git(dir).args(["show", &format!("{rev}:{p}")]), true).unwrap_or_default();
+        let text = String::from_utf8_lossy(&blob).into_owned();
+        match load(f, &text, p) {
             Ok(w) => v.push(w),
             Err(e) if warn => crate::warn!("skipping {p}: {e:#}"),
             Err(_) => {}
         }
     }
     v
-}
-
-/// Workspaces on the Delphi repo's origin/main.
-pub fn on_main() -> Result<Vec<Ws>> {
-    Ok(all_at(root(), &delphi_commit("main")?, true))
 }
 
 /// Workspaces (other than `me`) whose links cover source `src`.
