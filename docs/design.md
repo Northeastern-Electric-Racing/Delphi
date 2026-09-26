@@ -1,153 +1,114 @@
-# Delphi — Design (v2: mapped workspaces)
+# Delphi — Design (v3: workspaces live in Delphi)
 
-Supersedes the v1 spec (line-level compile and routing). Goals: `docs/goals.md`.
+Goals: `docs/goals.md`. Flow diagram: `docs/delphi-flow.png`.
 
-## 1. Model in one paragraph
+## 1. Model
 
-Context lives once in Delphi under `context/`, organized by scope (org chart). A **layout**
-lists which context files a workspace gets and where they go. A **workspace** is its own git repo
-where every file sits at a normal harness location (`CLAUDE.md`, `.claude/skills/…`, `docs/…`).
-Every compiled file is a **1:1 copy of one source file** (the one exception is the optional
-assembled instruction file). Each file is either **synced** (linked to its source: refresh updates
-it, propose sends edits back) or **copied** (copied in once, then yours). Nothing is synced unless
-the layout says so.
+Every workspace is a **folder inside Delphi**, fully materialized and committed: its
+`CLAUDE.md`, `.claude/skills/…`, `docs/…` are real files on `main`. Working on a workspace means a
+**sparse checkout of just that folder** on your own branch, then a PR. Everything is compared
+against `main` with plain git.
 
-## 2. Layout
+Some files in a workspace are **linked** to a shared source elsewhere in Delphi (e.g. a skill
+several teams use). `delphi sync` reconciles links: a change made on one side (the source or any
+linked copy) is written to the source and every linked copy. Sync runs when you propose, CI
+checks it on every PR, and CI re-runs it on `main` after merges, so `main` is always reconciled.
 
-`context/<scope>/layouts/<name>/`:
+## 2. Repository
 
 ```
-manifest.yml
-files/            # optional: the layout's own files, placed at the workspace root, synced
-  CLAUDE.md
-  .claude/skills/argos-notes/SKILL.md
+context/                                   # scopes (org chart), as before
+  <scope>/scope.yml
+  <scope>/blocks/ docs/ harness/           # shared sources
+  <scope>/workspaces/<name>/               # a workspace
+    workspace.yml
+    CLAUDE.md                              # committed (generated if `instructions:` is set)
+    .claude/skills/…  docs/…  anything else
 ```
 
 ```yaml
-name: argos-dev                       # = directory name, unique
-harness: claude-code                  # adapter: launch + provenance
-instructions:                         # optional: assembled into the harness instruction file
+# workspace.yml
+name: argos-dev                    # = folder name, unique repo-wide
+harness: claude-code               # adapter: instruction file name, launch, provenance
+instructions:                      # optional: CLAUDE.md is generated from these parts (don't hand-edit)
+  - harness/instructions/workspace.md
   - software/harness/instructions/base.md
-sync:                                 # linked to their source
-  - software/application-software/argos/harness/skills/run-local
+links:                             # shared source -> path in this folder, kept in sync
+  - software/harness/skills/run-local                 # default dest: .claude/skills/run-local
   - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
-copy:                                 # copied once, then yours
-  - software/harness/skills/new-worktree
-repos:
+repos:                             # cloned into repos/ in your checkout, git-ignored
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```
 
-- Entry = `<source> [-> <dest>]`. Source is a file or directory under `context/`; a directory maps
-  every file under it (recursive, 1:1, executable bit kept).
-- Default dest (when `->` is omitted), by source path (first match of the path component):
-  `…/harness/skills/<n>[/…]` → `<skills dir>/<n>[/…]`; `…/docs[/<rest>]` → `docs[/<rest>]`;
-  anything else → `context/<source>`.
-- Dests are unique and never nested (no dest inside another entry's dest, including the
-  instruction file and the layout's `files/`), and never under `.git/`, `.delphi/`, `repos/`, or
-  `worktrees/`. One exception: a **file** dest may sit inside a **directory** entry's dest when
-  that directory's source has nothing at that path, so an extra file can join a synced skill
-  folder (e.g. `…/skills/open-pr` plus `…/pr-body.md -> .claude/skills/open-pr/pr-body.md`). Each
-  file keeps its own source; a new file in the folder goes to the folder's source.
-- `instructions` builds the harness instruction file (e.g. `CLAUDE.md`) from parts, blank line
-  between. It is **generated**: edits to it are not proposed (sync a part to edit it). A layout
-  uses either `instructions` or its own `files/<instruction file>`, not both.
-- YAML subset as before (scalars, lists, one-level maps).
+- Link = `<source> [-> <dest>]`; source is a file or directory under `context/`; a directory links
+  every file under it. Default dest: `…/harness/skills/<n>` → `<skills dir>/<n>`,
+  `…/docs/<rest>` → `docs/<rest>`, else `context/<source>`.
+- Files in the folder that aren't linked are the workspace's own. There is no "copy" mode: copying
+  something in is just adding a file.
+- YAML subset as before.
 
-## 3. Workspace
+## 3. Sync (`delphi sync [--check] [--base <rev>]`)
 
-Git repo at `<workspace_root>/<name>`. Refs as in v1: `generated` (compiles only),
-tag `generated-merged` (last compile merged into `working`), `working` (the user's branch).
-Bookkeeping in `.git/delphi/` (never in the working tree).
+For every link (source `S`, linked copies `C1…Cn` across all workspaces), per file, against the
+base revision (default: merge-base with `origin/main`):
 
-**Compile** = synced files + layout `files/` + assembled instruction file + `.delphi/manifest.yml`
-(editable copy of the layout manifest) + `.delphi/lock.tsv`:
+| Situation | Result |
+|---|---|
+| Nothing changed, all equal | nothing |
+| Exactly one distinct new state among `S, C1…Cn` (edit, add, or delete) | written to `S` and every copy |
+| Two or more different new states | **conflict**: listed, exit 1 (fix by hand, re-run) |
+| New link, dest missing | copied from `S` |
+| New link, source missing | `S` created from the copy |
+| `instructions:` set | `CLAUDE.md` regenerated from its parts; a hand edit is a conflict ("generated; edit a part") |
 
-```
-# dest	source	kind
-CLAUDE.md	software/harness/instructions/base.md	assembled     (one row per part)
-.claude/skills/run-local/SKILL.md	software/…/harness/skills/run-local/SKILL.md	sync
-CLAUDE.md	software/…/layouts/argos-dev/files/CLAUDE.md	layout     (when not assembled)
-.claude/settings.json	software/harness/settings/claude.json	copy     (listed only)
-.delphi/manifest.yml	software/…/layouts/argos-dev/manifest.yml	layout
-```
+`--check` changes nothing and exits 1 if anything would change. Sync is deterministic and
+idempotent.
 
-Copied files are **not** part of the compile (the lock lists them so refresh knows what to copy).
-They are committed to `working` directly (`delphi: copy …`) when first listed, and recorded in
-`.git/delphi/copied` (`dest<TAB>source<TAB>delphi-commit`, the Delphi commit copied from). A dest
-that already exists is left alone (warned, recorded). Copies are never overwritten or proposed,
-and they never count as pending changes; `diff` lists a copy you edited as local.
+## 4. Local checkouts
 
-## 4. Commands
+A checkout is `git clone --filter=blob:none --no-checkout` of Delphi's origin, with a **non-cone**
+sparse pattern for the one folder (so Delphi's root `CLAUDE.md` is never checked out), on branch
+`ws/<gh-user>/<checkout>`. The harness runs inside the folder. `repos/` and the adapter's local
+settings file are git-ignored via `.git/info/exclude`. Bookkeeping: `.git/delphi/meta`
+(workspace path, harness, last pushed commit).
+
+## 5. Commands
 
 | Command | Does |
 |---|---|
-| `workspace new <layout> [--as ws] [--ref b]` | compile at `origin/<ref>`, init repo, add copies, clone repos |
-| `workspace open [ws] [--shell]` | warn if behind; launch the harness (or a shell) in it |
-| `workspace refresh [ws] [--ref b]` | compile → commit on `generated` → `git merge` into `working` (exit 2 on conflict; re-run to finish); add newly listed copies; print which synced files changed upstream and who changed them |
-| `workspace diff [ws] [--upstream]` | what you changed vs. what came from Delphi (below); `--upstream`: sources changed on `origin/<ref>` since your compile, incl. copies whose source moved on |
-| `workspace propose [ws] [--dry-run]` | refresh, route (below), one PR per workspace (force-updated) |
-| `workspace status` | one row per workspace: dirty, clean/proposed/unproposed, behind |
-| `layout new <scope> <name> --from <file>` / `layout list` | layout PR / list layouts |
-| `block mv <old> <new>` | move a source (any path under `context/` except layouts and `scope.yml`), log it in `moves.tsv`, rewrite manifests and scope recommendations; workspaces follow on refresh |
-| `check` | validate the repo (below) |
-| `setup [dir]` | remember where the Delphi checkout is |
+| `delphi create <scope> <name> --from <workspace.yml>` | new workspace folder (yml + synced files) via PR |
+| `delphi list` | workspaces on `origin/main` (name, scope, harness) |
+| `delphi checkout <name> [--as <checkout>]` | sparse clone, branch, clone repos |
+| `delphi open [checkout] [--shell]` | warn if behind `main`; launch the harness (or a shell) in the folder |
+| `delphi refresh [checkout]` | `git fetch` + `git merge origin/main` (exit 2 on conflict; resolve with git) |
+| `delphi diff [checkout] [--upstream]` | your changes vs `main`, per file, tagged **own** or **linked** (`shared: <workspaces>`); `--upstream`: files changed on `main` since your last refresh, with author and subject |
+| `delphi propose [checkout] [--dry-run]` | refresh, sync (in a temp worktree; commits `delphi: sync shared files`), `check`, push the branch, open/update one PR per checkout; PR body lists changed files, shared impact, provenance |
+| `delphi status` | every local checkout: dirty, ahead (unpushed), behind `main` |
+| `delphi mv <old> <new>` | move a source or workspace path, rewrite `links`/`instructions` in every `workspace.yml`, PR |
+| `delphi sync [--check]` | reconcile links (§3) |
+| `delphi check` | validate (§6) |
+| `delphi setup [dir]` | remember where the Delphi checkout is |
 
-`propose --dry-run` prints the same listing as `workspace diff` (stdout), one line per changed
-file: `update|new|manifest <dest> -> <source>`, `noop|local <dest> (<reason>)`, then
-`Unresolved:` with `<dest>: <reason>`. `diff --upstream` prints
-`<kind> <dest> <- <source> (<author>: <subject>)` per changed source. `status` counts a workspace
-as clean when nothing proposable is pending (local files don't count). `propose` makes one commit
-on the propose branch.
+Common flags on commands that write to Delphi: `--yes`, `--model`, `--effort`.
 
-## 5. What changed, and where it goes (routing)
+**CI** (`.github/workflows/delphi.yml`): on PRs, `delphi check` + `delphi sync --check`; on
+pushes to `main`, `delphi sync` and commit the result if anything changed.
 
-Pending diff = `generated-merged..HEAD` (committed changes only; `diff` and `--dry-run` warn
-about uncommitted ones). Per changed file:
+## 6. check
 
-| Change | Result |
-|---|---|
-| synced or layout file, modified (incl. binary, mode) | copy the file over its source |
-| synced file, deleted | no-op if its entry was removed from `.delphi/manifest.yml`, else unresolved |
-| layout file, deleted | unresolved (remove it from the layout's `files/` in Delphi) |
-| new file inside a synced **directory** | new file in that source directory (the innermost entry wins) |
-| new `sync` entry in `.delphi/manifest.yml` whose source doesn't exist yet | source created from the workspace file(s) |
-| new file whose source already exists in Delphi | unresolved (it arrives on refresh once the entry merges) |
-| symlink, type change, other `.delphi/` files | unresolved |
-| `.delphi/manifest.yml` modified | replaces the layout manifest |
-| assembled instruction file | unresolved ("generated; sync a part to edit it"); deleting it is a no-op if `instructions` was dropped |
-| anything else (copies, new files elsewhere) | **local**: listed, never proposed |
+Scopes have `scope.yml`; every `workspace.yml` parses; `name` = folder and unique; adapter
+exists; only known keys; link sources exist; dests are inside the folder, unique, not under
+`repos/`; no file named after an instruction file outside a workspace folder; no symlinks.
 
-One source synced to several dests: identical edits route once; differing edits are unresolved.
-Unresolved items are listed in the PR body; they never block it.
+## 7. Unchanged
 
-**Shared awareness.** `diff`, `propose`, and `refresh` tag a synced file **shared** when other
-layouts on `origin/main` also use its source in `instructions`, `sync`, or `copy`
-(`shared: argos-dev, nero-dev`), so you know an edit reaches other teams. Refresh lists synced
-files updated from Delphi with the last author and commit subject (`updated <dest> (<author>:
-<subject>)`, `removed <dest>`, `copied <dest>`).
+Provenance (trailers on every commit Delphi writes, the workspace commit hook, resolution order),
+`--yes` / non-interactive rules, `gh` only for PRs, `safe_path` on every path from config, flags,
+and manifests, exit codes (0 ok, 1 error, 2 merge conflict), offline tolerance, `delphi.conf`.
 
-## 6. Unchanged from v1
+## 8. Removed (vs v2)
 
-PR path (temp worktree from `compile_commit`, provenance trailers, `--yes`, lease on the
-propose branch, `gh` only for PRs), provenance resolution and the workspace commit hook,
-`moves.tsv`, `delphi.conf`, harness adapters (names + launch + provenance), path safety
-(`safe_path` on every path from config, flags, lock, manifests, `moves.tsv`), exit codes
-(0 ok, 1 error, 2 refresh conflict), offline tolerance.
-
-## 7. Removed
-
-Line-level lock and hunk routing, instruction-fragment routing, built `.skill` specs,
-MCP fragment assembly (MCP/settings are ordinary synced or copied files), manifest keys
-`blocks`/`docs`/`skills`/`mcp`/`settings`, the interactive `layout new` picker (use `--from` or the
-`delphi-new-layout` skill), and the bash CLI. v1 workspaces must be recreated
-(`delphi` detects the old lock and says so).
-
-## 8. check
-
-Scopes have `scope.yml`; Delphi's own YAML (`scope.yml`, layout manifests) parses (other `.yml`
-files are content and may use full YAML); scope `recommend` paths exist; manifests: `name` = directory and unique, adapter
-exists, only known keys, entries well-formed, sources exist, dests safe and unique (no dest inside
-another entry's dest, except a file inside a directory entry's dest where that directory has no
-file; layout `files/` not under reserved paths), not both `instructions` and a `files/` instruction file; no file named after
-an instruction file under `context/` except inside `layouts/*/files/`; `moves.tsv` rows
-well-formed (three fields, safe paths); no symlinks, no empty files.
+Compile, lock, `generated` / `generated-merged` refs, per-file routing, `copy` entries,
+`moves.tsv` (moves are just commits on `main`), `layouts/` (replaced by `workspaces/`), and the
+`workspace`/`layout`/`block` command groups (flattened). v2 workspaces must be recreated with
+`delphi checkout`.

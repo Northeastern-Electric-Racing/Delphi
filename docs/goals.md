@@ -11,41 +11,37 @@ and send improvements back — with or without an AI harness.
 
 ## Goals
 
-**G1. Compile.** A layout (a manifest picking context + a harness) compiles into a workspace's
-files at normal harness locations. Same Delphi commit + same layout = identical output. Every
-compiled file is traceable to its source file (the lock).
+**G1. Workspaces live in Delphi.** Each workspace is a folder in Delphi with every file at its
+normal harness location, fully materialized on `main`. Shared files are linked to one source.
 
-**G2. Workspaces are independent.** Each workspace is its own git repo outside Delphi, where the
-user works freely. Many workspaces can come from one layout. Code repos listed in the layout are
-cloned into it.
+**G2. Work locally on just your workspace.** A checkout contains only that folder, on your own
+branch. Code repos listed in the workspace are cloned into it.
 
-**G3. Refresh.** Pull the latest Delphi `main` into a workspace without losing the user's edits.
-Conflicts are shown with git's normal tools. Re-running always picks up where it left off.
-Renamed/moved blocks are followed.
+**G3. Refresh.** Pull the latest `main` into a checkout without losing the user's edits.
+Conflicts are shown with git's normal tools.
 
-**G4. Know what changed.** At any time, show what the user changed versus what came from Delphi,
-and whether those changes have been proposed yet.
+**G4. Know what changed.** At any time, show what the user changed versus `main`, what changed on
+`main` since, and whether the changes have been proposed yet.
 
-**G5. Propose.** Send the workspace's changes back as one pull request per workspace. Each edit
-to a synced file lands in the source file it came from; new shared files are declared in the
-manifest. Copied and other local files stay local. Anything Delphi can't place is listed in the
-PR, never guessed.
+**G5. Propose.** Send a checkout's changes back as one pull request per checkout.
 
-**G5a. Sync is opt-in.** A layout chooses per file: synced (linked to its source) or copied
-(yours after the first copy). Editing a file other layouts also sync is flagged as shared.
+**G5a. Shared stays consistent.** A change to a shared file, made in its source or in any
+workspace that links it, reaches the source and every linked copy before it lands on `main`.
+Editing a shared file is flagged with the workspaces it affects. Conflicting edits are reported,
+never guessed.
 
 **G6. Provenance.** Every change written to Delphi records which harness, model, and effort made
 it.
 
 **G7. Keep Delphi valid.** `check` catches broken manifests, missing paths, and bad structure
-before anything is pushed. Layouts and block moves are created through PRs too.
+before anything is pushed. New workspaces and moves are created through PRs too.
 
 **G8. Harness-agnostic.** Supporting a new harness (beyond Claude Code) means adding one small
 adapter: file names plus how to launch it.
 
 ## Invariants
 
-- **I1.** Never modify the user's own Delphi checkout; all writes go through PRs.
+- **I1.** Changes reach `main` only through PRs; Delphi never rewrites a user's uncommitted work.
 - **I2.** Reject unsafe paths (absolute, `..`, symlinks escaping) before any read or write.
 - **I3.** Workspace bookkeeping never shows up as a user change.
 - **I4.** Clear errors that say what to run next; never hang waiting for input in scripts.
