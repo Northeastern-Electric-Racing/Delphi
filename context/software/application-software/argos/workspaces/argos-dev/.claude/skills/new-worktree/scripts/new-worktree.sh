@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# new-worktree.sh <branch> — create or reuse worktrees/<branch> for repos/argos. Prints the path.
+# new-worktree.sh <branch> — create or reuse repos/worktrees/<branch> for repos/argos. Prints the path.
 # An existing branch (local or on origin) is checked out; a new one starts from origin/develop.
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../../../.." && pwd)
 branch=${1:?usage: new-worktree.sh <branch>}
-repo="$root/repos/argos" dest="$root/worktrees/$branch"
+repo="$root/repos/argos" dest="$root/repos/worktrees/$branch"
 
 git -C "$repo" fetch -q origin
 if [ -d "$dest" ]; then :

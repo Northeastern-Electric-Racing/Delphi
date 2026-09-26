@@ -1,6 +1,6 @@
 ---
 name: new-worktree
-description: Create or reuse the worktree for a branch in this Delphi workspace (worktrees/<branch>), checking out an existing branch or starting a new one from origin/develop. Use before starting a ticket, reviewing or fixing a PR branch, or whenever work needs its own checkout.
+description: Create or reuse the worktree for a branch in this Delphi workspace (repos/worktrees/<branch>), checking out an existing branch or starting a new one from origin/develop. Use before starting a ticket, reviewing or fixing a PR branch, or whenever work needs its own checkout.
 ---
 
 Run from the workspace root:

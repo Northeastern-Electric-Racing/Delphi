@@ -1,9 +1,9 @@
 ---
-name: delphi-new-layout
-description: Build a new Delphi layout with the user. Interview them about the work, pick blocks from scope recommendations, draft manifest.yml, and open the layout PR with `delphi layout new --from`. Use when someone wants a new layout or workspace setup in Delphi.
+name: delphi-new-workspace
+description: Build a new Delphi workspace folder with the user. Interview them about the work, pick shared sources to link from scope recommendations, draft workspace.yml, and open the PR with `delphi create --from`. Use when someone wants a new workspace or harness setup in Delphi.
 ---
 
-# Create a Delphi layout
+# Create a Delphi workspace
 
 Drive the CLI. Don't write to `context/` yourself.
 
@@ -11,28 +11,28 @@ Drive the CLI. Don't write to `context/` yourself.
    under `context/` (for example `software/application-software/argos`).
 2. **Gather candidates.** Read `recommend:` in the scope's `scope.yml` and in each ancestor's,
    closest scope first. Browse the scopes' `blocks/`, `docs/`, and `harness/` directories. Run
-   `delphi layout list` to reuse ideas from existing layouts and avoid name clashes.
-3. **Draft** a manifest in a temp file (format: `docs/design.md` §2). Paths are relative to
-   `context/`; a directory source maps every file under it.
-   - `name`: the layout name (`[a-z0-9-]+`). `harness: claude-code`.
-   - `instructions:` (optional): parts assembled into `CLAUDE.md`, usually
-     `harness/instructions/workspace.md` first. The assembled file is generated: users edit a part
-     by syncing it.
-   - `sync:` files the team keeps in step with Delphi (refresh updates them, propose sends edits
-     back). `copy:` starting points the user then owns (never updated or proposed).
-   - Entry = `<source> [-> <dest>]`. Default dests: `…/harness/skills/<n>` → `.claude/skills/<n>`,
-     `…/docs/<rest>` → `docs/<rest>`, anything else → `context/<source>`. Use `->` for anything
-     else, e.g. `…/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md`.
-   - Dests must not overlap: no dest inside another entry's dest, except a single file placed
-     into a synced folder at a path the folder doesn't already have (e.g. a skill folder plus a
-     block `-> .claude/skills/<n>/pr-body.md`).
-   - `repos:` as `name: git-url`.
-   Tell the user which sources other layouts also sync (`delphi layout list`, then read their
-   manifests): edits to those reach other teams.
+   `delphi list` to avoid name clashes and read existing workspaces' `workspace.yml` for ideas.
+3. **Draft** a `workspace.yml` in a temp file (format: `docs/design.md` §2). Paths are relative to
+   `context/`.
+   - `name`: the workspace name (`[a-z0-9-]+`, unique repo-wide). `harness: claude-code`.
+   - `instructions:` (optional): parts `CLAUDE.md` is generated from, usually
+     `harness/instructions/workspace.md` first. The generated file must not be hand-edited; users
+     change a part instead.
+   - `links:` shared sources kept identical in every workspace that links them. Entry =
+     `<source> [-> <dest>]`; a directory links every file under it. Default dests:
+     `…/harness/skills/<n>` → `.claude/skills/<n>`, `…/docs/<rest>` → `docs/<rest>`, anything
+     else → `context/<source>`. Use `->` for anything else, e.g.
+     `…/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md`. Dests must be unique and must not
+     sit inside another directory link's dest (a file link into one of the workspace's own
+     folders is fine).
+   - `repos:` as `name: git-url` (cloned into `repos/` in a checkout).
+   Only link what should stay shared. Anything team-specific becomes the workspace's own file:
+   after the PR merges, add it in a checkout and propose it. Tell the user which sources other
+   workspaces already link: edits to those reach other teams.
 4. **Show the draft** and get explicit approval.
 5. **Create it:**
-   `delphi layout new <scope> <name> --from <draft> --model <your model> --effort <effort> --yes`
-   The command runs `check` and prints the branch (`delphi/layout/<name>`). On a check failure,
-   fix the draft and retry.
-6. **Optionally try it** before the PR merges: `delphi workspace new <name> --ref delphi/layout/<name>`.
-   Once the PR merges, run `delphi workspace refresh <name> --ref main`.
+   `delphi create <scope> <name> --from <draft> --model <your model> --effort <effort> --yes`
+   It writes the folder, runs `delphi sync` (materializing linked files and `CLAUDE.md`) and
+   `delphi check`, and prints the branch (`delphi/create/<name>`). On a check failure, fix the draft
+   and retry.
+6. Once the PR merges: `delphi checkout <name>`, then `delphi open <name>`.

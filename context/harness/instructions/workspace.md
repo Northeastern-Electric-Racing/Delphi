@@ -1,16 +1,15 @@
 # Delphi workspace
 
-You are in a Delphi workspace: a folder that pairs team context with the code repos it's about. It has two kinds of git repo, and every change belongs to exactly one:
+You are in a Delphi workspace: this folder, checked out from Delphi on your own branch. It pairs team context with the code repos it's about, and holds two kinds of git repo. Every change belongs to exactly one:
 
 | Path | What it is | Changes go |
 |---|---|---|
-| `CLAUDE.md`, `.claude/`, `docs/`, `context/` | Team context and docs from Delphi | Workspace git (`working` branch); `delphi workspace propose` opens the Delphi PR |
-| `repos/<name>/` | A normal clone of a code repo, with its own remote | That repo's git, branches, and PRs, per its conventions |
-| `worktrees/` | Empty; for extra checkouts of a repo (`git -C repos/<name> worktree add ../../worktrees/<branch> <branch>`) | Same as the repo it came from |
+| `CLAUDE.md`, `.claude/`, `docs/`, other files here | The workspace, a folder in Delphi (a sparse checkout that holds only this folder) | Commit on the checkout's branch; `delphi propose` opens the Delphi PR |
+| `repos/<name>/` | A separate clone of a code repo, with its own remote (git-ignored by the workspace) | That repo's git, branches, and PRs, per its conventions |
 
-- Run a repo's git, `gh`, build, and test commands from inside that repo (`cd repos/<name>`), never from the workspace root: at the root, `git` is the workspace repo.
-- Code changes never go in the workspace git (`repos/` and `worktrees/` are git-ignored there). Context changes (instructions, skills, docs) never go in a code repo.
-- Each context file is a copy of one file in Delphi. **Synced** files are updated by `delphi workspace refresh`, and committed edits to them are proposed back. **Copied** files are yours after the first copy and are never proposed. Files you add stay local unless they sit in a synced folder.
-- If `CLAUDE.md` is assembled from parts, it is generated: edit the synced part instead (or add the part under `sync:` in `.delphi/manifest.yml`).
-- `delphi workspace diff` shows what you changed and where each change would go. `--upstream` shows what changed in Delphi since the last refresh.
-- `.delphi/manifest.yml` is the layout: edit it to add or drop synced files (the edit is proposed too). Don't edit `.delphi/lock.tsv`.
+- Run a repo's git, `gh`, build, and test commands from inside that repo (`cd repos/<name>`), never from this folder: here, `git` is the Delphi checkout.
+- Code changes never go in the workspace's git. Context changes (instructions, skills, docs) never go in a code repo.
+- Some files are **linked** to a shared source in Delphi (see `links:` in `workspace.yml`). Edit them here like any file: when you propose, `delphi sync` writes your edit to the source and to every other workspace that links it. `delphi diff` tags those files `linked` and lists the workspaces they are `shared` with. If someone else changed the same shared file differently, sync reports a conflict instead of guessing.
+- Files that aren't linked are this workspace's own. To add one, just add it.
+- If `workspace.yml` lists `instructions:`, `CLAUDE.md` is generated from those parts: don't edit it by hand; edit the part instead (link it into this folder under `links:` and edit the copy, or change it in Delphi).
+- `delphi diff` shows what you changed versus `main`; `delphi diff --upstream` shows what changed on `main` since your last `delphi refresh`. `delphi refresh` merges `main` into your branch (conflicts are resolved with plain git). `delphi propose` sends your committed changes as one PR.

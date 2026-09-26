@@ -1,5 +1,5 @@
 //! Shared helpers: messages, deferred cleanup, prompts, config, repo-root discovery, path safety,
-//! running git, Delphi repo access, moves, flag parsing, and small path helpers.
+//! running git, Delphi repo access, flag parsing, and small path helpers.
 
 use anyhow::Result;
 use std::collections::hash_map::RandomState;
@@ -337,10 +337,6 @@ pub fn date(fmt: &str) -> String {
     out(Command::new("date").arg(format!("+{fmt}"))).unwrap_or_default()
 }
 
-pub fn now() -> u64 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-}
-
 // ---- Delphi repo access ----
 pub fn delphi_fetch() {
     if OFFLINE.load(Ordering::Relaxed) {
@@ -373,107 +369,8 @@ pub fn delphi_worktree(opts: &[&str], start: &str, err: &str) -> Result<PathBuf>
     Ok(d)
 }
 
-/// A file at a Delphi commit.
-pub fn show(c: &str, path: &str) -> Option<Vec<u8>> {
-    show_in(root(), c, path)
-}
-
-/// Blob id of `context/<p>` at a Delphi commit.
-pub fn blob(c: &str, p: &str) -> Option<String> {
-    out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{c}:context/{p}")]))
-}
-
-/// Layout manifests (`context/…/layouts/<name>/manifest.yml`) at a Delphi commit.
-pub fn layout_manifests(c: &str) -> Vec<String> {
-    let t = out(&mut dgit(["ls-tree", "-r", "--name-only", c, "--", "context"])).unwrap_or_default();
-    t.lines()
-        .filter(|f| {
-            f.strip_suffix("/manifest.yml")
-                .and_then(|d| d.rfind("/layouts/").map(|i| &d[i + 9..]))
-                .is_some_and(|n| !n.is_empty() && !n.contains('/'))
-        })
-        .map(String::from)
-        .collect()
-}
-
 pub fn name_ok(name: &str) -> bool {
     !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
-
-/// The layout dir (relative to context/) of layout <name> at a Delphi commit.
-pub fn find_layout(c: &str, name: &str) -> Result<String> {
-    if !name_ok(name) {
-        die!("invalid layout name: '{name}'");
-    }
-    let suffix = format!("/layouts/{name}/manifest.yml");
-    let hits: Vec<String> = layout_manifests(c).into_iter().filter(|f| f.ends_with(&suffix)).collect();
-    match hits.as_slice() {
-        [f] => Ok(f["context/".len()..f.len() - "/manifest.yml".len()].to_string()),
-        [] => die!("layout not found: {name}"),
-        _ => die!("layout name not unique: {name}"),
-    }
-}
-
-// ---- moves (moves.tsv is append-only; rows apply in order, each once) ----
-pub type Moves = Vec<(String, String)>;
-
-pub fn parse_moves(text: &str) -> Moves {
-    text.lines()
-        .filter(|l| !l.starts_with('#'))
-        .filter_map(|l| {
-            let mut f = l.split('\t');
-            Some((f.next()?.to_string(), f.next()?.to_string()))
-        })
-        .collect()
-}
-
-/// Rows of moves.tsv added between two Delphi commits.
-pub fn moves_since(old: &str, new: &str) -> Moves {
-    let read = |c: &str| String::from_utf8_lossy(&show(c, "moves.tsv").unwrap_or_default()).into_owned();
-    let n = read(old).lines().count();
-    parse_moves(&read(new).lines().skip(n).collect::<Vec<_>>().join("\n"))
-}
-
-pub fn move_path(rows: &Moves, p: &str) -> String {
-    let mut p = p.to_string();
-    for (o, n) in rows {
-        if let Some(rest) = under(&p, o) {
-            p = join(n, rest);
-        }
-    }
-    p
-}
-
-/// Undo move rows: where `p` was before them.
-pub fn unmove_path(rows: &Moves, p: &str) -> String {
-    let rev: Moves = rows.iter().rev().map(|(o, n)| (n.clone(), o.clone())).collect();
-    move_path(&rev, p)
-}
-
-/// Apply move rows to the source of `  - <source> [-> <dest>]` lines in place (trailing comments
-/// on rewritten lines are dropped). True if anything changed.
-pub fn rewrite_moves(rows: &Moves, file: &Path) -> Result<bool> {
-    let text = String::from_utf8_lossy(&fs::read(file)?).into_owned();
-    let mut changed = false;
-    let mut res = String::new();
-    for l in text.lines() {
-        let mut line = l.to_string();
-        if let Some(item) = l.strip_prefix("  - ") {
-            let v = item.split(" #").next().unwrap_or("").trim_end_matches(' ');
-            let (src, dest) = v.split_once(" -> ").map_or((v, None), |(a, b)| (a, Some(b)));
-            let m = move_path(rows, src);
-            if m != src {
-                line = dest.map_or_else(|| format!("  - {m}"), |d| format!("  - {m} -> {d}"));
-                changed = true;
-            }
-        }
-        res.push_str(&line);
-        res.push('\n');
-    }
-    if changed {
-        write_replace(file, res.as_bytes())?;
-    }
-    Ok(changed)
 }
 
 // ---- flags ----
@@ -481,13 +378,14 @@ pub fn rewrite_moves(rows: &Moves, file: &Path) -> Result<bool> {
 #[derive(Default, Debug)]
 pub struct Opts {
     pub as_: String,
-    pub ref_: String,
     pub from: String,
+    pub base: String,
     pub model: String,
     pub effort: String,
     pub shell: bool,
     pub dry: bool,
     pub upstream: bool,
+    pub check: bool,
 }
 
 /// Parse flags allowed by `allowed` (space-separated); returns options and positionals.
@@ -506,7 +404,7 @@ pub fn parse_args(allowed: &str, args: &[String]) -> Result<(Opts, Vec<String>)>
         };
         match a {
             "--as" => o.as_ = val()?,
-            "--ref" => o.ref_ = val()?,
+            "--base" => o.base = val()?,
             "--from" => o.from = val()?,
             "--model" => o.model = val()?,
             "--effort" => o.effort = val()?,
@@ -515,6 +413,7 @@ pub fn parse_args(allowed: &str, args: &[String]) -> Result<(Opts, Vec<String>)>
             "--shell" => o.shell = true,
             "--dry-run" => o.dry = true,
             "--upstream" => o.upstream = true,
+            "--check" => o.check = true,
             _ => pos.push(a.to_string()),
         }
     }

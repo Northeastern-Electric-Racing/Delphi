@@ -1,6 +1,7 @@
-//! Test sandbox: a temp dir with a bare Delphi origin, a Delphi clone with sample content (two
-//! layouts), a bare code repo, a stub `gh` on PATH (logs to gh.log, remembers PRs in gh.prs), and
-//! a workspace root. Nothing touches GitHub.
+//! Test sandbox: a temp dir with a bare Delphi origin (partial-clone capable), a Delphi clone with
+//! sample content (workspaces argos-dev and nero-dev sharing the linked skill run-tests and the
+//! block pr-body.md, materialized by `delphi sync`), a bare code repo, a stub `gh` on PATH (logs to
+//! gh.log, remembers PRs in gh.prs), and a checkout root. Nothing touches GitHub.
 #![allow(dead_code)]
 
 use std::fs;
@@ -10,72 +11,68 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 const BUILD: &str = r#"
 set -euo pipefail
-SB=$1 here=$2
+SB=$1 here=$2 delphi=$3
 git init -q --bare -b main "$SB/origin.git"
+git -C "$SB/origin.git" config uploadpack.allowFilter true
+git -C "$SB/origin.git" config uploadpack.allowAnySHA1InWant true
 git clone -q "$SB/origin.git" "$SB/Delphi" 2>/dev/null
-cp "$here/delphi.conf" "$here/moves.tsv" "$SB/Delphi/"
+cp "$here/delphi.conf" "$SB/Delphi/"
+printf '# Delphi development\n' > "$SB/Delphi/CLAUDE.md"
 
-C="$SB/Delphi/context"
-S=software/application-software
-A="$C/$S/argos" N="$C/$S/nero"
-mkdir -p "$C/software/harness/instructions" "$C/software/harness/settings" "$A/blocks" "$A/docs" \
-         "$A/harness/instructions" "$A/harness/skills/run-tests/scripts" \
-         "$A/layouts/argos-dev/files/.claude/skills/argos-notes" "$N/layouts/nero-dev/files"
+C="$SB/Delphi/context" S=software/application-software
+A="$C/$S/argos" AD="$C/$S/argos/workspaces/argos-dev" ND="$C/$S/nero/workspaces/nero-dev"
+RT="$C/software/harness/skills/run-tests"
+mkdir -p "$C/harness/instructions" "$C/software/harness/instructions" "$C/software/docs" "$RT/scripts" \
+         "$A/blocks" "$AD/.claude/skills/argos-notes" "$AD/.claude/skills/open-pr" "$ND"
 
 printf 'name: NER\n' > "$C/scope.yml"
-printf 'name: Software\nrecommend:\n  - software/harness/instructions/base.md\n' > "$C/software/scope.yml"
+printf 'name: Software\nrecommend:\n  - software/harness/skills/run-tests\n' > "$C/software/scope.yml"
 printf 'name: Application Software\n' > "$C/$S/scope.yml"
-printf 'name: Argos\nrecommend:\n  - %s/argos/harness/skills/run-tests\n' "$S" > "$A/scope.yml"
-printf 'name: NERO\n' > "$N/scope.yml"
-printf '# Software conventions\n\n- Use conventional commits.\n- Open PRs against develop.\n' \
-  > "$C/software/harness/instructions/base.md"
-printf '{\n  "model": "sonnet"\n}\n' > "$C/software/harness/settings/settings.json"
-printf '# Argos\n\nArgos is the telemetry dashboard.\n' > "$A/harness/instructions/argos.md"
-printf -- '---\nname: run-tests\ndescription: Run the Argos test suites.\n---\n\nRun both suites.\n' \
-  > "$A/harness/skills/run-tests/SKILL.md"
-printf '#!/bin/sh\necho running tests\n' > "$A/harness/skills/run-tests/scripts/run.sh"
-chmod +x "$A/harness/skills/run-tests/scripts/run.sh"
-printf '# Guide\n\nLine one.\nLine two.\n' > "$A/docs/guide.md"
-printf '\211PNG\r\n\0\1\2' > "$A/docs/logo.png"
+printf 'name: Argos\n' > "$A/scope.yml"
+printf 'name: NERO\n' > "$C/$S/nero/scope.yml"
+printf '# Workspace\n\nYou are in a Delphi workspace.\n' > "$C/harness/instructions/ws.md"
+printf '# Software conventions\n\n- Use conventional commits.\n' > "$C/software/harness/instructions/base.md"
+printf -- '---\nname: run-tests\ndescription: Run the test suites.\n---\n\nRun both suites.\n' > "$RT/SKILL.md"
+printf '#!/bin/sh\necho running tests\n' > "$RT/scripts/run.sh"
+chmod +x "$RT/scripts/run.sh"
+printf '# Guide\n\nLine one.\nLine two.\n' > "$C/software/docs/guide.md"
 printf '**PR body:** fill the template.\n' > "$A/blocks/pr-body.md"
-printf '# Style\n\nTabs.\n' > "$A/blocks/style.md"
-printf -- '---\nname: argos-notes\ndescription: Notes.\n---\n\nArgos notes.\n' \
-  > "$A/layouts/argos-dev/files/.claude/skills/argos-notes/SKILL.md"
-printf '# NERO\n' > "$N/layouts/nero-dev/files/CLAUDE.md"
+printf -- '---\nname: argos-notes\ndescription: Notes.\n---\n\nArgos notes.\n' > "$AD/.claude/skills/argos-notes/SKILL.md"
+printf -- '---\nname: open-pr\ndescription: Open a PR.\n---\n\nOpen a draft PR.\n' > "$AD/.claude/skills/open-pr/SKILL.md"
+printf '# NERO\n\nNERO is the dashboard firmware.\n' > "$ND/CLAUDE.md"
 
 git init -q -b main "$SB/argos-src"
 printf '# Argos code\n' > "$SB/argos-src/README.md"
 git -C "$SB/argos-src" add -A && git -C "$SB/argos-src" commit -qm init
 git clone -q --bare "$SB/argos-src" "$SB/argos.git"
 
-cat > "$A/layouts/argos-dev/manifest.yml" <<EOF
+cat > "$AD/workspace.yml" <<EOF
 name: argos-dev
 harness: claude-code
 instructions:
+  - harness/instructions/ws.md
   - software/harness/instructions/base.md
-  - $S/argos/harness/instructions/argos.md
-sync:
-  - $S/argos/harness/skills/run-tests
-  - $S/argos/docs
-  - $S/argos/blocks/style.md
+links:
+  - software/harness/skills/run-tests
+  - software/docs/guide.md
   - $S/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
   - $S/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
-copy:
-  - software/harness/settings/settings.json -> .claude/settings.json
 repos:
   argos: file://$SB/argos.git
 EOF
-cat > "$N/layouts/nero-dev/manifest.yml" <<EOF
+cat > "$ND/workspace.yml" <<EOF
 name: nero-dev
 harness: claude-code
-sync:
+links:
+  - software/harness/skills/run-tests
   - $S/argos/blocks/pr-body.md -> .claude/skills/pr/pr-body.md
 EOF
 
-git -C "$SB/Delphi" add -A
-git -C "$SB/Delphi" commit -qm "sandbox: sample content"
-git -C "$SB/Delphi" push -q origin HEAD:main 2>/dev/null
-git -C "$SB/Delphi" branch -q -u origin/main 2>/dev/null || true
+cd "$SB/Delphi"
+git add -A && git commit -qm "sandbox: sources and workspaces" && git push -q origin HEAD:main 2>/dev/null
+git branch -q -u origin/main 2>/dev/null || true
+DELPHI_ROOT="$SB/Delphi" "$delphi" sync > /dev/null 2>&1
+git add -A && git commit -qm "sandbox: sync" && git push -q origin HEAD:main 2>/dev/null
 
 mkdir -p "$SB/bin"; : > "$SB/gh.prs"
 { printf '#!/bin/sh\nSB=%q\n' "$SB"; cat <<'EOF'; } > "$SB/bin/gh"
@@ -92,9 +89,10 @@ EOF
 chmod +x "$SB/bin/gh"
 "#;
 
-pub const S: &str = "software/application-software";
-pub const A: &str = "software/application-software/argos";
-pub const LAYOUT: &str = "software/application-software/argos/layouts/argos-dev";
+pub const AD: &str = "context/software/application-software/argos/workspaces/argos-dev";
+pub const ND: &str = "context/software/application-software/nero/workspaces/nero-dev";
+pub const RT: &str = "context/software/harness/skills/run-tests";
+pub const PB: &str = "context/software/application-software/argos/blocks/pr-body.md";
 
 #[derive(Debug, Clone)]
 pub struct Out {
@@ -111,7 +109,7 @@ static N: AtomicUsize = AtomicUsize::new(0);
 
 impl Sb {
     pub fn new(tag: &str) -> Sb {
-        // outside this repo, so walking up from a workspace never finds the real checkout
+        // outside this repo, so walking up from a checkout never finds the real one
         let dir =
             std::env::temp_dir().join(format!("sb-{tag}-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
         let _ = fs::remove_dir_all(&dir);
@@ -126,6 +124,7 @@ impl Sb {
         let sb = Sb { dir };
         let mut c = Command::new("bash");
         c.arg("-c").arg(BUILD).arg("build").arg(&sb.dir).arg(env!("CARGO_MANIFEST_DIR"));
+        c.arg(env!("CARGO_BIN_EXE_delphi"));
         sb.env(&mut c);
         let o = c.output().unwrap();
         assert!(o.status.success(), "sandbox build failed: {}", String::from_utf8_lossy(&o.stderr));
@@ -136,7 +135,8 @@ impl Sb {
         self.dir.join("Delphi")
     }
 
-    pub fn ws(&self, name: &str) -> PathBuf {
+    /// A checkout's directory.
+    pub fn co(&self, name: &str) -> PathBuf {
         self.dir.join("Delphi-workspaces").join(name)
     }
 
@@ -186,10 +186,15 @@ impl Sb {
 
     /// The CLI with DELPHI_ROOT set to the sandbox's Delphi.
     pub fn d(&self, cwd: &Path, args: &[&str]) -> Out {
+        self.d_env(cwd, args, &[])
+    }
+
+    /// Like `d`, with extra environment variables.
+    pub fn d_env(&self, cwd: &Path, args: &[&str], env: &[(&str, &str)]) -> Out {
         let mut c = Command::new(env!("CARGO_BIN_EXE_delphi"));
         c.args(args);
         self.env(&mut c);
-        c.env("DELPHI_ROOT", self.root()).current_dir(cwd);
+        c.env("DELPHI_ROOT", self.root()).envs(env.iter().copied()).current_dir(cwd);
         Self::collect(c)
     }
 
@@ -207,10 +212,10 @@ impl Sb {
         self.run(c, cwd)
     }
 
-    /// `workspace new argos-dev --as <name>`, asserting success.
-    pub fn new_ws(&self, name: &str) -> PathBuf {
-        self.ok(&self.dir, &["workspace", "new", "argos-dev", "--as", name]);
-        self.ws(name)
+    /// `checkout <ws> --as <name>`, asserting success; returns the checkout directory.
+    pub fn checkout(&self, ws: &str, name: &str) -> PathBuf {
+        self.ok(&self.dir, &["checkout", ws, "--as", name]);
+        self.co(name)
     }
 
     /// Run a shell script in a directory; must succeed. Returns stdout.
@@ -222,9 +227,9 @@ impl Sb {
         o.stdout
     }
 
-    /// Edits in a workspace, committed.
-    pub fn edit(&self, ws: &Path, script: &str) {
-        self.sh(ws, &format!("{script}\ngit add -A\ngit commit -qm edits"));
+    /// Edits in a directory, committed.
+    pub fn edit(&self, dir: &Path, script: &str) {
+        self.sh(dir, &format!("{script}\ngit add -A\ngit commit -qm edits"));
     }
 
     pub fn git(&self, cwd: &Path, args: &[&str]) -> String {
@@ -235,7 +240,7 @@ impl Sb {
         o.stdout.trim_end().to_string()
     }
 
-    /// Commit a change to origin/main from a separate clone, as Alice.
+    /// Commit a change to origin/main from a separate full clone, as Alice.
     pub fn upstream(&self, subject: &str, script: &str) {
         let up = self.dir.join("up");
         if !up.exists() {
@@ -252,6 +257,11 @@ impl Sb {
 
     pub fn read(&self, p: &Path) -> String {
         fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
+    }
+
+    pub fn write(&self, p: &Path, s: &str) {
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, s).unwrap();
     }
 
     pub fn gh_log(&self) -> String {

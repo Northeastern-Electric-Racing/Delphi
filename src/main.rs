@@ -1,17 +1,16 @@
-//! Delphi CLI entry point: resolves the Delphi repo, then dispatches on the command group. Errors
-//! print as `delphi: <msg>` (exit 1); refresh conflicts exit 2.
+//! Delphi CLI entry point: resolves the Delphi repo, then dispatches the command. Errors print as
+//! `delphi: <msg>` (exit 1); merge conflicts exit 2.
 
-mod block;
 mod check;
-mod compile;
+mod checkout;
 mod core;
 mod harness;
-mod layout;
+mod manage;
 mod parse;
 mod pr;
 mod provenance;
-mod route;
 mod setup;
+mod sync;
 mod workspace;
 
 use crate::core::{Fail, OFFLINE, YES};
@@ -19,46 +18,45 @@ use std::sync::atomic::Ordering;
 
 const USAGE: &str = "usage: delphi <command> [args]
 
-  layout new <scope> <layout> --from <manifest>  create a layout (branch + PR)
-  layout list                                    list layouts on origin/main
-
-  workspace new <layout> [--as <ws>] [--ref <branch>]
-  workspace open [<ws>] [--model m] [--effort e] [--shell]
-  workspace refresh [<ws>] [--ref <branch>]
-  workspace diff [<ws>] [--upstream]            your changes (or Delphi's, with --upstream)
-  workspace propose [<ws>] [--dry-run]
-  workspace status [--offline]                   (alias: ws)
-
-  block mv <old> <new>                           move/rename a source
-
+  create <scope> <name> --from <workspace.yml>   new workspace folder (PR)
+  list                                           workspaces on origin/main
+  checkout <workspace> [--as <checkout>]         sparse clone of the folder on your branch
+  open [<checkout>] [--shell]                    start the harness (or a shell) in the folder
+  refresh [<checkout>]                           merge origin/main (exit 2 on conflicts)
+  diff [<checkout>] [--upstream]                 your changes vs main (or main's since refresh)
+  propose [<checkout>] [--dry-run]               refresh, sync, check, push, open/update the PR
+  status                                         every local checkout
+  mv <old> <new>                                 move a source or workspace path (PR)
+  sync [--check] [--base <rev>]                  reconcile links in this Delphi checkout
   check                                          validate the repo
   setup [dir]                                    record this Delphi checkout for use anywhere
 
-Commands that write to Delphi accept --model, --effort, --yes.
+Commands that write to Delphi accept --model, --effort, --yes; checkout commands --offline.
 The Delphi repo is $DELPHI_ROOT, else the checkout containing the current directory,
 else the one recorded by `delphi setup`.
 ";
 
 fn run(args: &[String]) -> anyhow::Result<()> {
-    let group = args.first().map(String::as_str).unwrap_or("");
+    let cmd = args.first().map(String::as_str).unwrap_or("");
     let rest = args.get(1..).unwrap_or(&[]);
-    match group {
+    match cmd {
         "" | "-h" | "--help" | "help" => {
             print!("{USAGE}");
             return Ok(());
         }
         "setup" => return setup::main(rest),
-        "layout" | "workspace" | "ws" | "block" | "check" => {}
-        _ => die!("unknown command '{group}' (see: delphi help)"),
+        "create" | "list" | "mv" | "checkout" | "open" | "refresh" | "diff" | "propose" | "status" | "sync"
+        | "check" => {}
+        _ => die!("unknown command '{cmd}' (see: delphi help)"),
     }
     YES.store(std::env::var("DELPHI_YES").as_deref() == Ok("1"), Ordering::Relaxed);
     OFFLINE.store(std::env::var("DELPHI_OFFLINE").as_deref() == Ok("1"), Ordering::Relaxed);
     crate::core::resolve_root()?;
-    match group {
-        "layout" => layout::main(rest),
-        "block" => block::main(rest),
+    match cmd {
+        "create" | "list" | "mv" => manage::main(cmd, rest),
+        "sync" => sync::main(rest),
         "check" => check::main(rest),
-        _ => workspace::main(rest),
+        _ => checkout::main(cmd, rest),
     }
 }
 

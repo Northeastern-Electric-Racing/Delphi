@@ -1,11 +1,12 @@
 //! The single path for writing to the Delphi monorepo.
 //!
-//! `begin` makes a temp worktree on a branch (reset to a start commit); the caller edits files
-//! under `wt`; `commit` stages everything and commits with provenance trailers; `finish` shows,
-//! confirms, pushes, and opens or updates the PR. With a lease (a sha, or empty = the branch must
-//! be absent) it force-pushes. The user's own Delphi checkout is never touched.
+//! A `Pr` is a temp worktree (`begin`: of the Delphi checkout, on a branch from a start commit; or
+//! a checkout's worktree built by propose) plus a branch name and provenance. `commit` stages
+//! everything and commits with provenance trailers; `finish` shows, confirms, pushes, and opens
+//! or updates the PR. With a lease (a sha, or empty = the branch must be absent) it force-pushes.
+//! The user's own Delphi checkout is never touched.
 
-use crate::core::{confirm, delphi_worktree, dgit, git, need_yes_or_tty, ok, out_q, out_stdin, root};
+use crate::core::{confirm, delphi_worktree, dgit, env_nonempty, git, need_yes_or_tty, ok, out_q, out_stdin, root};
 use crate::provenance::Prov;
 use crate::{die, info};
 use anyhow::Result;
@@ -15,7 +16,7 @@ use std::process::{Command, Stdio};
 pub struct Pr {
     pub branch: String,
     pub wt: PathBuf,
-    prov: Prov,
+    pub prov: Prov,
 }
 
 pub fn begin(branch: &str, start: &str, prov: Prov) -> Result<Pr> {
@@ -35,6 +36,18 @@ fn gh() -> Command {
 /// The GitHub login `gh` is authenticated as.
 pub fn gh_user() -> Option<String> {
     out_q(gh().args(["api", "user", "--jq", ".login"])).filter(|u| !u.is_empty())
+}
+
+/// The user name in checkout branches: the GitHub login when origin is on GitHub, else $USER.
+pub fn user() -> String {
+    let on_github = out_q(&mut dgit(["remote", "get-url", "origin"])).unwrap_or_default().contains("github.com");
+    let u = on_github.then(gh_user).flatten().or_else(|| env_nonempty("USER")).unwrap_or_default();
+    let u: String = u.chars().filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect();
+    if u.is_empty() || u.starts_with('.') {
+        "me".into()
+    } else {
+        u
+    }
 }
 
 /// A field (`number`, `author`) of the open PR from `branch`, or "".
@@ -67,7 +80,7 @@ impl Pr {
         let body = format!("{body}\n\n{}", self.prov.table());
         info!("---- {title}\n{body}\n----");
         if !confirm(&format!("Push {b} and open/update its PR?"))? {
-            info!("Not pushed. Branch {b} is committed locally in {}.", root().display());
+            info!("Not pushed.");
             return Ok(false);
         }
         let dst = format!("HEAD:refs/heads/{b}");

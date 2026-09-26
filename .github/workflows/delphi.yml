@@ -1,0 +1,33 @@
+# Delphi CI (docs/design.md §5): PRs must pass check and be in sync; main is re-synced after merges.
+name: delphi
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+concurrency:
+  group: delphi-${{ github.ref }}
+jobs:
+  delphi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - run: cargo build --release --locked && echo "$PWD/target/release" >> "$GITHUB_PATH"
+      - name: check (PR)
+        if: github.event_name == 'pull_request'
+        run: delphi check && delphi sync --check
+      - name: sync main
+        if: github.event_name == 'push'
+        run: |
+          delphi sync --base HEAD
+          git add -A context
+          git diff --cached --quiet && exit 0
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m 'delphi: sync shared files' -m "Delphi-Harness: github-actions
+          Delphi-Model: none
+          Delphi-Effort: none"
+          git push origin HEAD:main
