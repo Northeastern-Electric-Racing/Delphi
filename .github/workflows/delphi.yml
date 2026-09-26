@@ -1,28 +1,34 @@
 # Delphi CI (docs/design.md §5): PRs must pass check and be in sync; main is re-synced after merges.
+# The sync commit is pushed with GITHUB_TOKEN, which does not trigger workflows, so it cannot loop.
 name: delphi
 on:
   pull_request:
   push:
     branches: [main]
 permissions:
-  contents: write
+  contents: read
 concurrency:
   group: delphi-${{ github.ref }}
 jobs:
-  delphi:
+  check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
       - run: cargo build --release --locked && echo "$PWD/target/release" >> "$GITHUB_PATH"
-      - name: check (PR)
-        if: github.event_name == 'pull_request'
-        run: delphi check && delphi sync --check
-      - name: sync main
-        if: github.event_name == 'push'
-        run: |
+      - run: delphi check && delphi sync --check
+  sync-main:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: cargo build --release --locked && echo "$PWD/target/release" >> "$GITHUB_PATH"
+      - run: |
           delphi sync --base HEAD
           git add -A context
           git diff --cached --quiet && exit 0
@@ -30,4 +36,5 @@ jobs:
             commit -q -m 'delphi: sync shared files' -m "Delphi-Harness: github-actions
           Delphi-Model: none
           Delphi-Effort: none"
-          git push origin HEAD:main
+          # if main moved on meanwhile, the run for the newer push syncs it
+          git push origin HEAD:main || { git fetch -q origin main; [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; }

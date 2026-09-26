@@ -97,6 +97,14 @@ fn sync_source_edit_fans_out_check_and_idempotent() {
     let r = sb.ok(&root, &["sync"]);
     assert_eq!((r.stdout.as_str(), r.stderr.as_str()), ("", "sync: ok\n"));
     sb.ok(&root, &["sync", "--check"]);
+
+    // executable means the owner's x bit, as in git: a group-only x bit is no change
+    sb.sh(&root, "git add -A && git commit -qm fan");
+    let p = root.join(AD).join(".claude/skills/run-tests/SKILL.md");
+    fs::set_permissions(&p, fs::Permissions::from_mode(0o654)).unwrap();
+    assert_eq!(sb.git(&root, &["status", "--porcelain"]), "");
+    let r = sb.ok(&root, &["sync", "--check", "--base", "HEAD"]);
+    assert_eq!((r.stdout.as_str(), r.stderr.as_str()), ("", "sync: ok\n"));
 }
 
 #[test]
@@ -572,7 +580,7 @@ fn check_passes_then_reports_every_failure() {
     let n = root.join(ND);
     sb.write(
         &n.join("workspace.yml"),
-        "name: nero\nharness: claude-code\nbogus: 1\ninstructions:\n  - software/nope.md\nlinks:\n  - software/missing\n  - software/docs/guide.md -> CLAUDE.md\n  - software/docs/guide.md -> CLAUDE.md\n  - software/application-software/argos/workspaces/argos-dev/docs/guide.md -> x.md\n",
+        "name: nero\nharness: claude-code\nbogus: 1\ninstructions:\n  - software/nope.md\nlinks:\n  - software/missing\n  - software/docs/guide.md -> CLAUDE.md\n  - software/docs/guide.md -> CLAUDE.md\n  - software/application-software/argos/workspaces/argos-dev/docs/guide.md -> x.md\n  - software/application-software/argos -> stuff\n",
     );
     sb.write(&root.join("context/software/tools/README.md"), "x\n");
     sb.write(&root.join("context/software/docs/CLAUDE.md"), "x\n");
@@ -594,6 +602,7 @@ check: {y}: links: CLAUDE.md is generated from instructions:
 check: {y}: links: CLAUDE.md is generated from instructions:
 check: {y}: links: dests overlap: 'CLAUDE.md' and 'CLAUDE.md'
 check: {y}: links: source context/software/application-software/argos/workspaces/argos-dev/docs/guide.md is inside a workspace folder
+check: {y}: links: source context/software/application-software/argos contains workspace folder context/software/application-software/argos/workspaces/argos-dev
 "
     );
     let mut got: Vec<&str> = r.stderr.lines().collect();
@@ -612,6 +621,15 @@ check: {y}: links: source context/software/application-software/argos/workspaces
         "{}",
         r.stderr
     );
+    // a link must not overwrite the workspace's own workspace.yml
+    sb.write(
+        &n.join("workspace.yml"),
+        "name: nero-dev\nharness: claude-code\nlinks:\n  - software/docs/guide.md -> workspace.yml\n",
+    );
+    let r = sb.d(&root, &["check"]);
+    let want = format!("check: {y}: links: unsafe or reserved path in 'software/docs/guide.md -> workspace.yml'\n");
+    assert_eq!(r.code, 1);
+    assert!(r.stderr.contains(&want), "{}", r.stderr);
 }
 
 #[test]
@@ -663,4 +681,90 @@ fn offline_tolerance() {
     assert!(r.stdout.starts_with("argos-dev\t"));
     sb.ok(&sb.root(), &["sync", "--check"]);
     sb.ok(&sb.root(), &["check"]);
+}
+
+#[test]
+fn propose_after_reverting_a_shared_edit_reverts_it_everywhere() {
+    let sb = Sb::new("revert");
+    let co = sb.checkout("argos-dev", "a");
+    let folder = co.join(AD);
+    let skill = folder.join(".claude/skills/run-tests/SKILL.md");
+    let orig = sb.read(&skill);
+    sb.edit(&folder, "echo 'Run them in parallel.' >> .claude/skills/run-tests/SKILL.md");
+    sb.ok(&folder, &["propose", "--yes"]);
+
+    // the revert is the one new state since the last push: it reaches the source and the copies
+    sb.write(&skill, &orig);
+    sb.sh(&folder, "git commit -qam revert");
+    let r = sb.ok(&folder, &["propose", "--yes"]);
+    assert!(r.stdout.contains(&format!("  updated {RT}/SKILL.md\n")), "{r:#?}");
+    assert!(r.stderr.contains("nothing to propose"), "{}", r.stderr);
+    assert_eq!(sb.read(&skill), orig);
+    let lp = sb.read(&co.join(".git/delphi/meta"));
+    assert!(lp.ends_with(&format!("last_pushed={}\n", sb.git(&co, &["rev-parse", "origin/ws/tester/a"]))));
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn status_ahead_counts_only_unpushed_own_commits() {
+    let sb = Sb::new("ahead");
+    let co = sb.checkout("argos-dev", "a");
+    let folder = co.join(AD);
+    sb.edit(&folder, "echo x >> docs/guide.md");
+    sb.ok(&folder, &["propose", "--yes"]);
+    sb.upstream("Up1", &format!("echo 1 >> {ND}/CLAUDE.md"));
+    sb.upstream("Up2", &format!("echo 2 >> {AD}/.claude/skills/open-pr/SKILL.md"));
+    sb.ok(&folder, &["refresh"]);
+    let r = sb.ok(&sb.dir, &["status"]);
+    assert!(r.stdout.ends_with("a                argos-dev        no    0     0      delphi open a\n"), "{}", r.stdout);
+    sb.edit(&folder, "echo y >> docs/guide.md");
+    let r = sb.ok(&sb.dir, &["status"]);
+    assert!(
+        r.stdout.ends_with("a                argos-dev        no    1     0      delphi propose a\n"),
+        "{}",
+        r.stdout
+    );
+}
+
+/// The `sync-main` script from the CI workflow, run in a clone of the sandbox's origin.
+fn ci_sync_main(sb: &Sb, clone: &Path) -> String {
+    let yml = fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join(".github/workflows/delphi.yml")).unwrap();
+    let block = yml.rsplit("- run: |\n").next().unwrap();
+    let script: String = block.lines().map(|l| format!("{}\n", l.strip_prefix("          ").unwrap_or(l))).collect();
+    let bin = Path::new(env!("CARGO_BIN_EXE_delphi")).parent().unwrap().display().to_string();
+    let sha = sb.git(clone, &["rev-parse", "HEAD"]);
+    sb.sh(clone, &format!("export PATH={bin}:$PATH GITHUB_SHA={sha}\n{script}"))
+}
+
+#[test]
+fn ci_main_sync_commits_as_the_bot_once_and_tolerates_a_moved_main() {
+    let sb = Sb::new("ci");
+    // two racing merges: a new workspace links the skill as it was; the skill changes meanwhile
+    sb.upstream(
+        "Add tools-dev",
+        "mkdir -p context/software/workspaces/tools-dev/.claude/skills\n\
+         printf 'name: tools-dev\\nharness: claude-code\\nlinks:\\n  - software/harness/skills/run-tests\\n' > context/software/workspaces/tools-dev/workspace.yml\n\
+         cp -r context/software/harness/skills/run-tests context/software/workspaces/tools-dev/.claude/skills/",
+    );
+    sb.upstream(
+        "Skill edit",
+        &format!("for f in {RT} {AD}/.claude/skills/run-tests {ND}/.claude/skills/run-tests; do echo fast >> $f/SKILL.md; done"),
+    );
+    let main = sb.dir.join("main");
+    sb.git(&sb.dir, &["clone", "-q", "origin.git", "main"]);
+    ci_sync_main(&sb, &main);
+    let log = sb.git(&main, &["log", "-1", "--format=%an|%s|%(trailers:key=Delphi-Harness,valueonly)", "origin/main"]);
+    assert_eq!(log, "github-actions[bot]|delphi: sync shared files|github-actions");
+    let copy = main.join("context/software/workspaces/tools-dev/.claude/skills/run-tests/SKILL.md");
+    assert!(sb.read(&copy).ends_with("fast\n"));
+    // re-running changes nothing
+    let head = sb.git(&main, &["rev-parse", "origin/main"]);
+    ci_sync_main(&sb, &main);
+    assert_eq!(sb.git(&main, &["rev-parse", "origin/main"]), head);
+
+    // a push that loses the race to a newer commit on main is left to that commit's run
+    sb.git(&main, &["reset", "-q", "--hard", "HEAD~1"]);
+    sb.upstream("Newer", "echo n >> context/software/docs/guide.md");
+    ci_sync_main(&sb, &main);
+    assert_eq!(sb.git(&main, &["log", "-1", "--format=%s", "origin/main"]), "Newer");
 }

@@ -100,9 +100,9 @@ impl Co {
             warn!("git fetch failed in {}; using local refs", self.name);
         }
     }
-    fn count(&self, range: &str, folder_only: bool) -> usize {
+    fn count(&self, revs: &[&str], folder_only: bool) -> usize {
         let mut c = self.git();
-        c.args(["rev-list", "--count", "--no-merges", range, "--"]);
+        c.args(["rev-list", "--count", "--no-merges"]).args(revs).arg("--");
         if folder_only {
             c.arg(self.folder());
         }
@@ -110,12 +110,12 @@ impl Co {
     }
     /// Commits on origin/main touching the folder that HEAD lacks.
     fn behind(&self) -> usize {
-        self.count("HEAD..origin/main", true)
+        self.count(&["HEAD..origin/main"], true)
     }
-    /// Commits not pushed yet.
+    /// Own commits not pushed yet (not on origin/main, not in the last pushed commit).
     fn ahead(&self) -> usize {
-        let lp = self.meta("last_pushed");
-        self.count(&format!("{}..HEAD", if lp.is_empty() { "origin/main" } else { &lp }), false)
+        let lp = format!("^{}", self.meta("last_pushed"));
+        self.count(&["HEAD", "^origin/main", if lp == "^" { "HEAD" } else { &lp }], false)
     }
 }
 
@@ -377,8 +377,10 @@ fn diff(co: &Co, upstream: bool) -> Result<()> {
 }
 
 // ---- propose ----
-/// A full temp worktree of the checkout at HEAD with shared files synced (not committed). Bases:
-/// the merge-base with origin/main, plus the last pushed commit (already reconciled).
+/// A full temp worktree of the checkout at HEAD with shared files synced (not committed). Base:
+/// the last pushed commit (already reconciled) merged with origin/main, so edits since it (even
+/// reverts) are the new states; else the merge-base with origin/main (plus the last pushed commit
+/// when that merge conflicts).
 fn synced(co: &Co) -> Result<(PathBuf, String, Report)> {
     let wt = make_tmp()?.join("wt");
     let made = ok_q(co.git().args(["worktree", "add", "--quiet", "--detach"]).arg(&wt).arg("HEAD"));
@@ -394,7 +396,10 @@ fn synced(co: &Co) -> Result<(PathBuf, String, Report)> {
     let mut bases = vec![base.clone()];
     let lp = co.meta("last_pushed");
     if !lp.is_empty() && ok_q(git(&wt).args(["merge-base", "--is-ancestor", &lp, "HEAD"])) {
-        bases.push(lp);
+        match out_q(git(&wt).args(["merge-tree", "--write-tree", &lp, "origin/main"])) {
+            Some(tree) => bases = vec![tree],
+            None => bases.push(lp),
+        }
     }
     let r = sync(&wt, &bases, false)?;
     r.print(false);

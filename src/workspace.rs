@@ -79,7 +79,8 @@ pub fn load(folder: &str, text: &str, label: &str) -> Result<Ws> {
     for raw in y.list("links") {
         let (src, dest) = split_link(&raw);
         let dest = dest.unwrap_or_else(|| default_dest(&src, h));
-        if !path_ok(&src) || !path_ok(&dest) || [".git", "repos"].contains(&dest.split('/').next().unwrap_or("")) {
+        let reserved = [".git", "repos"].contains(&dest.split('/').next().unwrap_or("")) || dest == YML;
+        if !path_ok(&src) || !path_ok(&dest) || reserved {
             die!("{label}: links: unsafe or reserved path in '{raw}'");
         }
         links.push((src, dest));

@@ -66,7 +66,8 @@ base revision (default: merge-base with `origin/main`):
 idempotent.
 
 Details:
-- A file's state is its content plus executable bit, or "absent". A member has a **new state** if
+- A file's state is its content plus executable bit (the owner's x bit, as git records it), or
+  "absent". A member has a **new state** if
   it differs from that path at every base revision. Only members whose link existed at a base
   count; a newly linked copy that exists must equal the result, else it is a conflict ("newly
   linked … but differs"; delete it to take the source).
@@ -77,8 +78,10 @@ Details:
   removes emptied directories.
 - Conflicting files are left untouched; everything else is still written.
 - `CLAUDE.md` = the parts joined by a blank line; it is regenerated after links are reconciled.
-- `propose` passes two bases: the merge-base with `origin/main` and the last commit it pushed
-  (already reconciled), so re-proposing a shared edit never conflicts with its own earlier sync.
+- `propose`'s base, once it has pushed, is the last commit it pushed (already reconciled) merged
+  with `origin/main` (`git merge-tree`), so re-proposing a shared edit never conflicts with its own
+  earlier sync and reverting it is a new state; if that merge conflicts, it passes two bases (the
+  merge-base with `origin/main` and the last pushed commit).
 
 ## 4. Local checkouts
 
@@ -102,7 +105,7 @@ last pushed commit). `refresh` and `propose` need a clean checkout (commit or st
 | `delphi refresh [checkout]` | `git fetch` + `git merge origin/main` (exit 2 on conflict; resolve with git) |
 | `delphi diff [checkout] [--upstream]` | your committed changes vs `main`, per file, tagged **own**, **linked** (`<- source`, `shared: <workspaces>`), **generated**, or **sync** (outside the folder, written by an earlier propose); `--upstream`: files changed on `main` since your last refresh, with author and subject |
 | `delphi propose [checkout] [--dry-run]` | refresh, sync (in a temp full worktree at the branch head; commits `delphi: sync shared files` with trailers), `check`, push the branch (lease: absent or last pushed), fast-forward the local branch, open/update one PR per checkout; PR body lists changed files as in `diff` (shared impact) plus the provenance table. `--dry-run`: no refresh or push; shows the sync writes and the PR body |
-| `delphi status` | every local checkout: dirty, ahead (unpushed), behind `main` |
+| `delphi status` | every local checkout: dirty, ahead (own commits not pushed and not on `main`), behind `main` |
 | `delphi mv <old> <new>` | move a source or workspace path, rewrite `links`/`instructions` in every `workspace.yml` (and scope `recommend:`), PR; a link whose default dest would change gets an explicit `-> <old dest>`; a moved workspace gets its new `name` |
 | `delphi sync [--check] [--base <rev>]` | reconcile links (§3) in the current Delphi checkout |
 | `delphi check` | validate (§6) |
@@ -113,17 +116,18 @@ Common flags on commands that write to Delphi: `--yes`, `--model`, `--effort`.
 `create` and `mv` run sync (base: `origin/main`) and `check` in a temp worktree before the PR
 (branches `delphi/create/<name>`, `delphi/mv/<name>-<time>`).
 
-**CI** (`.github/workflows/delphi.yml`): on PRs (the PR head, full history), `delphi check` +
-`delphi sync --check`; on pushes to `main`, `delphi sync --base HEAD` and commit the result as
-`github-actions[bot]` (`delphi: sync shared files`, provenance trailers `github-actions`/`none`)
-if anything changed.
+**CI** (`.github/workflows/delphi.yml`): on PRs (the PR head, full history, read-only token),
+`delphi check` + `delphi sync --check`; on pushes to `main`, `delphi sync --base HEAD` and commit
+the result as `github-actions[bot]` (`delphi: sync shared files`, provenance trailers
+`github-actions`/`none`) if anything changed. The bot's push uses `GITHUB_TOKEN`, so it triggers no
+run; if `main` moved meanwhile the push is dropped and the newer push's run syncs.
 
 ## 6. check
 
 Scopes have `scope.yml`; every `workspace.yml` parses; `name` = folder and unique; adapter
-exists; only known keys; instruction parts and link sources exist, sources outside workspace
-folders; dests are inside the folder, unique, not nested in a directory link's dest, not under
-`repos/`, not the generated instruction file; no file named after an instruction file outside a
+exists; only known keys; instruction parts and link sources exist, sources neither inside nor
+containing workspace folders; dests are inside the folder, unique, not nested in a directory link's
+dest, not under `repos/`, not `workspace.yml`, not the generated instruction file; no file named after an instruction file outside a
 workspace folder; every folder under `workspaces/` has a `workspace.yml`; scope `recommend:`
 paths exist; no symlinks.
 

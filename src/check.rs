@@ -1,8 +1,9 @@
 //! Repo-wide validation (spec §6). `check_tree(root)` prints every violation and returns false if
 //! any: scopes have scope.yml; workspace.yml files parse, use known keys, a known harness, and
-//! `name` = folder (unique); instruction parts and link sources exist outside workspace folders;
-//! dests are unique, don't nest in a directory link's dest, and aren't the generated instruction
-//! file; instruction file names only inside workspace folders; no symlinks.
+//! `name` = folder (unique); instruction parts and link sources exist, sources neither inside nor
+//! containing workspace folders; dests are unique, don't nest in a directory link's dest, and aren't
+//! the generated instruction file or workspace.yml; instruction file names only inside workspace
+//! folders; no symlinks.
 
 use crate::core::{basename, exit, find, path_ok, rel_to, root, under};
 use crate::harness::HARNESSES;
@@ -112,6 +113,8 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
                 errs.push(e(format!("links: missing source context/{s}")));
             } else if in_workspace(s).is_some() {
                 errs.push(e(format!("links: source context/{s} is inside a workspace folder")));
+            } else if let Some(f) = folders.iter().find(|f| under(f, s).is_some()) {
+                errs.push(e(format!("links: source context/{s} contains workspace folder context/{f}")));
             }
             if !w.parts.is_empty() && d == w.h.instructions {
                 errs.push(e(format!("links: {d} is generated from instructions:")));

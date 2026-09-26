@@ -113,7 +113,8 @@ fn states<'a>(dir: &Path, paths: impl IntoIterator<Item = &'a String>) -> Result
     let (mut m, mut files) = (HashMap::new(), vec![]);
     for p in paths {
         match fs::symlink_metadata(safe_path(dir, p)?) {
-            Ok(md) if md.is_file() => files.push((p.clone(), md.permissions().mode() & 0o111 != 0)),
+            // executable = the owner's x bit, as git records it
+            Ok(md) if md.is_file() => files.push((p.clone(), md.permissions().mode() & 0o100 != 0)),
             _ => drop(m.insert(p.clone(), None)),
         }
     }
