@@ -7,23 +7,33 @@ description: Propose a Delphi workspace's changes back to the monorepo. Dry-run 
 
 Run these inside the workspace. Drive the CLI. Don't edit the Delphi repo directly.
 
-1. Make sure the work is committed (`git status` is clean).
-2. Run `delphi workspace propose --dry-run`. It prints the plan (where each edit routes) and the
-   **Unresolved** items, each with its path, reason, and diff.
+1. Make sure the work is committed (`git status` is clean). Only committed changes are proposed.
+2. Run `delphi workspace diff`. Each changed file gets one line:
+   - `update` / `new` / `manifest`: goes to that Delphi path. `(shared: …)` means other layouts use
+     that source too, so the edit reaches their teams. Point this out to the user.
+   - `noop`: nothing to send (a deleted file whose entry was removed, or the same edit already
+     routed from another copy of that source).
+   - `local`: stays in the workspace, never proposed (copied files, files outside synced folders).
+   - **Unresolved** items, each with a reason.
+   `delphi workspace diff --upstream` shows what changed in Delphi since the last refresh.
 3. For each unresolved item, suggest a fix *in the workspace* and apply it only after the user approves:
-   - **Edit touches generated/separator lines or spans two blocks:** move the text wholly inside
-     one block's lines, or split it into two edits. In `CLAUDE.md`, a section set off by blank
-     lines between fragments routes as a new fragment (`fragment` in the plan).
-   - **New file outside a recognised place:** move it under `context/<scope>/blocks/` (an
-     existing scope), `docs/` for a doc, or `.claude/skills/<name>/` for a skill. Otherwise leave it out of the PR
-     by deleting it or keeping it uncommitted.
-   - **Deleted file that is still compiled:** drop its entry from `.delphi/manifest.yml` instead.
-     To replace a block, swap the manifest entry, delete the old file, and add the new one under
-     `context/<scope>/blocks/`.
-   - **Patch did not apply (same block edited in two places):** keep the edit in one place only.
-   - **Binary file:** Delphi doesn't route it. Remove it from the workspace commit.
-   Commit the fixes, then run `--dry-run` again until only acceptable items remain. Unresolved
-   items never block the PR. They are listed in its body.
+   - **generated; sync a part to edit it** (`CLAUDE.md` assembled from `instructions:`): revert the
+     edit in `CLAUDE.md`, add the part under `sync:` in `.delphi/manifest.yml`, and edit it there
+     after the next refresh. Or move the text into a synced file.
+   - **deleted, but still listed in .delphi/manifest.yml**: remove its entry from
+     `.delphi/manifest.yml` too (or restore the file).
+   - **deleted, but still one of the layout's files/**: restore it; removing a layout file needs a
+     Delphi PR by hand.
+   - **differing edits to one source**: the same source is synced to several dests with different
+     edits. Make the copies identical (or keep the edit in one of them).
+   - **its source already exists in Delphi**: a new sync entry points at an existing source. Delete
+     the workspace file; it arrives on refresh after the manifest change merges.
+   - **Delphi bookkeeping**: revert edits to `.delphi/lock.tsv`.
+   - **symlink or unsupported change type**: replace the symlink with a regular file or drop it.
+   To share a new file, put it in a synced folder, or add a `sync:` entry for it in
+   `.delphi/manifest.yml` (`<new source path> -> <its workspace path>`); propose creates the source.
+   Commit the fixes, then run `delphi workspace diff` again until only acceptable items remain.
+   Unresolved items never block the PR. They are listed in its body.
 4. Run `delphi workspace propose --model <your model> --effort <effort> --yes`.
    It refreshes first. On exit code 2 (merge conflicts), help resolve them, commit, and run it again.
 5. Report the branch and PR URL. Proposing again later replaces the same PR with the
