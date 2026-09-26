@@ -12,8 +12,8 @@ and send improvements back — with or without an AI harness.
 ## Goals
 
 **G1. Compile.** A layout (a manifest picking context + a harness) compiles into a workspace's
-files. Same Delphi commit + same layout = identical output. Every output line is traceable to its
-source file (the lock).
+files at normal harness locations. Same Delphi commit + same layout = identical output. Every
+compiled file is traceable to its source file (the lock).
 
 **G2. Workspaces are independent.** Each workspace is its own git repo outside Delphi, where the
 user works freely. Many workspaces can come from one layout. Code repos listed in the layout are
@@ -27,8 +27,12 @@ Renamed/moved blocks are followed.
 and whether those changes have been proposed yet.
 
 **G5. Propose.** Send the workspace's changes back as one pull request per workspace. Each edit
-lands in the source file it came from; new files and new instruction sections become new blocks.
-Anything Delphi can't place is listed in the PR, never guessed.
+to a synced file lands in the source file it came from; new shared files are declared in the
+manifest. Copied and other local files stay local. Anything Delphi can't place is listed in the
+PR, never guessed.
+
+**G5a. Sync is opt-in.** A layout chooses per file: synced (linked to its source) or copied
+(yours after the first copy). Editing a file other layouts also sync is flagged as shared.
 
 **G6. Provenance.** Every change written to Delphi records which harness, model, and effort made
 it.
@@ -52,5 +56,4 @@ adapter: file names plus how to launch it.
 
 - Should "proposed" come from GitHub's PR state instead of a local hash?
 - Should a rejected change stop reappearing without reverting it?
-- Keep built `.skill` specs, or only native skill folders?
-- Keep the strict YAML subset, or accept real YAML?
+- Resolved: built `.skill` specs dropped (native skill folders only); strict YAML subset kept.
