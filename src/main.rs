@@ -1,5 +1,5 @@
-//! Delphi CLI entry point (port of bin/delphi): resolves the Delphi repo, then dispatches on the
-//! command group. Errors print as `delphi: <msg>` (exit 1); refresh conflicts exit 2.
+//! Delphi CLI entry point: resolves the Delphi repo, then dispatches on the command group. Errors
+//! print as `delphi: <msg>` (exit 1); refresh conflicts exit 2.
 
 mod block;
 mod check;
@@ -19,16 +19,17 @@ use std::sync::atomic::Ordering;
 
 const USAGE: &str = "usage: delphi <command> [args]
 
-  layout new <scope> <layout> [--from <file>]    create a layout (branch + PR)
+  layout new <scope> <layout> --from <manifest>  create a layout (branch + PR)
   layout list                                    list layouts on origin/main
 
   workspace new <layout> [--as <ws>] [--ref <branch>]
   workspace open [<ws>] [--model m] [--effort e] [--shell]
   workspace refresh [<ws>] [--ref <branch>]
+  workspace diff [<ws>] [--upstream]            your changes (or Delphi's, with --upstream)
   workspace propose [<ws>] [--dry-run]
   workspace status [--offline]                   (alias: ws)
 
-  block mv <old> <new>                           move/rename a block
+  block mv <old> <new>                           move/rename a source
 
   check                                          validate the repo
   setup [dir]                                    record this Delphi checkout for use anywhere

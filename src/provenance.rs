@@ -1,4 +1,4 @@
-//! Which harness, model, and effort produced a change (port of lib/provenance.sh).
+//! Which harness, model, and effort produced a change.
 //!
 //! Resolution per field: CLI flag -> DELPHI_* env (set by `workspace open`) -> adapter fallback
 //! -> interactive prompt (accepts "none") -> error. Never records "unknown". `extra` holds extra

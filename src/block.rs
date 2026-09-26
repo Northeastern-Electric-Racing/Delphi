@@ -1,10 +1,10 @@
-//! `delphi block mv <old> <new>`: move a block, log it in moves.tsv, rewrite references. Port of
-//! lib/block.sh.
+//! `delphi block mv <old> <new>`: move a source under context/, log it in moves.tsv, rewrite
+//! manifests and scope recommendations. Workspaces follow on refresh.
 
 use crate::check::check_tree;
 use crate::core::{
-    basename, date, delphi_commit, delphi_fetch, find, git_c, glob, ok, parse_args, parse_moves, path_ok,
-    rewrite_moves, safe_path,
+    basename, date, delphi_commit, delphi_fetch, find, git_c, ok, parse_args, parse_moves, path_ok, rewrite_moves,
+    safe_path,
 };
 use crate::{die, provenance};
 use anyhow::Result;
@@ -26,9 +26,8 @@ fn mv(old: &str, new: &str, model: &str, effort: &str) -> Result<()> {
         if !path_ok(p) {
             die!("unsafe path: '{p}'");
         }
-        let s = format!("/{p}");
-        if !(glob("*/blocks/?*", &s) || glob("*/docs/?*", &s) || glob("*/harness/?*", &s)) {
-            die!("'{p}' is not under a scope's blocks/, docs/, or harness/");
+        if p.split('/').any(|c| c == "layouts") || basename(p) == "scope.yml" {
+            die!("'{p}' is a layout or scope file; only sources can be moved");
         }
     }
     delphi_fetch();
@@ -39,7 +38,7 @@ fn mv(old: &str, new: &str, model: &str, effort: &str) -> Result<()> {
     let src = safe_path(&ctx, old)?;
     let dst = safe_path(&ctx, new)?;
     if !src.exists() {
-        die!("no such block on origin/main: {old}");
+        die!("no such source on origin/main: {old}");
     }
     if dst.exists() {
         die!("already exists on origin/main: {new}");
@@ -54,7 +53,7 @@ fn mv(old: &str, new: &str, model: &str, effort: &str) -> Result<()> {
     let rows = parse_moves(&row);
     for (f, ft) in find(&ctx) {
         let n = f.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-        if ft.is_file() && (n == "manifest.yml" || n == "scope.yml" || glob("*.skill", &n)) {
+        if ft.is_file() && (n == "manifest.yml" || n == "scope.yml") {
             let _ = rewrite_moves(&rows, &f);
         }
     }

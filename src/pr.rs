@@ -1,4 +1,4 @@
-//! The single path for writing to the Delphi monorepo (port of lib/pr.sh).
+//! The single path for writing to the Delphi monorepo.
 //!
 //! `begin` makes a temp worktree on a branch (reset to a start commit); the caller edits files
 //! under `wt`; `commit` stages everything and commits with provenance trailers; `finish` shows,

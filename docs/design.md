@@ -39,9 +39,13 @@ repos:
 
 - Entry = `<source> [-> <dest>]`. Source is a file or directory under `context/`; a directory maps
   every file under it (recursive, 1:1, executable bit kept).
-- Default dest (when `->` is omitted), by source path:
-  `…/harness/skills/<n>[/…]` → `<skills dir>/<n>[/…]`; `…/docs/<rest>` → `docs/<rest>`;
+- Default dest (when `->` is omitted), by source path (first match of the path component):
+  `…/harness/skills/<n>[/…]` → `<skills dir>/<n>[/…]`; `…/docs[/<rest>]` → `docs[/<rest>]`;
   anything else → `context/<source>`.
+- Dests are unique and never nested (no dest inside another entry's dest, including the
+  instruction file and the layout's `files/`), and never under `.git/`, `.delphi/`, `repos/`, or
+  `worktrees/`. To put an extra file into a synced skill folder, sync the skill's files
+  individually (e.g. `…/skills/open-pr/SKILL.md` plus `…/pr-body.md -> .claude/skills/open-pr/pr-body.md`).
 - `instructions` builds the harness instruction file (e.g. `CLAUDE.md`) from parts, blank line
   between. It is **generated**: edits to it are not proposed (sync a part to edit it). A layout
   uses either `instructions` or its own `files/<instruction file>`, not both.
@@ -58,15 +62,18 @@ Bookkeeping in `.git/delphi/` (never in the working tree).
 
 ```
 # dest	source	kind
-CLAUDE.md	-	assembled
+CLAUDE.md	software/harness/instructions/base.md	assembled     (one row per part)
 .claude/skills/run-local/SKILL.md	software/…/harness/skills/run-local/SKILL.md	sync
 CLAUDE.md	software/…/layouts/argos-dev/files/CLAUDE.md	layout     (when not assembled)
+.claude/settings.json	software/harness/settings/claude.json	copy     (listed only)
 .delphi/manifest.yml	software/…/layouts/argos-dev/manifest.yml	layout
 ```
 
-Copied files are **not** part of the compile. They are committed to `working` directly
-(`delphi: copy …`) when first listed, and recorded in `.git/delphi/copied`
-(`dest<TAB>source<TAB>delphi-commit`). They are never overwritten or proposed.
+Copied files are **not** part of the compile (the lock lists them so refresh knows what to copy).
+They are committed to `working` directly (`delphi: copy …`) when first listed, and recorded in
+`.git/delphi/copied` (`dest<TAB>source<TAB>delphi-commit`, the Delphi commit copied from). A dest
+that already exists is left alone (warned, recorded). Copies are never overwritten or proposed,
+and they never count as pending changes; `diff` lists a copy you edited as local.
 
 ## 4. Commands
 
@@ -79,11 +86,16 @@ Copied files are **not** part of the compile. They are committed to `working` di
 | `workspace propose [ws] [--dry-run]` | refresh, route (below), one PR per workspace (force-updated) |
 | `workspace status` | one row per workspace: dirty, clean/proposed/unproposed, behind |
 | `layout new <scope> <name> --from <file>` / `layout list` | layout PR / list layouts |
-| `block mv <old> <new>` | move a source, log it in `moves.tsv`, rewrite manifests; workspaces follow on refresh |
+| `block mv <old> <new>` | move a source (any path under `context/` except layouts and `scope.yml`), log it in `moves.tsv`, rewrite manifests and scope recommendations; workspaces follow on refresh |
 | `check` | validate the repo (below) |
 | `setup [dir]` | remember where the Delphi checkout is |
 
-`propose --dry-run` prints the same listing as `workspace diff`.
+`propose --dry-run` prints the same listing as `workspace diff` (stdout), one line per changed
+file: `update|new|manifest <dest> -> <source>`, `noop|local <dest> (<reason>)`, then
+`Unresolved:` with `<dest>: <reason>`. `diff --upstream` prints
+`<kind> <dest> <- <source> (<author>: <subject>)` per changed source. `status` counts a workspace
+as clean when nothing proposable is pending (local files don't count). `propose` makes one commit
+on the propose branch.
 
 ## 5. What changed, and where it goes (routing)
 
@@ -92,20 +104,24 @@ Pending diff = `generated-merged..HEAD` (committed changes only). Per changed fi
 | Change | Result |
 |---|---|
 | synced or layout file, modified (incl. binary, mode) | copy the file over its source |
-| synced or layout file, deleted | no-op if its entry was removed from `.delphi/manifest.yml`, else unresolved |
+| synced file, deleted | no-op if its entry was removed from `.delphi/manifest.yml`, else unresolved |
+| layout file, deleted | unresolved (remove it from the layout's `files/` in Delphi) |
 | new file inside a synced **directory** | new file in that source directory |
 | new `sync` entry in `.delphi/manifest.yml` whose source doesn't exist yet | source created from the workspace file(s) |
+| new file whose source already exists in Delphi | unresolved (it arrives on refresh once the entry merges) |
+| symlink, type change, other `.delphi/` files | unresolved |
 | `.delphi/manifest.yml` modified | replaces the layout manifest |
-| assembled instruction file | unresolved ("generated; sync a part to edit it") |
+| assembled instruction file | unresolved ("generated; sync a part to edit it"); deleting it is a no-op if `instructions` was dropped |
 | anything else (copies, new files elsewhere) | **local**: listed, never proposed |
 
 One source synced to several dests: identical edits route once; differing edits are unresolved.
 Unresolved items are listed in the PR body; they never block it.
 
 **Shared awareness.** `diff`, `propose`, and `refresh` tag a synced file **shared** when other
-layouts on `origin/main` also use its source (`shared: argos-dev, nero-dev`), so you know an edit
-reaches other teams. Refresh lists synced files updated from Delphi with the last author and
-commit subject.
+layouts on `origin/main` also use its source in `instructions`, `sync`, or `copy`
+(`shared: argos-dev, nero-dev`), so you know an edit reaches other teams. Refresh lists synced
+files updated from Delphi with the last author and commit subject (`updated <dest> (<author>:
+<subject>)`, `removed <dest>`, `copied <dest>`).
 
 ## 6. Unchanged from v1
 
@@ -125,7 +141,8 @@ MCP fragment assembly (MCP/settings are ordinary synced or copied files), manife
 
 ## 8. check
 
-Scopes have `scope.yml`; every `.yml` parses; manifests: `name` = directory and unique, adapter
+Scopes have `scope.yml`; Delphi's own YAML (`scope.yml`, layout manifests) parses (other `.yml`
+files are content and may use full YAML); scope `recommend` paths exist; manifests: `name` = directory and unique, adapter
 exists, only known keys, entries well-formed, sources exist, dests safe and unique (no dest inside
 another entry's dest), not both `instructions` and a `files/` instruction file; no file named after
 an instruction file under `context/` except inside `layouts/*/files/`; `moves.tsv` rows

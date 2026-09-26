@@ -1,5 +1,5 @@
-//! Shared helpers (port of lib/core.sh): messages, deferred cleanup, prompts, config, repo-root
-//! discovery, path safety, Delphi git access, moves, flag parsing, and small awk/sh equivalents.
+//! Shared helpers: messages, deferred cleanup, prompts, config, repo-root discovery, path safety,
+//! Delphi git access, moves, flag parsing, and small path/text helpers.
 
 use anyhow::Result;
 use std::collections::hash_map::RandomState;
@@ -394,6 +394,25 @@ pub fn delphi_worktree_at(c: &str) -> Result<PathBuf> {
     Ok(d)
 }
 
+/// A file at a Delphi commit (`git show <c>:<path>`).
+pub fn show(c: &str, path: &str) -> Option<Vec<u8>> {
+    let (ok, data) = out_raw(dgit(["show", &format!("{c}:{path}")]).stderr(Stdio::null()));
+    ok.then_some(data)
+}
+
+/// Layout manifests (`context/…/layouts/<name>/manifest.yml`) at a Delphi commit.
+pub fn layout_manifests(c: &str) -> Vec<String> {
+    let t = out(&mut dgit(["ls-tree", "-r", "--name-only", c, "--", "context"])).unwrap_or_default();
+    t.lines()
+        .filter(|f| {
+            f.strip_suffix("/manifest.yml")
+                .and_then(|d| d.rfind("/layouts/").map(|i| &d[i + 9..]))
+                .is_some_and(|n| !n.is_empty() && !n.contains('/'))
+        })
+        .map(String::from)
+        .collect()
+}
+
 pub fn name_ok(name: &str) -> bool {
     !name.is_empty() && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
@@ -455,30 +474,23 @@ pub fn move_path(rows: &Moves, p: &str) -> String {
     p
 }
 
-/// Apply move rows to `  - item` lines and `settings:` values in place (trailing comments on
-/// rewritten lines are dropped). True if anything changed.
+/// Apply move rows to the source of `  - <source> [-> <dest>]` lines in place (trailing comments
+/// on rewritten lines are dropped). True if anything changed.
 pub fn rewrite_moves(rows: &Moves, file: &Path) -> Result<bool> {
     let text = String::from_utf8_lossy(&fs::read(file)?).into_owned();
     let mut ch = false;
     let mut res = String::new();
     for l in awk_lines(&text) {
-        let pre = if l.starts_with("  - ") {
-            "  - "
-        } else if l.starts_with("settings: ") {
-            "settings: "
-        } else {
-            ""
-        };
         let mut line = l.to_string();
-        if !pre.is_empty() {
-            let mut v = &l[pre.len()..];
-            if let Some(i) = v.find(" #") {
-                v = &v[..i];
-            }
-            let v = v.trim_end_matches(' ');
-            let m = move_path(rows, v);
-            if m != v {
-                line = format!("{pre}{m}");
+        if let Some(item) = l.strip_prefix("  - ") {
+            let v = item.split(" #").next().unwrap_or("").trim_end_matches(' ');
+            let (src, dest) = v.split_once(" -> ").map_or((v, None), |(a, b)| (a, Some(b)));
+            let m = move_path(rows, src);
+            if m != src {
+                line = match dest {
+                    Some(d) => format!("  - {m} -> {d}"),
+                    None => format!("  - {m}"),
+                };
                 ch = true;
             }
         }
@@ -510,6 +522,7 @@ pub struct Opts {
     pub effort: String,
     pub shell: bool,
     pub dry: bool,
+    pub upstream: bool,
 }
 
 /// Parse flags allowed by `allowed` (space-separated); returns options and positionals.
@@ -538,6 +551,7 @@ pub fn parse_args(allowed: &str, args: &[String]) -> Result<(Opts, Vec<String>)>
             "--yes" => YES.store(true, Ordering::Relaxed),
             "--shell" => o.shell = true,
             "--dry-run" => o.dry = true,
+            "--upstream" => o.upstream = true,
             "--offline" => OFFLINE.store(true, Ordering::Relaxed),
             _ => pos.push(a.to_string()),
         }
@@ -556,48 +570,18 @@ pub fn awk_lines(s: &str) -> Vec<&str> {
     v
 }
 
-/// awk `substr(s, m, n)` (1-based, clamped, characters).
-pub fn substr(s: &str, m: i64, n: Option<i64>) -> String {
-    let len = s.chars().count() as i64;
-    let start = m.max(1);
-    let end = n.map_or(len + 1, |n| (m + n).min(len + 1));
-    if end <= start {
-        return String::new();
-    }
-    s.chars().skip((start - 1) as usize).take((end - start) as usize).collect()
-}
-
-/// awk numeric conversion of a string (leading integer prefix, else 0).
-pub fn num(s: &str) -> i64 {
-    let s = s.trim_start();
-    let (neg, d) = match s.strip_prefix('-') {
-        Some(r) => (true, r),
-        None => (false, s.strip_prefix('+').unwrap_or(s)),
-    };
-    let n: i64 = d.chars().take_while(char::is_ascii_digit).collect::<String>().parse().unwrap_or(0);
-    if neg {
-        -n
-    } else {
-        n
-    }
-}
-
-/// Shell glob match where only `*` (anything, including `/`) and `?` are special.
-pub fn glob(pat: &str, s: &str) -> bool {
-    fn m(p: &[char], s: &[char]) -> bool {
-        match p.first() {
-            None => s.is_empty(),
-            Some('*') => (0..=s.len()).any(|i| m(&p[1..], &s[i..])),
-            Some('?') => !s.is_empty() && m(&p[1..], &s[1..]),
-            Some(c) => s.first() == Some(c) && m(&p[1..], &s[1..]),
-        }
-    }
-    m(&pat.chars().collect::<Vec<_>>(), &s.chars().collect::<Vec<_>>())
-}
-
 /// `${lp%layouts/*}`: the layout's scope prefix (with trailing slash).
 pub fn scope_of_layout(lp: &str) -> &str {
     lp.rfind("layouts/").map_or(lp, |i| &lp[..i])
+}
+
+/// `p` relative to `base` when `p` is `base` ("") or below it.
+pub fn under<'a>(p: &'a str, base: &str) -> Option<&'a str> {
+    match p.strip_prefix(base) {
+        Some("") => Some(""),
+        Some(r) => r.strip_prefix('/'),
+        None => None,
+    }
 }
 
 /// `${p##*/}`.

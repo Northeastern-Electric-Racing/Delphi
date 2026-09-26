@@ -1,7 +1,6 @@
 //! `delphi setup [dir]`: record the Delphi checkout (default: the one containing the current
 //! directory, or DELPHI_ROOT) in `~/.config/delphi/root`, so the installed binary finds it from
-//! workspaces and anywhere else. Replaces lib/setup.sh's PATH wrapper: `cargo install` puts the
-//! binary on PATH.
+//! workspaces and anywhere else. `cargo install --path .` puts the binary on PATH.
 
 use crate::core::{cwd, env_nonempty, have, is_delphi_repo, root_config_file};
 use crate::{die, info, warn};

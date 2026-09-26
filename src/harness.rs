@@ -1,5 +1,4 @@
-//! Harness adapters (port of lib/harness/*.sh): output file names, provenance fallback, launch.
-//! Adapters hold names and two functions; no file logic.
+//! Harness adapters: file names, provenance fallback, launch. Adding a harness = one entry here.
 
 use crate::core::{name_ok, out_q};
 use anyhow::Result;
@@ -9,9 +8,8 @@ pub struct Harness {
     pub name: &'static str,
     /// Instruction file at the workspace root.
     pub instructions: &'static str,
+    /// Default dest for `…/harness/skills/<n>` sources.
     pub skills_dir: &'static str,
-    pub mcp_file: &'static str,
-    pub settings_file: &'static str,
     /// Added to the workspace's .git/info/exclude.
     pub ignore: &'static str,
     /// Harness+version, model, effort (blank if unknown).
@@ -24,8 +22,6 @@ pub const HARNESSES: &[Harness] = &[Harness {
     name: "claude-code",
     instructions: "CLAUDE.md",
     skills_dir: ".claude/skills",
-    mcp_file: ".mcp.json",
-    settings_file: ".claude/settings.json",
     ignore: ".claude/settings.local.json",
     provenance: claude_provenance,
     launch: claude_launch,

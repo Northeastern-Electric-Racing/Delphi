@@ -1,4 +1,4 @@
-//! Strict YAML-subset parser and record accessors (port of lib/parse.sh).
+//! Strict YAML-subset parser and record accessors.
 //!
 //! Supported: full-line and trailing ` #` comments; top-level `key: value`; top-level `key:`
 //! followed by two-space-indented `- item` lines (list) or `sub: value` lines (one-level map).
@@ -61,12 +61,16 @@ pub fn parse_yaml(path: &Path) -> Result<Yaml> {
     if !path.is_file() {
         crate::die!("no such file: {}", path.display());
     }
-    let text = String::from_utf8_lossy(&std::fs::read(path)?).into_owned();
+    parse_text(&String::from_utf8_lossy(&std::fs::read(path)?), &path.display().to_string())
+}
+
+/// Parse text; `name` labels errors.
+pub fn parse_text(text: &str, name: &str) -> Result<Yaml> {
     let mut recs = Vec::new();
     let mut seen = HashSet::new();
     let mut cur = String::new();
-    for (i, line) in awk_lines(&text).into_iter().enumerate() {
-        let fail = |m: String| -> anyhow::Error { Raw(format!("{}:{}: {m}", path.display(), i + 1)).into() };
+    for (i, line) in awk_lines(text).into_iter().enumerate() {
+        let fail = |m: String| -> anyhow::Error { Raw(format!("{name}:{}: {m}", i + 1)).into() };
         if line.contains('\t') {
             return Err(fail("tabs are not allowed".into()));
         }
@@ -114,9 +118,9 @@ impl Yaml {
     pub fn get(&self, k: &str) -> String {
         self.list(k).into_iter().next().unwrap_or_default()
     }
-    /// All scalar/list values of a key.
+    /// All non-empty scalar/list values of a key.
     pub fn list(&self, k: &str) -> Vec<String> {
-        self.0.iter().filter(|r| r.sub.is_none() && r.key == k).map(|r| r.val.clone()).collect()
+        self.0.iter().filter(|r| r.sub.is_none() && r.key == k && !r.val.is_empty()).map(|r| r.val.clone()).collect()
     }
     /// Map entries of a key.
     pub fn map(&self, k: &str) -> Vec<(String, String)> {
@@ -131,9 +135,5 @@ impl Yaml {
         v.sort();
         v.dedup();
         v
-    }
-    /// Every scalar/list value (any key).
-    pub fn values(&self) -> Vec<String> {
-        self.0.iter().filter(|r| r.sub.is_none()).map(|r| r.val.clone()).collect()
     }
 }

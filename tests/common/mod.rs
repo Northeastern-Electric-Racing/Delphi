@@ -1,7 +1,6 @@
-//! Test sandbox, like dev/sandbox.sh: a temp dir with a bare Delphi origin, a Delphi clone with
-//! sample content, a bare code repo, a stub `gh` on PATH (logs to gh.log, remembers PRs in
-//! gh.prs), and a workspace root. Runs the Rust binary and, when available, the bash CLI
-//! (`/bin/bash <sandbox>/Delphi/bin/delphi`) against the same sandbox.
+//! Test sandbox: a temp dir with a bare Delphi origin, a Delphi clone with sample content (two
+//! layouts), a bare code repo, a stub `gh` on PATH (logs to gh.log, remembers PRs in gh.prs), and
+//! a workspace root. Nothing touches GitHub.
 #![allow(dead_code)]
 
 use std::fs;
@@ -14,41 +13,35 @@ set -euo pipefail
 SB=$1 here=$2
 git init -q --bare -b main "$SB/origin.git"
 git clone -q "$SB/origin.git" "$SB/Delphi" 2>/dev/null
-if [ -f "$here/lib/core.sh" ]; then cp -R "$here/bin" "$here/lib" "$SB/Delphi/"; fi
 cp "$here/delphi.conf" "$here/moves.tsv" "$SB/Delphi/"
 
 C="$SB/Delphi/context"
-A="$C/software/application-software/argos"
-mkdir -p "$C/software/harness/instructions" "$C/software/harness/mcp" \
-         "$A/blocks" "$A/harness/instructions" "$A/harness/skills/run-tests" "$A/layouts/argos-dev"
+S=software/application-software
+A="$C/$S/argos" N="$C/$S/nero"
+mkdir -p "$C/software/harness/instructions" "$C/software/harness/settings" "$A/blocks" "$A/docs" \
+         "$A/harness/instructions" "$A/harness/skills/run-tests/scripts" \
+         "$A/layouts/argos-dev/files/.claude/skills/argos-notes" "$N/layouts/nero-dev/files"
 
 printf 'name: NER\n' > "$C/scope.yml"
 printf 'name: Software\nrecommend:\n  - software/harness/instructions/base.md\n' > "$C/software/scope.yml"
-printf 'name: Application Software\n' > "$C/software/application-software/scope.yml"
-cat > "$A/scope.yml" <<'EOF'
-name: Argos
-recommend:
-  - software/application-software/argos/blocks/overview.md
-  - software/application-software/argos/harness/skills/run-tests
-EOF
+printf 'name: Application Software\n' > "$C/$S/scope.yml"
+printf 'name: Argos\nrecommend:\n  - %s/argos/harness/skills/run-tests\n' "$S" > "$A/scope.yml"
+printf 'name: NERO\n' > "$N/scope.yml"
 printf '# Software conventions\n\n- Use conventional commits.\n- Open PRs against develop.\n' \
   > "$C/software/harness/instructions/base.md"
-printf '"github": {\n  "command": "gh-mcp",\n  "args": []\n}\n' > "$C/software/harness/mcp/github.json"
-printf '# Argos\n\nArgos is the telemetry dashboard.\nIt has an Angular client and a Rust server.\n' \
-  > "$A/harness/instructions/argos.md"
-printf '# Argos overview\n\nLine one.\nLine two.\nLine three.\n' > "$A/blocks/overview.md"
-printf '# Testing\n\nRun `npm test` in angular-client.\nRun `cargo test` in the server.\n' > "$A/blocks/testing.md"
-printf -- '---\nname: run-tests\ndescription: Run the Argos test suites.\n---\n\nRun both suites and summarize failures.\n' \
+printf '{\n  "model": "sonnet"\n}\n' > "$C/software/harness/settings/settings.json"
+printf '# Argos\n\nArgos is the telemetry dashboard.\n' > "$A/harness/instructions/argos.md"
+printf -- '---\nname: run-tests\ndescription: Run the Argos test suites.\n---\n\nRun both suites.\n' \
   > "$A/harness/skills/run-tests/SKILL.md"
-mkdir -p "$A/harness/skills/run-tests/scripts"
 printf '#!/bin/sh\necho running tests\n' > "$A/harness/skills/run-tests/scripts/run.sh"
 chmod +x "$A/harness/skills/run-tests/scripts/run.sh"
-cat > "$A/harness/skills/triage.skill" <<'EOF'
-name: triage
-description: Triage a failing Argos test.
-body:
-  - software/application-software/argos/blocks/testing.md
-EOF
+printf '# Guide\n\nLine one.\nLine two.\n' > "$A/docs/guide.md"
+printf '\211PNG\r\n\0\1\2' > "$A/docs/logo.png"
+printf '**PR body:** fill the template.\n' > "$A/blocks/pr-body.md"
+printf '# Style\n\nTabs.\n' > "$A/blocks/style.md"
+printf -- '---\nname: argos-notes\ndescription: Notes.\n---\n\nArgos notes.\n' \
+  > "$A/layouts/argos-dev/files/.claude/skills/argos-notes/SKILL.md"
+printf '# NERO\n' > "$N/layouts/nero-dev/files/CLAUDE.md"
 
 git init -q -b main "$SB/argos-src"
 printf '# Argos code\n' > "$SB/argos-src/README.md"
@@ -60,20 +53,27 @@ name: argos-dev
 harness: claude-code
 instructions:
   - software/harness/instructions/base.md
-  - software/application-software/argos/harness/instructions/argos.md
-blocks:
-  - software/application-software/argos/blocks/*
-skills:
-  - software/application-software/argos/harness/skills/run-tests
-  - software/application-software/argos/harness/skills/triage.skill
-mcp:
-  - software/harness/mcp/github.json
+  - $S/argos/harness/instructions/argos.md
+sync:
+  - $S/argos/harness/skills/run-tests
+  - $S/argos/docs
+  - $S/argos/blocks/style.md
+  - $S/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
+  - $S/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
+copy:
+  - software/harness/settings/settings.json -> .claude/settings.json
 repos:
   argos: file://$SB/argos.git
 EOF
+cat > "$N/layouts/nero-dev/manifest.yml" <<EOF
+name: nero-dev
+harness: claude-code
+sync:
+  - $S/argos/blocks/pr-body.md -> .claude/skills/pr/pr-body.md
+EOF
 
 git -C "$SB/Delphi" add -A
-git -C "$SB/Delphi" commit -qm "sandbox: code + sample content"
+git -C "$SB/Delphi" commit -qm "sandbox: sample content"
 git -C "$SB/Delphi" push -q origin HEAD:main 2>/dev/null
 git -C "$SB/Delphi" branch -q -u origin/main 2>/dev/null || true
 
@@ -92,8 +92,9 @@ EOF
 chmod +x "$SB/bin/gh"
 "#;
 
+pub const S: &str = "software/application-software";
+pub const A: &str = "software/application-software/argos";
 pub const LAYOUT: &str = "software/application-software/argos/layouts/argos-dev";
-pub const BLOCKS: &str = "context/software/application-software/argos/blocks";
 
 #[derive(Debug, Clone)]
 pub struct Out {
@@ -102,28 +103,17 @@ pub struct Out {
     pub stderr: String,
 }
 
-impl Out {
-    /// Replace a workspace (or other) name so bash and Rust runs on sibling workspaces compare.
-    pub fn norm(&self, from: &str, to: &str) -> Out {
-        Out { code: self.code, stdout: self.stdout.replace(from, to), stderr: self.stderr.replace(from, to) }
-    }
-}
-
 pub struct Sb {
     pub dir: PathBuf,
 }
 
 static N: AtomicUsize = AtomicUsize::new(0);
 
-fn repo() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
 impl Sb {
     pub fn new(tag: &str) -> Sb {
         // outside this repo, so walking up from a workspace never finds the real checkout
-        let base = std::env::temp_dir();
-        let dir = base.join(format!("sb-{tag}-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
+        let dir =
+            std::env::temp_dir().join(format!("sb-{tag}-{}-{}", std::process::id(), N.fetch_add(1, Ordering::SeqCst)));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(dir.join("home")).unwrap();
         fs::create_dir_all(dir.join("tmp")).unwrap();
@@ -135,7 +125,7 @@ impl Sb {
         .unwrap();
         let sb = Sb { dir };
         let mut c = Command::new("bash");
-        c.arg("-c").arg(BUILD).arg("build").arg(&sb.dir).arg(repo());
+        c.arg("-c").arg(BUILD).arg("build").arg(&sb.dir).arg(env!("CARGO_MANIFEST_DIR"));
         sb.env(&mut c);
         let o = c.output().unwrap();
         assert!(o.status.success(), "sandbox build failed: {}", String::from_utf8_lossy(&o.stderr));
@@ -179,54 +169,48 @@ impl Sb {
             .stdin(Stdio::null());
     }
 
+    fn collect(mut c: Command) -> Out {
+        let o = c.output().unwrap();
+        Out {
+            code: o.status.code().unwrap_or(-1),
+            stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
+        }
+    }
+
     fn run(&self, mut c: Command, cwd: &Path) -> Out {
         self.env(&mut c);
         c.current_dir(cwd);
-        let o = c.output().unwrap();
-        Out {
-            code: o.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
-        }
+        Self::collect(c)
     }
 
-    /// The Rust CLI with DELPHI_ROOT set to the sandbox's Delphi.
-    pub fn rust(&self, cwd: &Path, args: &[&str]) -> Out {
-        let mut c = self.rust_cmd(args);
-        self.env(&mut c);
-        c.env("DELPHI_ROOT", self.root());
-        c.current_dir(cwd);
-        let o = c.output().unwrap();
-        Out {
-            code: o.status.code().unwrap_or(-1),
-            stdout: String::from_utf8_lossy(&o.stdout).into_owned(),
-            stderr: String::from_utf8_lossy(&o.stderr).into_owned(),
-        }
-    }
-
-    /// The Rust CLI without DELPHI_ROOT (root discovery).
-    pub fn rust_noroot(&self, cwd: &Path, args: &[&str]) -> Out {
-        self.run(self.rust_cmd(args), cwd)
-    }
-
-    fn rust_cmd(&self, args: &[&str]) -> Command {
+    /// The CLI with DELPHI_ROOT set to the sandbox's Delphi.
+    pub fn d(&self, cwd: &Path, args: &[&str]) -> Out {
         let mut c = Command::new(env!("CARGO_BIN_EXE_delphi"));
         c.args(args);
-        c
+        self.env(&mut c);
+        c.env("DELPHI_ROOT", self.root()).current_dir(cwd);
+        Self::collect(c)
     }
 
-    pub fn has_bash(&self) -> bool {
-        Path::new("/bin/bash").exists() && self.root().join("lib/core.sh").exists()
+    /// Like `d`, asserting success.
+    pub fn ok(&self, cwd: &Path, args: &[&str]) -> Out {
+        let o = self.d(cwd, args);
+        assert_eq!(o.code, 0, "{args:?} failed: {o:#?}");
+        o
     }
 
-    /// The bash CLI, or None when it (or /bin/bash) is unavailable.
-    pub fn bash(&self, cwd: &Path, args: &[&str]) -> Option<Out> {
-        if !self.has_bash() {
-            return None;
-        }
-        let mut c = Command::new("/bin/bash");
-        c.arg(self.root().join("bin/delphi")).args(args);
-        Some(self.run(c, cwd))
+    /// The CLI without DELPHI_ROOT (root discovery).
+    pub fn d_noroot(&self, cwd: &Path, args: &[&str]) -> Out {
+        let mut c = Command::new(env!("CARGO_BIN_EXE_delphi"));
+        c.args(args);
+        self.run(c, cwd)
+    }
+
+    /// `workspace new argos-dev --as <name>`, asserting success.
+    pub fn new_ws(&self, name: &str) -> PathBuf {
+        self.ok(&self.dir, &["workspace", "new", "argos-dev", "--as", name]);
+        self.ws(name)
     }
 
     /// Run a shell script in a directory; must succeed. Returns stdout.
@@ -238,6 +222,11 @@ impl Sb {
         o.stdout
     }
 
+    /// Edits in a workspace, committed.
+    pub fn edit(&self, ws: &Path, script: &str) {
+        self.sh(ws, &format!("{script}\ngit add -A\ngit commit -qm edits"));
+    }
+
     pub fn git(&self, cwd: &Path, args: &[&str]) -> String {
         let mut c = Command::new("git");
         c.args(args);
@@ -246,13 +235,23 @@ impl Sb {
         o.stdout.trim_end().to_string()
     }
 
-    /// Commit a change to origin/main from a separate clone.
-    pub fn upstream(&self, script: &str) {
+    /// Commit a change to origin/main from a separate clone, as Alice.
+    pub fn upstream(&self, subject: &str, script: &str) {
         let up = self.dir.join("up");
         if !up.exists() {
             self.git(&self.dir, &["clone", "-q", "origin.git", "up"]);
         }
-        self.sh(&up, &format!("git pull -q --no-rebase origin main\n{script}\ngit add -A\ngit diff --cached --quiet || git commit -qm upstream\ngit push -q origin HEAD:main"));
+        self.sh(
+            &up,
+            &format!(
+                "git pull -q --no-rebase origin main\n{script}\ngit add -A\n\
+                 git diff --cached --quiet || git -c user.name=Alice commit -qm '{subject}'\ngit push -q origin HEAD:main"
+            ),
+        );
+    }
+
+    pub fn read(&self, p: &Path) -> String {
+        fs::read_to_string(p).unwrap_or_else(|e| panic!("{}: {e}", p.display()))
     }
 
     pub fn gh_log(&self) -> String {
@@ -273,14 +272,5 @@ impl Drop for Sb {
         if !std::thread::panicking() {
             let _ = fs::remove_dir_all(&self.dir);
         }
-    }
-}
-
-/// Assert two runs are identical (exit code, stdout, stderr).
-pub fn same(r: &Out, b: &Option<Out>) {
-    if let Some(b) = b {
-        assert_eq!(r.code, b.code, "exit codes differ\nrust: {r:#?}\nbash: {b:#?}");
-        assert_eq!(r.stdout, b.stdout, "stdout differs");
-        assert_eq!(r.stderr, b.stderr, "stderr differs");
     }
 }

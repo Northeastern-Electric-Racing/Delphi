@@ -12,12 +12,22 @@ Drive the CLI. Don't write to `context/` yourself.
 2. **Gather candidates.** Read `recommend:` in the scope's `scope.yml` and in each ancestor's,
    closest scope first. Browse the scopes' `blocks/`, `docs/`, and `harness/` directories. Run
    `delphi layout list` to reuse ideas from existing layouts and avoid name clashes.
-3. **Draft** a manifest in a temp file. Use the format in spec §4.3. All paths are relative to
-   `context/`, and each entry goes under the key that matches its location:
-   `harness/instructions/*` → `instructions`, `harness/skills/*` → `skills`,
-   `harness/mcp/*.json` → `mcp`, `harness/settings/*` → `settings` (at most one),
-   `blocks/*` → `blocks`, `docs/*` → `docs` (a trailing `/*` glob is allowed for both). `name` must equal the layout name
-   (`[a-z0-9-]+`). `harness: claude-code`. Add `repos:` as `name: git-url`.
+3. **Draft** a manifest in a temp file (format: `docs/design.md` §2). Paths are relative to
+   `context/`; a directory source maps every file under it.
+   - `name`: the layout name (`[a-z0-9-]+`). `harness: claude-code`.
+   - `instructions:` (optional): parts assembled into `CLAUDE.md`, usually
+     `harness/instructions/workspace.md` first. The assembled file is generated: users edit a part
+     by syncing it.
+   - `sync:` files the team keeps in step with Delphi (refresh updates them, propose sends edits
+     back). `copy:` starting points the user then owns (never updated or proposed).
+   - Entry = `<source> [-> <dest>]`. Default dests: `…/harness/skills/<n>` → `.claude/skills/<n>`,
+     `…/docs/<rest>` → `docs/<rest>`, anything else → `context/<source>`. Use `->` for anything
+     else, e.g. `…/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md`.
+   - Dests must not overlap: no dest inside another entry's dest (sync a skill's `SKILL.md` as a
+     file if a block also goes into that skill folder).
+   - `repos:` as `name: git-url`.
+   Tell the user which sources other layouts also sync (`delphi layout list`, then read their
+   manifests): edits to those reach other teams.
 4. **Show the draft** and get explicit approval.
 5. **Create it:**
    `delphi layout new <scope> <name> --from <draft> --model <your model> --effort <effort> --yes`

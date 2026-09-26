@@ -4,17 +4,18 @@ instructions:
   - harness/instructions/workspace.md
   - software/harness/instructions/base.md
   - software/application-software/argos/harness/instructions/argos.md
-docs:
+sync:
   - software/application-software/argos/docs/CONTEXT.md
-skills:
   - software/application-software/argos/harness/skills/grill-with-docs
   - software/application-software/argos/harness/skills/to-spec
   - software/application-software/argos/harness/skills/to-tickets
   - software/application-software/argos/harness/skills/implement
   - software/application-software/argos/harness/skills/code-review
   - software/application-software/argos/harness/skills/commit
-  - software/application-software/argos/harness/skills/open-pr.skill
-  - software/application-software/argos/harness/skills/update-pr.skill
+  - software/application-software/argos/harness/skills/open-pr/SKILL.md
+  - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
+  - software/application-software/argos/harness/skills/update-pr/SKILL.md
+  - software/application-software/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
   - software/application-software/argos/harness/skills/run-local
   - software/application-software/argos/harness/skills/new-worktree
 repos:

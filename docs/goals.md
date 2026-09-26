@@ -1,7 +1,7 @@
 # Delphi CLI — Goals
 
 What the CLI must achieve, not how. Any rewrite or simplification must keep these.
-Details live in the spec (`context/docs/delphi-design.md`).
+Details live in the spec (`docs/design.md`).
 
 ## Purpose
 

@@ -1,224 +1,188 @@
-//! Layout -> workspace files + `.delphi/lock.tsv` (segment map). Deterministic. Port of
-//! lib/compile.sh.
+//! Layout -> workspace files + `.delphi/lock.tsv`. Deterministic: same tree + layout = same output.
 //!
-//! `compile(src, layout, out)`: `src` is a checked-out Delphi tree (usually a temp worktree at a
-//! specific commit), `layout` the layout dir relative to context/, `out` an empty directory.
-//! Returns the layout's harness.
+//! Every compiled file is a 1:1 copy of one source file under `context/`, except the optional
+//! instruction file assembled from `instructions:` parts. Lock rows are `dest<TAB>source<TAB>kind`
+//! with kind `assembled` (one row per part), `sync`, `layout` (the layout's `files/` and its
+//! manifest), or `copy` (listed only: copies are added to `working` once, never compiled).
 
-use crate::core::{basename, find, glob, glob_dir, out_q, safe_path};
+use crate::core::{find, path_ok, rel_to, safe_path, under};
+use crate::die;
 use crate::harness::{self, Harness};
-use crate::parse::parse_yaml;
+use crate::parse::{parse_yaml, Yaml};
 use anyhow::Result;
-use std::fmt::Write as _;
-use std::fs::{self, OpenOptions};
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::fs;
+use std::path::Path;
 
-struct Compiler<'a> {
-    ctx: PathBuf,
-    out: &'a Path,
-    lock: String,
+pub const LOCK_HEADER: &str = "# dest\tsource\tkind\n";
+
+/// A lock row.
+pub struct Row {
+    pub dest: String,
+    pub source: String,
+    pub kind: String,
 }
 
-fn count(p: &Path) -> usize {
-    fs::read(p).map(|b| b.iter().filter(|&&c| c == b'\n').count()).unwrap_or(0)
+pub fn parse_lock(text: &str) -> Vec<Row> {
+    text.lines()
+        .filter(|l| !l.starts_with('#') && !l.is_empty())
+        .map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            let g = |i: usize| f.get(i).unwrap_or(&"").to_string();
+            Row { dest: g(0), source: g(1), kind: g(2) }
+        })
+        .collect()
 }
 
-fn append(p: &Path, data: &[u8]) -> Result<()> {
-    if let Some(d) = p.parent() {
-        fs::create_dir_all(d)?;
+/// A `sync:` or `copy:` entry: `<source> [-> <dest>]`.
+pub struct Entry {
+    pub key: &'static str,
+    pub source: String,
+    pub dest: String,
+}
+
+/// Where a source goes when the entry has no `-> dest`.
+pub fn default_dest(src: &str, h: &Harness) -> String {
+    let c: Vec<&str> = src.split('/').collect();
+    if let Some(i) = c.windows(2).position(|w| w == ["harness", "skills"]).filter(|i| i + 2 < c.len()) {
+        return format!("{}/{}", h.skills_dir, c[i + 2..].join("/"));
     }
-    OpenOptions::new().create(true).append(true).open(p)?.write_all(data)?;
+    match c.iter().position(|&x| x == "docs") {
+        Some(i) => [&["docs"][..], &c[i + 1..]].concat().join("/"),
+        None => format!("context/{src}"),
+    }
+}
+
+/// Dests the workspace keeps for itself.
+fn dest_ok(d: &str) -> bool {
+    path_ok(d) && ![".git", ".delphi", "repos", "worktrees"].contains(&d.split('/').next().unwrap_or(""))
+}
+
+/// The `sync:` and `copy:` entries of a manifest (`name` labels errors).
+pub fn entries(y: &Yaml, h: &Harness, name: &str) -> Result<Vec<Entry>> {
+    let mut v = vec![];
+    for key in ["sync", "copy"] {
+        for raw in y.list(key) {
+            let (s, d) = raw.split_once(" -> ").map_or((raw.as_str(), None), |(a, b)| (a, Some(b)));
+            let t = |x: &str| x.trim_matches(' ').trim_end_matches('/').to_string();
+            let source = t(s);
+            let dest = d.map_or_else(|| default_dest(&source, h), t);
+            if !path_ok(&source) || source.contains(" -> ") {
+                die!("{name}: {key}: bad source in '{raw}'");
+            }
+            if !dest_ok(&dest) {
+                die!("{name}: {key}: unsafe dest in '{raw}'");
+            }
+            v.push(Entry { key, source, dest });
+        }
+    }
+    Ok(v)
+}
+
+/// The source files a source path names, with their path below it ("" for a file).
+pub fn expand(ctx: &Path, src: &str) -> Result<Vec<(String, String)>> {
+    let abs = safe_path(ctx, src)?;
+    if abs.is_file() {
+        return Ok(vec![(src.to_string(), String::new())]);
+    }
+    if !abs.is_dir() {
+        die!("missing context/{src}");
+    }
+    let mut v = vec![];
+    for (p, ft) in find(&abs) {
+        let rel = rel_to(&p, &abs);
+        if ft.is_symlink() {
+            die!("symlink: context/{src}/{rel}");
+        }
+        if ft.is_file() {
+            v.push((format!("{src}/{rel}"), rel));
+        }
+    }
+    if v.is_empty() {
+        die!("no files in context/{src}");
+    }
+    v.sort();
+    Ok(v)
+}
+
+fn join(d: &str, rel: &str) -> String {
+    if rel.is_empty() {
+        d.to_string()
+    } else {
+        format!("{d}/{rel}")
+    }
+}
+
+/// Copy a source file to `out/dest` (mode kept).
+fn put(out: &Path, dest: &str, src: &Path) -> Result<()> {
+    let o = safe_path(out, dest)?;
+    let made = o.parent().is_some_and(|p| fs::create_dir_all(p).is_ok()) && fs::copy(src, &o).is_ok();
+    if !made {
+        die!("cannot write {dest}");
+    }
     Ok(())
 }
 
-impl Compiler<'_> {
-    fn seg(&mut self, out: &str, start: usize, end: usize, src: &str, sha: &str) {
-        let _ = writeln!(self.lock, "{out}\t{start}\t{end}\t{src}\t{sha}");
-    }
-
-    /// Append a source file (relative to context/) to an output file.
-    fn file(&mut self, out: &str, src: &str) -> Result<()> {
-        let o = self.out.join(out);
-        let s = safe_path(&self.ctx, src)?;
-        if !s.is_file() {
-            crate::die!("compile: missing file context/{src}");
-        }
-        let data = fs::read(&s)?;
-        if data.is_empty() {
-            crate::die!("compile: empty file context/{src}");
-        }
-        let start = count(&o) + 1;
-        append(&o, &data)?;
-        if data.last() != Some(&b'\n') {
-            append(&o, b"\n")?;
-        }
-        let sha = out_q(Command::new("git").arg("hash-object").arg(&s)).unwrap_or_default();
-        self.seg(out, start, count(&o), src, &sha);
-        Ok(())
-    }
-
-    /// 1:1 copy (keeps the executable bit); the output path must not already exist.
-    fn copy(&mut self, out: &str, src: &str) -> Result<()> {
-        if self.out.join(out).exists() {
-            crate::die!("compile: two sources map to the same output '{out}'");
-        }
-        self.file(out, src)?;
-        let exec = fs::metadata(self.ctx.join(src)).map(|m| m.permissions().mode() & 0o111 != 0).unwrap_or(false);
-        if exec {
-            let o = self.out.join(out);
-            let mode = fs::metadata(&o)?.permissions().mode();
-            if fs::set_permissions(&o, fs::Permissions::from_mode(mode | 0o111)).is_err() {
-                crate::die!("compile: cannot chmod {out}");
-            }
-        }
-        Ok(())
-    }
-
-    /// Append generated (`@gen:…`) or separator (`@glue`) lines.
-    fn text(&mut self, out: &str, label: &str, text: &str) -> Result<()> {
-        let o = self.out.join(out);
-        let start = count(&o) + 1;
-        append(&o, format!("{text}\n").as_bytes())?;
-        self.seg(out, start, count(&o), label, "-");
-        Ok(())
-    }
-
-    /// The files an entry names (a file, or a trailing `/*` glob).
-    fn expand(&self, entry: &str) -> Result<Vec<String>> {
-        let Some(dir) = entry.strip_suffix("/*") else { return Ok(vec![entry.to_string()]) };
-        let abs = safe_path(&self.ctx, dir)?;
-        if !abs.is_dir() {
-            crate::die!("compile: no such directory context/{dir}");
-        }
-        let v: Vec<String> =
-            glob_dir(&abs).into_iter().filter(|n| abs.join(n).is_file()).map(|n| format!("{dir}/{n}")).collect();
-        if v.is_empty() {
-            crate::die!("compile: glob matches nothing: {entry}");
-        }
-        Ok(v)
-    }
-}
-
-fn header(name: &str) -> String {
-    format!(
-        "<!-- Compiled by Delphi from layout '{name}'. Edit freely: every line is traced to its source block. -->\n\
-         <!-- When your work is done, commit it; 'delphi workspace propose' sends block changes upstream. -->"
-    )
-}
-
+/// Compile layout `layout` (dir relative to `src/context`) into the empty dir `out`.
 pub fn compile(src: &Path, layout: &str, out: &Path) -> Result<&'static Harness> {
-    if fs::create_dir_all(out.join(".delphi")).is_err() {
-        crate::die!("compile: cannot write {}", out.display());
-    }
-    let mut c = Compiler { ctx: src.join("context"), out, lock: String::new() };
-    let mf = safe_path(&c.ctx, &format!("{layout}/manifest.yml"))?;
-    let recs = parse_yaml(&mf)?;
-    let hname = recs.get("harness");
-    if hname.is_empty() {
-        crate::die!("compile: {layout}/manifest.yml has no harness");
-    }
-    let h = harness::load(&hname)?;
-    let nonempty = |k: &str| recs.list(k).into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>();
+    let ctx = src.join("context");
+    let mfp = format!("{layout}/manifest.yml");
+    let y = parse_yaml(&safe_path(&ctx, &mfp)?)?;
+    let h = harness::load(&y.get("harness"))?;
+    let label = format!("context/{mfp}");
+    let ents = entries(&y, h, &label)?;
+    let mut lock = String::from(LOCK_HEADER);
+    let mut dests: Vec<String> = vec![];
+    let mut row = |d: &str, s: &str, k: &str| lock.push_str(&format!("{d}\t{s}\t{k}\n"));
 
-    // instructions: header, then fragments separated by one blank line
-    c.text(h.instructions, "@gen:delphi", &header(&recs.get("name")))?;
-    for item in nonempty("instructions") {
-        c.text(h.instructions, "@glue", "")?;
-        c.file(h.instructions, &item)?;
-    }
-
-    // blocks: mirrored at context/<path>
-    for item in nonempty("blocks") {
-        for f in c.expand(&item)? {
-            if !glob("*/blocks/*", &format!("/{f}")) {
-                crate::die!("compile: '{f}' is listed under blocks: but is not in a blocks/ directory");
-            }
-            c.copy(&format!("context/{f}"), &f)?;
+    let files_dir = format!("{layout}/files");
+    let files = if safe_path(&ctx, &files_dir)?.is_dir() { expand(&ctx, &files_dir)? } else { vec![] };
+    let parts = y.list("instructions");
+    if !parts.is_empty() {
+        if files.iter().any(|(_, rel)| rel == h.instructions) {
+            die!("{label}: uses both instructions: and files/{}", h.instructions);
         }
-    }
-
-    // docs: at docs/<path below the scope's docs/>
-    for item in nonempty("docs") {
-        for f in c.expand(&item)? {
-            let sub = format!("/{f}");
-            if !glob("*/docs/?*", &sub) {
-                crate::die!("compile: '{f}' is listed under docs: but is not in a docs/ directory");
+        let mut text = Vec::new();
+        for p in &parts {
+            let f = safe_path(&ctx, p)?;
+            if !f.is_file() {
+                die!("{label}: instructions: missing file context/{p}");
             }
-            let below = &sub[sub.find("/docs/").unwrap_or(0) + 6..];
-            c.copy(&format!("docs/{below}"), &f)?;
+            if !text.is_empty() {
+                text.push(b'\n');
+            }
+            text.extend(fs::read(&f)?);
+            if text.last() != Some(&b'\n') {
+                text.push(b'\n');
+            }
+            row(h.instructions, p, "assembled");
         }
+        fs::write(safe_path(out, h.instructions)?, text)?;
+        dests.push(h.instructions.into());
     }
-
-    // skills: native dirs copied 1:1; .skill specs assembled
-    for item in nonempty("skills") {
-        if item.ends_with(".skill") {
-            let spec = safe_path(&c.ctx, &item)?;
-            let srecs = parse_yaml(&spec)?;
-            let (sname, sdesc) = (srecs.get("name"), srecs.get("description"));
-            if sname.is_empty() || sdesc.is_empty() {
-                crate::die!("compile: {item} needs name and description");
+    for e in &ents {
+        for (s, rel) in expand(&ctx, &e.source).map_err(|x| anyhow::anyhow!("{label}: {}: {x}", e.key))? {
+            let d = join(&e.dest, &rel);
+            if e.key == "sync" {
+                put(out, &d, &ctx.join(&s))?;
             }
-            let skdir = format!("{}/{sname}", h.skills_dir);
-            if out.join(&skdir).exists() {
-                crate::die!("compile: two skills named '{sname}'");
-            }
-            let md = format!("{skdir}/SKILL.md");
-            c.text(&md, &format!("@gen:{item}"), &format!("---\nname: {sname}\ndescription: {sdesc}\n---"))?;
-            for f in srecs.list("body").into_iter().filter(|s| !s.is_empty()) {
-                c.text(&md, "@glue", "")?;
-                c.file(&md, &f)?;
-            }
-            for f in srecs.list("references").into_iter().filter(|s| !s.is_empty()) {
-                c.copy(&format!("{skdir}/references/{}", basename(&f)), &f)?;
-            }
-        } else {
-            let abs = safe_path(&c.ctx, &item)?;
-            if !abs.join("SKILL.md").is_file() {
-                crate::die!("compile: skill '{item}' has no SKILL.md");
-            }
-            let skdir = format!("{}/{}", h.skills_dir, basename(&item));
-            if out.join(&skdir).exists() {
-                crate::die!("compile: two skills named '{}'", basename(&item));
-            }
-            let mut subs: Vec<String> = find(&abs)
-                .into_iter()
-                .filter(|(_, ft)| ft.is_file())
-                .map(|(p, _)| crate::core::rel_to(&p, &abs))
-                .collect();
-            subs.sort();
-            for sub in subs {
-                c.copy(&format!("{skdir}/{sub}"), &format!("{item}/{sub}"))?;
+            row(&d, &s, e.key);
+        }
+        dests.push(e.dest.clone());
+    }
+    for (s, rel) in &files {
+        put(out, rel, &ctx.join(s))?;
+        row(rel, s, "layout");
+        dests.push(rel.clone());
+    }
+    put(out, ".delphi/manifest.yml", &ctx.join(&mfp))?;
+    row(".delphi/manifest.yml", &mfp, "layout");
+    for (i, a) in dests.iter().enumerate() {
+        for b in &dests[i + 1..] {
+            if under(a, b).is_some() || under(b, a).is_some() {
+                die!("{label}: dests overlap: '{a}' and '{b}'");
             }
         }
     }
-
-    // mcp: fragments wrapped in {"mcpServers": { … }}, omitted when empty
-    let mut first = true;
-    for item in nonempty("mcp") {
-        if first {
-            c.text(h.mcp_file, "@gen:delphi", "{\"mcpServers\": {")?;
-            first = false;
-        } else {
-            c.text(h.mcp_file, "@glue", ",")?;
-        }
-        c.file(h.mcp_file, &item)?;
-    }
-    if !first {
-        c.text(h.mcp_file, "@gen:delphi", "}}")?;
-    }
-
-    // settings: single file copied 1:1
-    let item = recs.get("settings");
-    if !item.is_empty() {
-        c.copy(h.settings_file, &item)?;
-    }
-
-    // the layout manifest itself, editable in the workspace
-    c.copy(".delphi/manifest.yml", &format!("{layout}/manifest.yml"))?;
-
-    fs::write(out.join(".delphi/lock.tsv"), format!("# output\tstart\tend\tsource\tsha\n{}", c.lock))?;
+    fs::write(out.join(".delphi/lock.tsv"), lock)?;
     Ok(h)
 }
