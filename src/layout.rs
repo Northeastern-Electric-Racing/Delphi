@@ -2,7 +2,7 @@
 //! delphi-new-layout skill) and opens the layout PR.
 
 use crate::check::check_tree;
-use crate::core::{delphi_commit, delphi_fetch, dgit, layout_manifests, name_ok, ok_q, path_ok, show, Opts};
+use crate::core::{delphi_commit, delphi_fetch, dgit, layout_manifests, name_ok, ok_q, path_ok, safe_path, show, Opts};
 use crate::parse::{parse_text, parse_yaml};
 use crate::{die, provenance, warn};
 use anyhow::Result;
@@ -79,7 +79,7 @@ fn new(scope: &str, name: &str, o: &Opts) -> Result<()> {
     }
     let prov = provenance::resolve(&o.model, &o.effort, &h)?;
     let mut pr = crate::pr::begin(&format!("delphi/layout/{name}"), &c, prov)?;
-    let dir = pr.wt.join("context").join(scope).join("layouts").join(name);
+    let dir = safe_path(&pr.wt.join("context"), &format!("{scope}/layouts/{name}"))?;
     if fs::create_dir_all(&dir).is_err() || fs::copy(mf, dir.join("manifest.yml")).is_err() {
         die!("cannot write manifest");
     }

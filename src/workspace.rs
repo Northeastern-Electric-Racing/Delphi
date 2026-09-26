@@ -10,7 +10,7 @@ use crate::compile::{compile, entries, parse_lock, Row};
 use crate::core::{
     ask, awk_lines, conf_get, cwd, delphi_commit, delphi_fetch, delphi_worktree_at, dgit, find_layout, git_c, git_in,
     glob_dir, is_tty, make_tmp, move_path, moves_since, now, ok, ok_q, out, out_q, out_raw, out_stdin, parse_args,
-    rewrite_moves, root, run_deferred, safe_path, show, under, workspace_root, write_replace, Exit, Opts,
+    rewrite_moves, root, run_deferred, safe_path, show, under, unmove_path, workspace_root, write_replace, Exit, Opts,
 };
 use crate::harness::{self, Harness};
 use crate::parse::{parse_text, parse_yaml};
@@ -146,6 +146,13 @@ impl Ws {
                 (f.len() == 3).then(|| (f[0].to_string(), f[1].to_string(), f[2].to_string()))
             })
             .collect()
+    }
+
+    /// Blob of a copied source at the commit it was copied from (`src` is its path as of
+    /// compile_commit, so moves since then are undone).
+    pub fn copied_blob(&self, src: &str, c: &str) -> Option<String> {
+        let p = unmove_path(&moves_since(c, &self.meta("compile_commit")), src);
+        out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{c}:context/{p}")]))
     }
 
     /// Committed changes since the latest merged compile: (status, path), without bookkeeping
@@ -411,7 +418,7 @@ fn ws_new(layout: &str, o: &Opts) -> Result<()> {
             continue;
         }
         info!("cloning {n}…");
-        if !ok(Command::new("git").args(["clone", "-q", &url]).arg(ws.dir.join("repos").join(&n))) {
+        if !ok(Command::new("git").args(["clone", "-q", "--", &url]).arg(ws.dir.join("repos").join(&n))) {
             warn!("clone failed: {n} ({url})");
             failed.push_str(&format!(" {n}"));
         }
@@ -595,6 +602,7 @@ fn diff(ws: &Ws, upstream: bool) -> Result<()> {
     delphi_fetch();
     let sh = Shared::load(&ws.meta("layout"));
     if !upstream {
+        warn_dirty(ws);
         let items = route::plan(ws)?;
         if items.is_empty() {
             info!("{}: no changes since the last refresh", ws.name);
@@ -637,11 +645,13 @@ fn diff(ws: &Ws, upstream: bool) -> Result<()> {
             s.push_str(&format!("  {k:<9} {d} <- {src}{w}{}\n", sh.tag(src)));
         }
     }
+    let later = moves_since(&cc, &t);
     for (d, src, c) in ws.copied() {
-        let blob = |r: &str| out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{r}:context/{src}")]));
-        if blob(&c) != blob(&t) {
-            let w = who(&format!("{c}..{t}"), &[format!("context/{src}")]);
-            s.push_str(&format!("  {:<9} {d} <- {src}{w}  (your copy is not updated)\n", "copy"));
+        let at_t = move_path(&later, &src);
+        let now = out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{t}:context/{at_t}")]));
+        if ws.copied_blob(&src, &c) != now {
+            let w = who(&format!("{c}..{t}"), &[format!("context/{at_t}")]);
+            s.push_str(&format!("  {:<9} {d} <- {at_t}{w}  (your copy is not updated)\n", "copy"));
         }
     }
     if s.is_empty() {
@@ -649,6 +659,13 @@ fn diff(ws: &Ws, upstream: bool) -> Result<()> {
     }
     print!("{s}");
     Ok(())
+}
+
+/// Only committed changes are listed or proposed.
+fn warn_dirty(ws: &Ws) {
+    if !ws.clean() {
+        warn!("uncommitted changes in {} are not included; commit them first", ws.dir.display());
+    }
 }
 
 struct State {
@@ -807,6 +824,7 @@ fn warn_open_pr(ws: &Ws, branch: &str) {
 fn propose(ws: &Ws, o: &Opts) -> Result<()> {
     if o.dry {
         delphi_fetch();
+        warn_dirty(ws);
         if behind(ws) != "no" {
             warn!("{} is behind origin/{}; planning against the last compile", ws.name, ws.meta("ref"));
         }

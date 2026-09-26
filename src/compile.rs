@@ -131,7 +131,9 @@ pub fn compile(src: &Path, layout: &str, out: &Path) -> Result<&'static Harness>
     let label = format!("context/{mfp}");
     let ents = entries(&y, h, &label)?;
     let mut lock = String::from(LOCK_HEADER);
-    let mut dests: Vec<String> = vec![];
+    // (dest, files below it for a directory entry; None for a single file)
+    let mut dests: Vec<(String, Option<Vec<String>>)> = vec![];
+    let mut puts: Vec<(String, String)> = vec![]; // (dest, source), written once dests are checked
     let mut row = |d: &str, s: &str, k: &str| lock.push_str(&format!("{d}\t{s}\t{k}\n"));
 
     let files_dir = format!("{layout}/files");
@@ -157,31 +159,48 @@ pub fn compile(src: &Path, layout: &str, out: &Path) -> Result<&'static Harness>
             row(h.instructions, p, "assembled");
         }
         fs::write(safe_path(out, h.instructions)?, text)?;
-        dests.push(h.instructions.into());
+        dests.push((h.instructions.into(), None));
     }
     for e in &ents {
-        for (s, rel) in expand(&ctx, &e.source).map_err(|x| anyhow::anyhow!("{label}: {}: {x}", e.key))? {
-            let d = join(&e.dest, &rel);
+        let src = expand(&ctx, &e.source).map_err(|x| anyhow::anyhow!("{label}: {}: {x}", e.key))?;
+        let is_dir = src.iter().any(|(_, rel)| !rel.is_empty());
+        for (s, rel) in &src {
+            let d = join(&e.dest, rel);
+            row(&d, s, e.key);
             if e.key == "sync" {
-                put(out, &d, &ctx.join(&s))?;
+                puts.push((d, s.clone()));
             }
-            row(&d, &s, e.key);
         }
-        dests.push(e.dest.clone());
+        dests.push((e.dest.clone(), is_dir.then(|| src.into_iter().map(|x| x.1).collect())));
     }
     for (s, rel) in &files {
-        put(out, rel, &ctx.join(s))?;
+        if !dest_ok(rel) {
+            die!("{label}: files/{rel}: reserved workspace path");
+        }
         row(rel, s, "layout");
-        dests.push(rel.clone());
+        puts.push((rel.clone(), s.clone()));
+        dests.push((rel.clone(), None));
     }
-    put(out, ".delphi/manifest.yml", &ctx.join(&mfp))?;
     row(".delphi/manifest.yml", &mfp, "layout");
+    puts.push((".delphi/manifest.yml".into(), mfp.clone()));
+    // a file may sit inside a directory entry's dest when that directory has nothing at its path
+    let fits =
+        |f: &(String, Option<Vec<String>>), d: &(String, Option<Vec<String>>)| match (&f.1, &d.1, under(&f.0, &d.0)) {
+            (None, Some(files), Some(rel)) if !rel.is_empty() => {
+                !files.iter().any(|x| under(rel, x).is_some() || under(x, rel).is_some())
+            }
+            _ => false,
+        };
     for (i, a) in dests.iter().enumerate() {
         for b in &dests[i + 1..] {
-            if under(a, b).is_some() || under(b, a).is_some() {
-                die!("{label}: dests overlap: '{a}' and '{b}'");
+            let nested = under(&a.0, &b.0).is_some() || under(&b.0, &a.0).is_some();
+            if nested && !fits(a, b) && !fits(b, a) {
+                die!("{label}: dests overlap: '{}' and '{}'", a.0, b.0);
             }
         }
+    }
+    for (d, s) in &puts {
+        put(out, d, &ctx.join(s))?;
     }
     fs::write(out.join(".delphi/lock.tsv"), lock)?;
     Ok(h)

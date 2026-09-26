@@ -44,8 +44,10 @@ repos:
   anything else → `context/<source>`.
 - Dests are unique and never nested (no dest inside another entry's dest, including the
   instruction file and the layout's `files/`), and never under `.git/`, `.delphi/`, `repos/`, or
-  `worktrees/`. To put an extra file into a synced skill folder, sync the skill's files
-  individually (e.g. `…/skills/open-pr/SKILL.md` plus `…/pr-body.md -> .claude/skills/open-pr/pr-body.md`).
+  `worktrees/`. One exception: a **file** dest may sit inside a **directory** entry's dest when
+  that directory's source has nothing at that path, so an extra file can join a synced skill
+  folder (e.g. `…/skills/open-pr` plus `…/pr-body.md -> .claude/skills/open-pr/pr-body.md`). Each
+  file keeps its own source; a new file in the folder goes to the folder's source.
 - `instructions` builds the harness instruction file (e.g. `CLAUDE.md`) from parts, blank line
   between. It is **generated**: edits to it are not proposed (sync a part to edit it). A layout
   uses either `instructions` or its own `files/<instruction file>`, not both.
@@ -99,14 +101,15 @@ on the propose branch.
 
 ## 5. What changed, and where it goes (routing)
 
-Pending diff = `generated-merged..HEAD` (committed changes only). Per changed file:
+Pending diff = `generated-merged..HEAD` (committed changes only; `diff` and `--dry-run` warn
+about uncommitted ones). Per changed file:
 
 | Change | Result |
 |---|---|
 | synced or layout file, modified (incl. binary, mode) | copy the file over its source |
 | synced file, deleted | no-op if its entry was removed from `.delphi/manifest.yml`, else unresolved |
 | layout file, deleted | unresolved (remove it from the layout's `files/` in Delphi) |
-| new file inside a synced **directory** | new file in that source directory |
+| new file inside a synced **directory** | new file in that source directory (the innermost entry wins) |
 | new `sync` entry in `.delphi/manifest.yml` whose source doesn't exist yet | source created from the workspace file(s) |
 | new file whose source already exists in Delphi | unresolved (it arrives on refresh once the entry merges) |
 | symlink, type change, other `.delphi/` files | unresolved |
@@ -144,6 +147,7 @@ MCP fragment assembly (MCP/settings are ordinary synced or copied files), manife
 Scopes have `scope.yml`; Delphi's own YAML (`scope.yml`, layout manifests) parses (other `.yml`
 files are content and may use full YAML); scope `recommend` paths exist; manifests: `name` = directory and unique, adapter
 exists, only known keys, entries well-formed, sources exist, dests safe and unique (no dest inside
-another entry's dest), not both `instructions` and a `files/` instruction file; no file named after
+another entry's dest, except a file inside a directory entry's dest where that directory has no
+file; layout `files/` not under reserved paths), not both `instructions` and a `files/` instruction file; no file named after
 an instruction file under `context/` except inside `layouts/*/files/`; `moves.tsv` rows
-well-formed; no symlinks, no empty files.
+well-formed (three fields, safe paths); no symlinks, no empty files.

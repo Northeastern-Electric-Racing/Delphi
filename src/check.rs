@@ -1,6 +1,6 @@
 //! Repo-wide validation (spec §8). `check_tree(root)` prints every violation and returns false if
 //! any. Layouts are validated by compiling them (sources exist, entries well-formed, dests safe,
-//! unique, and not nested); the rules here cover the rest.
+//! unique, not nested except a file in a directory dest); the rules here cover the rest.
 
 use crate::compile::compile;
 use crate::core::{awk_lines, basename, find, find_into, make_tmp, path_ok, root, Exit, Raw};
@@ -119,10 +119,11 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
         }
     }
 
-    // moves.tsv: three fields
+    // moves.tsv: three fields, safe paths
     if let Ok(m) = fs::read_to_string(root_dir.join("moves.tsv")) {
         for (n, l) in awk_lines(&m).into_iter().enumerate() {
-            if !l.starts_with('#') && !l.is_empty() && l.split('\t').count() != 3 {
+            let f: Vec<&str> = l.split('\t').collect();
+            if !l.starts_with('#') && !l.is_empty() && (f.len() != 3 || !path_ok(f[0]) || !path_ok(f[1])) {
                 errs.push(format!("moves.tsv:{}: expected old<TAB>new<TAB>date", n + 1));
             }
         }

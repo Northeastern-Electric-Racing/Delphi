@@ -474,6 +474,12 @@ pub fn move_path(rows: &Moves, p: &str) -> String {
     p
 }
 
+/// Undo move rows: where `p` was before them.
+pub fn unmove_path(rows: &Moves, p: &str) -> String {
+    let rev: Moves = rows.iter().rev().map(|(o, n)| (n.clone(), o.clone())).collect();
+    move_path(&rev, p)
+}
+
 /// Apply move rows to the source of `  - <source> [-> <dest>]` lines in place (trailing comments
 /// on rewritten lines are dropped). True if anything changed.
 pub fn rewrite_moves(rows: &Moves, file: &Path) -> Result<bool> {

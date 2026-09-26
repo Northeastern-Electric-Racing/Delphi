@@ -23,8 +23,9 @@ Drive the CLI. Don't write to `context/` yourself.
    - Entry = `<source> [-> <dest>]`. Default dests: `…/harness/skills/<n>` → `.claude/skills/<n>`,
      `…/docs/<rest>` → `docs/<rest>`, anything else → `context/<source>`. Use `->` for anything
      else, e.g. `…/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md`.
-   - Dests must not overlap: no dest inside another entry's dest (sync a skill's `SKILL.md` as a
-     file if a block also goes into that skill folder).
+   - Dests must not overlap: no dest inside another entry's dest, except a single file placed
+     into a synced folder at a path the folder doesn't already have (e.g. a skill folder plus a
+     block `-> .claude/skills/<n>/pr-body.md`).
    - `repos:` as `name: git-url`.
    Tell the user which sources other layouts also sync (`delphi layout list`, then read their
    manifests): edits to those reach other teams.

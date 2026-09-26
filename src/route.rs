@@ -79,7 +79,7 @@ pub fn plan(ws: &Ws) -> Result<Vec<Item>> {
             }
         } else if st != "A" {
             it("local", "not synced")
-        } else if let Some(e) = syncs.iter().find(|e| under(&o, &e.dest).is_some()) {
+        } else if let Some(e) = syncs.iter().filter(|e| under(&o, &e.dest).is_some()).max_by_key(|e| e.dest.len()) {
             let t = join(&e.source, under(&o, &e.dest).unwrap_or(""));
             let up = upstream_type(&cc, &e.source);
             if !path_ok(&t) {
@@ -120,7 +120,7 @@ pub fn plan(ws: &Ws) -> Result<Vec<Item>> {
     }
     // copies the user changed are listed as local
     for (d, s, c) in ws.copied() {
-        let theirs = out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{c}:context/{s}")]));
+        let theirs = ws.copied_blob(&s, &c);
         if !v.iter().any(|it| it.dest == d) && tree.get(&d).map(|(_, b)| b) != theirs.as_ref() {
             v.push(Item { kind: "local", dest: d, target: "copy (yours)".into() });
         }

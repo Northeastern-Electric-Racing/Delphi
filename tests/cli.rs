@@ -517,13 +517,13 @@ fn check_passes_then_reports_every_failure() {
     fs::write(c.join("orphan/x.md"), "x\n").unwrap();
     fs::write(c.join("software/scope.yml"), "name: Software\nrecommend:\n  - software/nope.md\n").unwrap();
     fs::write(c.join(format!("{S}/scope.yml")), "name:\tx\n").unwrap();
-    fs::write(sb.root().join("moves.tsv"), "# old\tnew\tdate\na\tb\n").unwrap();
+    fs::write(sb.root().join("moves.tsv"), "# old\tnew\tdate\na\tb\n../a\tb\t2026-01-01\n").unwrap();
     lay("bad", "name: other\nharness: nope\nblocks:\n  - x\n");
     lay("missing", "name: missing\nharness: claude-code\nsync:\n  - software/missing\n");
     lay(
         "overlap",
         &format!(
-            "name: overlap\nharness: claude-code\nsync:\n  - {A}/docs\n  - {A}/blocks/style.md -> docs/style.md\n"
+            "name: overlap\nharness: claude-code\nsync:\n  - {A}/docs\n  - {A}/blocks/style.md -> docs/guide.md\n"
         ),
     );
     lay("dup", &format!("name: dup\nharness: claude-code\nsync:\n  - {A}/blocks/style.md -> x.md\ncopy:\n  - {A}/blocks/pr-body.md -> x.md\n"));
@@ -532,6 +532,9 @@ fn check_passes_then_reports_every_failure() {
     fs::write(a.join("layouts/both/files/CLAUDE.md"), "# mine\n").unwrap();
     lay("unsafe", "name: unsafe\nharness: claude-code\nsync:\n  - software/harness -> .git/hooks\n");
     lay("argos-dev2", "name: argos-dev\nharness: claude-code\n");
+    lay("resv", "name: resv\nharness: claude-code\n");
+    fs::create_dir_all(a.join("layouts/resv/files/repos")).unwrap();
+    fs::write(a.join("layouts/resv/files/repos/x.md"), "x\n").unwrap();
     let r = sb.d(&sb.dir, &["check"]);
     assert_eq!(r.code, 1);
     let l = format!("context/{A}/layouts");
@@ -543,11 +546,13 @@ fn check_passes_then_reports_every_failure() {
         "check: context/software/scope.yml: recommend: missing 'software/nope.md'\n".into(),
         format!("/context/{S}/scope.yml:1: tabs are not allowed\n"),
         "check: moves.tsv:2: expected old<TAB>new<TAB>date\n".into(),
+        "check: moves.tsv:3: expected old<TAB>new<TAB>date\n".into(),
+        format!("check: {l}/resv/manifest.yml: files/repos/x.md: reserved workspace path\n"),
         format!("check: {l}/bad/manifest.yml: name 'other' must equal its directory 'bad'\n"),
         format!("check: {l}/bad/manifest.yml: unknown key 'blocks'\n"),
         format!("check: {l}/bad/manifest.yml: unknown or missing harness 'nope'\n"),
         format!("check: {l}/missing/manifest.yml: sync: missing context/software/missing\n"),
-        format!("check: {l}/overlap/manifest.yml: dests overlap: 'docs' and 'docs/style.md'\n"),
+        format!("check: {l}/overlap/manifest.yml: dests overlap: 'docs' and 'docs/guide.md'\n"),
         format!("check: {l}/dup/manifest.yml: dests overlap: 'x.md' and 'x.md'\n"),
         format!("check: {l}/both/manifest.yml: uses both instructions: and files/CLAUDE.md\n"),
         format!("check: {l}/unsafe/manifest.yml: sync: unsafe dest in 'software/harness -> .git/hooks'\n"),
@@ -637,5 +642,125 @@ fn open_shell_gets_provenance_env() {
     assert_eq!((o.status.code(), String::from_utf8_lossy(&o.stderr).as_ref()), (Some(0), ""));
     assert!(out.starts_with(&format!("{} h=claude-code", ws.display())), "{out}");
     assert!(out.ends_with(" m=m1 e=low\n"), "{out}");
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn copies_follow_block_moves() {
+    let sb = Sb::new("cpmv");
+    let ws = sb.new_ws("w");
+    let (old, new) = ("software/harness/settings/settings.json", "software/harness/cfg/settings.json");
+    sb.upstream(
+        "Move settings",
+        &format!(
+            "mkdir -p context/software/harness/cfg && git mv context/{old} context/{new}\n\
+             printf '{old}\\t{new}\\t2026-01-01\\n' >> moves.tsv\n\
+             sed -i 's#{old}#{new}#' context/{LAYOUT}/manifest.yml"
+        ),
+    );
+    sb.ok(&sb.dir, &["ws", "refresh", "w"]);
+    let c = sb.read(&ws.join(".git/delphi/copied"));
+    assert!(c.starts_with(&format!(".claude/settings.json\t{new}\t")), "{c}");
+    // an unedited copy is neither a local change nor behind after its source moved
+    let r = sb.ok(&ws, &["ws", "diff"]);
+    assert_eq!((r.stdout.as_str(), r.stderr.as_str()), ("", "w: no changes since the last refresh\n"));
+    let r = sb.ok(&ws, &["ws", "diff", "--upstream"]);
+    assert_eq!((r.stdout.as_str(), r.stderr.as_str()), ("", "w: up to date with origin/main\n"));
+    // a later edit to the moved source is reported against its new path
+    sb.upstream("Opus", &format!("printf '{{\"model\": \"opus\"}}\\n' > context/{new}"));
+    let r = sb.ok(&ws, &["ws", "diff", "--upstream"]);
+    assert_eq!(
+        r.stdout,
+        format!("  copy      .claude/settings.json <- {new}  (Alice: Opus)  (your copy is not updated)\n")
+    );
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn file_dest_inside_a_synced_directory() {
+    let sb = Sb::new("nested");
+    let skill = format!("{A}/harness/skills/run-tests");
+    sb.upstream(
+        "Add skills-dev",
+        &format!(
+            "mkdir -p context/{A}/layouts/skills-dev\n\
+             printf 'name: skills-dev\\nharness: claude-code\\nsync:\\n  - {skill}\\n  - {A}/blocks/pr-body.md -> .claude/skills/run-tests/pr-body.md\\n' > context/{A}/layouts/skills-dev/manifest.yml"
+        ),
+    );
+    sb.git(&sb.root(), &["pull", "-q", "origin", "main"]);
+    assert_eq!(sb.d(&sb.dir, &["check"]).stderr, "check: ok\n");
+    sb.ok(&sb.dir, &["ws", "new", "skills-dev"]);
+    let ws = sb.ws("skills-dev");
+    assert_eq!(sb.read(&ws.join(".claude/skills/run-tests/pr-body.md")), "**PR body:** fill the template.\n");
+    assert!(ws.join(".claude/skills/run-tests/scripts/run.sh").is_file());
+
+    // the file entry's edit goes to its own source; a new file in the folder to the folder's source;
+    // a new nested file entry (source not in Delphi yet) wins over the folder
+    sb.edit(
+        &ws,
+        &format!(
+            "printf 'More.\\n' >> .claude/skills/run-tests/pr-body.md\nprintf 'n\\n' > .claude/skills/run-tests/notes.md\n\
+             printf '  - {A}/blocks/checklist.md -> .claude/skills/run-tests/checklist.md\\n' >> .delphi/manifest.yml\n\
+             printf 'c\\n' > .claude/skills/run-tests/checklist.md"
+        ),
+    );
+    let r = sb.ok(&ws, &["ws", "diff"]);
+    assert_eq!(
+        r.stdout,
+        format!(
+            "  new       .claude/skills/run-tests/checklist.md -> {A}/blocks/checklist.md
+  new       .claude/skills/run-tests/notes.md -> {skill}/notes.md  (shared: argos-dev)
+  update    .claude/skills/run-tests/pr-body.md -> {A}/blocks/pr-body.md  (shared: argos-dev, nero-dev)
+  manifest  .delphi/manifest.yml -> {A}/layouts/skills-dev/manifest.yml
+"
+        )
+    );
+
+    // still an overlap when the folder has a file at that path (or the file would need a folder)
+    let m = sb.root().join(format!("context/{A}/layouts/skills-dev/manifest.yml"));
+    for dest in ["SKILL.md", "scripts", "SKILL.md/x.md"] {
+        fs::write(
+            &m,
+            format!("name: skills-dev\nharness: claude-code\nsync:\n  - {skill}\n  - {A}/blocks/pr-body.md -> .claude/skills/run-tests/{dest}\n"),
+        )
+        .unwrap();
+        let r = sb.d(&sb.dir, &["check"]);
+        assert!(
+            r.stderr.contains("dests overlap: '.claude/skills/run-tests' and '.claude/skills/run-tests/"),
+            "{dest}: {}",
+            r.stderr
+        );
+    }
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn diff_warns_about_uncommitted_changes() {
+    let sb = Sb::new("dirty");
+    let ws = sb.new_ws("w");
+    fs::write(ws.join("docs/guide.md"), "changed\n").unwrap();
+    let want =
+        format!("delphi: warning: uncommitted changes in {} are not included; commit them first\n", ws.display());
+    let r = sb.ok(&ws, &["ws", "diff"]);
+    assert_eq!(r.stderr, format!("{want}w: no changes since the last refresh\n"));
+    let r = sb.ok(&ws, &["ws", "propose", "--dry-run"]);
+    assert_eq!(r.stderr, want);
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn layout_new_refuses_a_symlinked_path_on_origin() {
+    let sb = Sb::new("lsym");
+    let outside = sb.dir.join("outside");
+    fs::create_dir_all(&outside).unwrap();
+    sb.upstream("link", &format!("ln -s {} context/software/layouts", outside.display()));
+    fs::write(sb.dir.join("m.yml"), format!("name: x\nharness: claude-code\nsync:\n  - {A}/docs\n")).unwrap();
+    let r = sb.d(&sb.dir, &["layout", "new", "software", "x", "--from", "m.yml", "--yes"]);
+    assert_eq!(r.code, 1);
+    assert!(
+        r.stderr.starts_with("delphi: unsafe path (escapes ") && r.stderr.ends_with(": 'software/layouts/x'\n"),
+        "{r:#?}"
+    );
+    assert!(fs::read_dir(&outside).unwrap().next().is_none());
     sb.assert_cleaned_up();
 }
