@@ -4,7 +4,7 @@
 //! followed by two-space-indented `- item` lines (list) or `sub: value` lines (one-level map).
 //! Anything else is a parse error reported as `file:line: msg`.
 
-use crate::core::{awk_lines, Raw};
+use crate::core::Fail;
 use anyhow::Result;
 use std::collections::HashSet;
 use std::path::Path;
@@ -56,7 +56,7 @@ fn value(raw: &str) -> Result<String, String> {
     Ok(v)
 }
 
-/// Parse a file; errors are `Raw("<file>:<line>: <msg>")`.
+/// Parse a file; errors are `Fail(1, "<file>:<line>: <msg>")`.
 pub fn parse_yaml(path: &Path) -> Result<Yaml> {
     if !path.is_file() {
         crate::die!("no such file: {}", path.display());
@@ -69,8 +69,8 @@ pub fn parse_text(text: &str, name: &str) -> Result<Yaml> {
     let mut recs = Vec::new();
     let mut seen = HashSet::new();
     let mut cur = String::new();
-    for (i, line) in awk_lines(text).into_iter().enumerate() {
-        let fail = |m: String| -> anyhow::Error { Raw(format!("{name}:{}: {m}", i + 1)).into() };
+    for (i, line) in text.lines().enumerate() {
+        let fail = |m: String| -> anyhow::Error { Fail(1, format!("{name}:{}: {m}", i + 1)).into() };
         if line.contains('\t') {
             return Err(fail("tabs are not allowed".into()));
         }

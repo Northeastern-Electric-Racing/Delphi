@@ -5,10 +5,9 @@
 //! trailer lines; `rows` extra table rows ("harness|model|effort" lines) from other sessions.
 
 use crate::core::{ask, env_nonempty, is_tty};
-use crate::harness;
+use crate::{die, harness};
 use anyhow::Result;
 
-#[derive(Clone, Default)]
 pub struct Prov {
     pub harness: String,
     pub model: String,
@@ -17,56 +16,44 @@ pub struct Prov {
     pub rows: String,
 }
 
-fn prov_ask(field: &str, var: &str, flag: &str) -> Result<String> {
+/// Flag, else env var, else fallback, else ask; `flag_name` is suggested when asking fails.
+fn field(field: &str, flag: &str, var: &str, fallback: String, flag_name: &str) -> Result<String> {
+    let v = if flag.is_empty() { env_nonempty(var).unwrap_or(fallback) } else { flag.to_string() };
+    if !v.is_empty() {
+        return Ok(v);
+    }
     if !is_tty() {
-        let pass = if flag.is_empty() { String::new() } else { format!("pass {flag} or ") };
-        crate::die!("provenance: {field} unknown — {pass}set {var}");
+        let pass = if flag_name.is_empty() { String::new() } else { format!("pass {flag_name} or ") };
+        die!("provenance: {field} unknown — {pass}set {var}");
     }
     let a = ask(&format!("Which {field} made this change? ('none' if no AI was used)"), "")?;
     if a.is_empty() {
-        crate::die!("provenance: {field} is required");
+        die!("provenance: {field} is required");
     }
     Ok(a)
 }
 
 pub fn resolve(flag_model: &str, flag_effort: &str, adapter: &str) -> Result<Prov> {
-    let h = harness::load(adapter)?;
-    let [fh, fm, fe] = (h.provenance)();
-    let pick = |flag: &str, var: &str, fb: String| {
-        if !flag.is_empty() {
-            flag.to_string()
-        } else {
-            env_nonempty(var).unwrap_or(fb)
-        }
-    };
-    let mut p = Prov {
-        harness: pick("", "DELPHI_HARNESS", fh),
-        model: pick(flag_model, "DELPHI_MODEL", fm),
-        effort: pick(flag_effort, "DELPHI_EFFORT", fe),
-        ..Default::default()
-    };
-    if p.harness.is_empty() {
-        p.harness = prov_ask("harness", "DELPHI_HARNESS", "")?;
-    }
-    if p.model.is_empty() {
-        p.model = prov_ask("model", "DELPHI_MODEL", "--model")?;
-    }
-    if p.effort.is_empty() {
-        p.effort = prov_ask("effort", "DELPHI_EFFORT", "--effort")?;
-    }
-    Ok(p)
+    let [fh, fm, fe] = (harness::load(adapter)?.provenance)();
+    Ok(Prov {
+        harness: field("harness", "", "DELPHI_HARNESS", fh, "")?,
+        model: field("model", flag_model, "DELPHI_MODEL", fm, "--model")?,
+        effort: field("effort", flag_effort, "DELPHI_EFFORT", fe, "--effort")?,
+        extra: String::new(),
+        rows: String::new(),
+    })
 }
 
 impl Prov {
     /// Commit trailers (no trailing newline).
     pub fn trailers(&self) -> String {
-        let mut s =
+        let s =
             format!("Delphi-Harness: {}\nDelphi-Model: {}\nDelphi-Effort: {}", self.harness, self.model, self.effort);
-        if !self.extra.is_empty() {
-            s.push('\n');
-            s.push_str(&self.extra);
+        if self.extra.is_empty() {
+            s
+        } else {
+            format!("{s}\n{}", self.extra.trim_end_matches('\n'))
         }
-        s.trim_end_matches('\n').to_string()
     }
 
     /// Markdown table of this session plus `rows` (no trailing newline).
@@ -75,12 +62,8 @@ impl Prov {
             "| Harness | Model | Effort |\n|---|---|---|\n| {} | {} | {} |",
             self.harness, self.model, self.effort
         );
-        if !self.rows.is_empty() {
-            for l in crate::core::awk_lines(&format!("{}\n", self.rows)) {
-                let mut f = l.splitn(3, '|');
-                let (h, m, e) = (f.next().unwrap_or(""), f.next().unwrap_or(""), f.next().unwrap_or(""));
-                s.push_str(&format!("\n| {h} | {m} | {e} |"));
-            }
+        for l in self.rows.lines() {
+            s += &format!("\n| {} |", l.replace('|', " | "));
         }
         s
     }

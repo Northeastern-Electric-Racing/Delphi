@@ -2,42 +2,71 @@
 //!
 //! Every compiled file is a 1:1 copy of one source file under `context/`, except the optional
 //! instruction file assembled from `instructions:` parts. Lock rows are `dest<TAB>source<TAB>kind`
-//! with kind `assembled` (one row per part), `sync`, `layout` (the layout's `files/` and its
-//! manifest), or `copy` (listed only: copies are added to `working` once, never compiled).
+//! (see `Kind`); copies are listed only (added to `working` once, never compiled).
 
-use crate::core::{find, path_ok, rel_to, safe_path, under};
+use crate::core::{find, join, path_ok, rel_to, safe_path, under};
 use crate::die;
 use crate::harness::{self, Harness};
 use crate::parse::{parse_yaml, Yaml};
 use anyhow::Result;
+use std::fmt;
 use std::fs;
 use std::path::Path;
 
-pub const LOCK_HEADER: &str = "# dest\tsource\tkind\n";
+pub const MANIFEST: &str = ".delphi/manifest.yml";
+pub const LOCK: &str = ".delphi/lock.tsv";
+
+/// What a lock row's dest is: part of the assembled instruction file, a synced file, one of the
+/// layout's own files (its `files/` and manifest), or a copy.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Kind {
+    Assembled,
+    Sync,
+    Layout,
+    Copy,
+}
+
+impl fmt::Display for Kind {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.pad(match self {
+            Kind::Assembled => "assembled",
+            Kind::Sync => "sync",
+            Kind::Layout => "layout",
+            Kind::Copy => "copy",
+        })
+    }
+}
 
 /// A lock row.
 pub struct Row {
     pub dest: String,
     pub source: String,
-    pub kind: String,
+    pub kind: Kind,
 }
 
 pub fn parse_lock(text: &str) -> Vec<Row> {
+    let kinds = [Kind::Assembled, Kind::Sync, Kind::Layout, Kind::Copy];
     text.lines()
-        .filter(|l| !l.starts_with('#') && !l.is_empty())
-        .map(|l| {
-            let f: Vec<&str> = l.split('\t').collect();
-            let g = |i: usize| f.get(i).unwrap_or(&"").to_string();
-            Row { dest: g(0), source: g(1), kind: g(2) }
+        .filter_map(|l| {
+            let mut f = l.split('\t');
+            let (dest, source, k) = (f.next()?, f.next()?, f.next()?);
+            let kind = *kinds.iter().find(|x| x.to_string() == k)?;
+            Some(Row { dest: dest.into(), source: source.into(), kind })
         })
         .collect()
 }
 
 /// A `sync:` or `copy:` entry: `<source> [-> <dest>]`.
 pub struct Entry {
-    pub key: &'static str,
+    pub kind: Kind,
     pub source: String,
     pub dest: String,
+}
+
+/// An entry's source and explicit dest (trimmed, trailing `/` dropped).
+pub fn split_entry(raw: &str) -> (String, Option<String>) {
+    let t = |x: &str| x.trim_matches(' ').trim_end_matches('/').to_string();
+    raw.split_once(" -> ").map_or_else(|| (t(raw), None), |(s, d)| (t(s), Some(t(d))))
 }
 
 /// Where a source goes when the entry has no `-> dest`.
@@ -60,19 +89,17 @@ fn dest_ok(d: &str) -> bool {
 /// The `sync:` and `copy:` entries of a manifest (`name` labels errors).
 pub fn entries(y: &Yaml, h: &Harness, name: &str) -> Result<Vec<Entry>> {
     let mut v = vec![];
-    for key in ["sync", "copy"] {
+    for (key, kind) in [("sync", Kind::Sync), ("copy", Kind::Copy)] {
         for raw in y.list(key) {
-            let (s, d) = raw.split_once(" -> ").map_or((raw.as_str(), None), |(a, b)| (a, Some(b)));
-            let t = |x: &str| x.trim_matches(' ').trim_end_matches('/').to_string();
-            let source = t(s);
-            let dest = d.map_or_else(|| default_dest(&source, h), t);
-            if !path_ok(&source) || source.contains(" -> ") {
+            let (source, dest) = split_entry(&raw);
+            let dest = dest.unwrap_or_else(|| default_dest(&source, h));
+            if !path_ok(&source) {
                 die!("{name}: {key}: bad source in '{raw}'");
             }
             if !dest_ok(&dest) {
                 die!("{name}: {key}: unsafe dest in '{raw}'");
             }
-            v.push(Entry { key, source, dest });
+            v.push(Entry { kind, source, dest });
         }
     }
     Ok(v)
@@ -88,7 +115,7 @@ pub fn expand(ctx: &Path, src: &str) -> Result<Vec<(String, String)>> {
         die!("missing context/{src}");
     }
     let mut v = vec![];
-    for (p, ft) in find(&abs) {
+    for (p, ft) in find(&abs, &|_| false) {
         let rel = rel_to(&p, &abs);
         if ft.is_symlink() {
             die!("symlink: context/{src}/{rel}");
@@ -104,25 +131,30 @@ pub fn expand(ctx: &Path, src: &str) -> Result<Vec<(String, String)>> {
     Ok(v)
 }
 
-fn join(d: &str, rel: &str) -> String {
-    if rel.is_empty() {
-        d.to_string()
-    } else {
-        format!("{d}/{rel}")
-    }
-}
+/// A dest and, for a directory entry, the files below it.
+type Dest = (String, Option<Vec<String>>);
 
-/// Copy a source file to `out/dest` (mode kept).
-fn put(out: &Path, dest: &str, src: &Path) -> Result<()> {
-    let o = safe_path(out, dest)?;
-    let made = o.parent().is_some_and(|p| fs::create_dir_all(p).is_ok()) && fs::copy(src, &o).is_ok();
-    if !made {
-        die!("cannot write {dest}");
+/// Dests are unique and never nested, except that a file may sit inside a directory entry's dest
+/// when that directory has nothing at its path.
+fn check_dests(label: &str, dests: &[Dest]) -> Result<()> {
+    let fits = |f: &Dest, d: &Dest| match (&f.1, &d.1, under(&f.0, &d.0)) {
+        (None, Some(files), Some(rel)) if !rel.is_empty() => {
+            !files.iter().any(|x| under(rel, x).is_some() || under(x, rel).is_some())
+        }
+        _ => false,
+    };
+    for (i, a) in dests.iter().enumerate() {
+        for b in &dests[i + 1..] {
+            let nested = under(&a.0, &b.0).is_some() || under(&b.0, &a.0).is_some();
+            if nested && !fits(a, b) && !fits(b, a) {
+                die!("{label}: dests overlap: '{}' and '{}'", a.0, b.0);
+            }
+        }
     }
     Ok(())
 }
 
-/// Compile layout `layout` (dir relative to `src/context`) into the empty dir `out`.
+/// Compile layout `layout` (dir relative to `src/context`) into the new dir `out`.
 pub fn compile(src: &Path, layout: &str, out: &Path) -> Result<&'static Harness> {
     let ctx = src.join("context");
     let mfp = format!("{layout}/manifest.yml");
@@ -130,20 +162,16 @@ pub fn compile(src: &Path, layout: &str, out: &Path) -> Result<&'static Harness>
     let h = harness::load(&y.get("harness"))?;
     let label = format!("context/{mfp}");
     let ents = entries(&y, h, &label)?;
-    let mut lock = String::from(LOCK_HEADER);
-    // (dest, files below it for a directory entry; None for a single file)
-    let mut dests: Vec<(String, Option<Vec<String>>)> = vec![];
-    let mut puts: Vec<(String, String)> = vec![]; // (dest, source), written once dests are checked
-    let mut row = |d: &str, s: &str, k: &str| lock.push_str(&format!("{d}\t{s}\t{k}\n"));
-
     let files_dir = format!("{layout}/files");
     let files = if safe_path(&ctx, &files_dir)?.is_dir() { expand(&ctx, &files_dir)? } else { vec![] };
+    let row = |dest: &str, source: &str, kind| Row { dest: dest.into(), source: source.into(), kind };
+    let (mut rows, mut dests, mut text) = (vec![], vec![], vec![]);
+
     let parts = y.list("instructions");
     if !parts.is_empty() {
         if files.iter().any(|(_, rel)| rel == h.instructions) {
             die!("{label}: uses both instructions: and files/{}", h.instructions);
         }
-        let mut text = Vec::new();
         for p in &parts {
             let f = safe_path(&ctx, p)?;
             if !f.is_file() {
@@ -156,52 +184,37 @@ pub fn compile(src: &Path, layout: &str, out: &Path) -> Result<&'static Harness>
             if text.last() != Some(&b'\n') {
                 text.push(b'\n');
             }
-            row(h.instructions, p, "assembled");
+            rows.push(row(h.instructions, p, Kind::Assembled));
         }
-        fs::write(safe_path(out, h.instructions)?, text)?;
-        dests.push((h.instructions.into(), None));
+        dests.push((h.instructions.to_string(), None));
     }
-    for e in &ents {
-        let src = expand(&ctx, &e.source).map_err(|x| anyhow::anyhow!("{label}: {}: {x}", e.key))?;
+    for e in ents {
+        let src = expand(&ctx, &e.source).map_err(|x| anyhow::anyhow!("{label}: {}: {x}", e.kind))?;
         let is_dir = src.iter().any(|(_, rel)| !rel.is_empty());
-        for (s, rel) in &src {
-            let d = join(&e.dest, rel);
-            row(&d, s, e.key);
-            if e.key == "sync" {
-                puts.push((d, s.clone()));
-            }
-        }
-        dests.push((e.dest.clone(), is_dir.then(|| src.into_iter().map(|x| x.1).collect())));
+        rows.extend(src.iter().map(|(s, rel)| row(&join(&e.dest, rel), s, e.kind)));
+        dests.push((e.dest, is_dir.then(|| src.into_iter().map(|x| x.1).collect())));
     }
     for (s, rel) in &files {
         if !dest_ok(rel) {
             die!("{label}: files/{rel}: reserved workspace path");
         }
-        row(rel, s, "layout");
-        puts.push((rel.clone(), s.clone()));
+        rows.push(row(rel, s, Kind::Layout));
         dests.push((rel.clone(), None));
     }
-    row(".delphi/manifest.yml", &mfp, "layout");
-    puts.push((".delphi/manifest.yml".into(), mfp.clone()));
-    // a file may sit inside a directory entry's dest when that directory has nothing at its path
-    let fits =
-        |f: &(String, Option<Vec<String>>), d: &(String, Option<Vec<String>>)| match (&f.1, &d.1, under(&f.0, &d.0)) {
-            (None, Some(files), Some(rel)) if !rel.is_empty() => {
-                !files.iter().any(|x| under(rel, x).is_some() || under(x, rel).is_some())
-            }
-            _ => false,
-        };
-    for (i, a) in dests.iter().enumerate() {
-        for b in &dests[i + 1..] {
-            let nested = under(&a.0, &b.0).is_some() || under(&b.0, &a.0).is_some();
-            if nested && !fits(a, b) && !fits(b, a) {
-                die!("{label}: dests overlap: '{}' and '{}'", a.0, b.0);
-            }
+    rows.push(row(MANIFEST, &mfp, Kind::Layout));
+    check_dests(&label, &dests)?;
+
+    fs::create_dir_all(out.join(".delphi"))?;
+    if !parts.is_empty() {
+        fs::write(safe_path(out, h.instructions)?, text)?;
+    }
+    for r in rows.iter().filter(|r| matches!(r.kind, Kind::Sync | Kind::Layout)) {
+        let o = safe_path(out, &r.dest)?;
+        if !(o.parent().is_some_and(|p| fs::create_dir_all(p).is_ok()) && fs::copy(ctx.join(&r.source), &o).is_ok()) {
+            die!("cannot write {}", r.dest);
         }
     }
-    for (d, s) in &puts {
-        put(out, d, &ctx.join(s))?;
-    }
-    fs::write(out.join(".delphi/lock.tsv"), lock)?;
+    let lock: String = rows.iter().map(|r| format!("{}\t{}\t{}\n", r.dest, r.source, r.kind)).collect();
+    fs::write(out.join(LOCK), format!("# dest\tsource\tkind\n{lock}"))?;
     Ok(h)
 }

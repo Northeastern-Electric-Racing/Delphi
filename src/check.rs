@@ -3,7 +3,7 @@
 //! unique, not nested except a file in a directory dest); the rules here cover the rest.
 
 use crate::compile::compile;
-use crate::core::{awk_lines, basename, find, find_into, make_tmp, path_ok, root, Exit, Raw};
+use crate::core::{basename, exit, find, make_tmp, path_ok, rel_to, root};
 use crate::harness::HARNESSES;
 use crate::parse::parse_yaml;
 use crate::{die, info};
@@ -15,24 +15,18 @@ pub fn main(args: &[String]) -> Result<()> {
     if !args.is_empty() {
         die!("usage: delphi check");
     }
-    if check_tree(root())? {
-        info!("check: ok");
-        Ok(())
-    } else {
-        Err(Exit(1).into())
+    if !check_tree(root())? {
+        return Err(exit(1));
     }
+    info!("check: ok");
+    Ok(())
 }
 
 const KEYS: &[&str] = &["name", "harness", "instructions", "sync", "copy", "repos"];
 
 /// Inside some `layouts/<name>/files/`.
 fn in_layout_files(rel: &str) -> bool {
-    let c: Vec<&str> = rel.split('/').collect();
-    c.windows(3).any(|w| w[0] == "layouts" && w[2] == "files")
-}
-
-fn msg(e: &anyhow::Error) -> String {
-    e.downcast_ref::<Raw>().map_or_else(|| format!("{e:#}"), |r| r.0.clone())
+    rel.split('/').collect::<Vec<_>>().windows(3).any(|w| w[0] == "layouts" && w[2] == "files")
 }
 
 pub fn check_tree(root_dir: &Path) -> Result<bool> {
@@ -42,33 +36,31 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
         eprintln!("check: missing context/ directory");
         return Ok(false);
     }
-    let rel = |p: &Path| format!("context/{}", crate::core::rel_to(p, &ctx));
+    let rel = |p: &Path| format!("context/{}", rel_to(p, &ctx));
 
     // scopes: every directory outside blocks/, docs/, harness/, layouts/ needs scope.yml
     let reserved = |p: &Path| matches!(basename(&p.to_string_lossy()), "blocks" | "docs" | "harness" | "layouts");
-    let mut dirs = vec![];
-    find_into(&ctx, &reserved, &mut dirs);
-    for d in std::iter::once(ctx.clone()).chain(dirs.into_iter().filter(|(_, ft)| ft.is_dir()).map(|(p, _)| p)) {
+    let dirs = find(&ctx, &reserved).into_iter().filter(|(_, ft)| ft.is_dir()).map(|(p, _)| p);
+    for d in std::iter::once(ctx.clone()).chain(dirs) {
         if !d.join("scope.yml").is_file() {
             errs.push(format!("{}: scope directory has no scope.yml", rel(&d)));
         }
     }
 
     // files: no symlinks, no empty files, no instruction file names outside layouts/*/files/
-    let all = find(&ctx);
     let mut files = vec![];
-    for (p, ft) in &all {
-        let r = rel(p);
+    for (p, ft) in find(&ctx, &|_| false) {
+        let r = rel(&p);
         if ft.is_symlink() {
             errs.push(format!("{r}: symlinks are not allowed"));
         } else if ft.is_file() {
-            if fs::metadata(p).map(|m| m.len()).unwrap_or(0) == 0 {
+            if fs::metadata(&p).map_or(0, |m| m.len()) == 0 {
                 errs.push(format!("{r}: empty file"));
             }
             if HARNESSES.iter().any(|h| h.instructions == basename(&r)) && !in_layout_files(&r) {
                 errs.push(format!("{r}: instruction file names are only allowed in a layout's files/"));
             }
-            files.push((p.clone(), r));
+            files.push((p, r));
         }
     }
 
@@ -83,7 +75,7 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
         let y = match parse_yaml(p) {
             Ok(y) => y,
             Err(e) => {
-                errs.push(msg(&e));
+                errs.push(format!("{e:#}"));
                 continue;
             }
         };
@@ -111,21 +103,19 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
             errs.push(format!("{r}: unknown or missing harness '{h}'"));
             continue;
         }
-        let out = tmp.join(format!("c{}", names.len()));
-        fs::create_dir_all(out.join(".delphi"))?;
-        if let Err(e) = compile(root_dir, lay.strip_prefix("context/").unwrap_or(lay), &out) {
-            let m = msg(&e);
+        let out = tmp.join(names.len().to_string());
+        if let Err(e) = compile(root_dir, &lay["context/".len()..], &out) {
+            let m = format!("{e:#}");
             errs.push(if m.starts_with("context/") { m } else { format!("{r}: {m}") });
         }
     }
 
     // moves.tsv: three fields, safe paths
-    if let Ok(m) = fs::read_to_string(root_dir.join("moves.tsv")) {
-        for (n, l) in awk_lines(&m).into_iter().enumerate() {
-            let f: Vec<&str> = l.split('\t').collect();
-            if !l.starts_with('#') && !l.is_empty() && (f.len() != 3 || !path_ok(f[0]) || !path_ok(f[1])) {
-                errs.push(format!("moves.tsv:{}: expected old<TAB>new<TAB>date", n + 1));
-            }
+    let moves = fs::read_to_string(root_dir.join("moves.tsv")).unwrap_or_default();
+    for (n, l) in moves.lines().enumerate().filter(|(_, l)| !l.starts_with('#') && !l.is_empty()) {
+        let f: Vec<&str> = l.split('\t').collect();
+        if f.len() != 3 || !path_ok(f[0]) || !path_ok(f[1]) {
+            errs.push(format!("moves.tsv:{}: expected old<TAB>new<TAB>date", n + 1));
         }
     }
 

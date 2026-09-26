@@ -14,7 +14,7 @@ mod route;
 mod setup;
 mod workspace;
 
-use crate::core::{Exit, Raw};
+use crate::core::{Fail, OFFLINE, YES};
 use std::sync::atomic::Ordering;
 
 const USAGE: &str = "usage: delphi <command> [args]
@@ -51,8 +51,8 @@ fn run(args: &[String]) -> anyhow::Result<()> {
         "layout" | "workspace" | "ws" | "block" | "check" => {}
         _ => die!("unknown command '{group}' (see: delphi help)"),
     }
-    crate::core::YES.store(std::env::var("DELPHI_YES").as_deref() == Ok("1"), Ordering::Relaxed);
-    crate::core::OFFLINE.store(std::env::var("DELPHI_OFFLINE").as_deref() == Ok("1"), Ordering::Relaxed);
+    YES.store(std::env::var("DELPHI_YES").as_deref() == Ok("1"), Ordering::Relaxed);
+    OFFLINE.store(std::env::var("DELPHI_OFFLINE").as_deref() == Ok("1"), Ordering::Relaxed);
     crate::core::resolve_root()?;
     match group {
         "layout" => layout::main(rest),
@@ -67,11 +67,11 @@ fn main() {
     let code = match run(&args) {
         Ok(()) => 0,
         Err(e) => {
-            if let Some(Exit(c)) = e.downcast_ref::<Exit>() {
+            if let Some(Fail(c, m)) = e.downcast_ref::<Fail>() {
+                if !m.is_empty() {
+                    eprintln!("{m}");
+                }
                 *c
-            } else if let Some(Raw(m)) = e.downcast_ref::<Raw>() {
-                eprintln!("{m}");
-                1
             } else {
                 eprintln!("delphi: {e:#}");
                 1

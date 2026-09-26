@@ -6,15 +6,17 @@
 //! `copied` (`dest<TAB>source<TAB>delphi-commit`, one row per copied file).
 
 use crate::check::check_tree;
-use crate::compile::{compile, entries, parse_lock, Row};
+use crate::compile::{compile, entries, parse_lock, Entry, Kind, Row, LOCK, MANIFEST};
 use crate::core::{
-    ask, awk_lines, conf_get, cwd, delphi_commit, delphi_fetch, delphi_worktree_at, dgit, find_layout, git_c, git_in,
-    glob_dir, is_tty, make_tmp, move_path, moves_since, now, ok, ok_q, out, out_q, out_raw, out_stdin, parse_args,
-    rewrite_moves, root, run_deferred, safe_path, show, under, unmove_path, workspace_root, write_replace, Exit, Opts,
+    ask, blob, conf_get, cwd, delphi_commit, delphi_fetch, delphi_worktree, dgit, env_nonempty, exit, find_layout, git,
+    is_tty, join, kv, make_tmp, move_path, moves_since, now, ok, ok_q, out, out_q, out_stdin, parse_args,
+    rewrite_moves, run, run_deferred, safe_path, show, show_in, under, unmove_path, workspace_root, write_file,
+    write_replace, Opts,
 };
 use crate::harness::{self, Harness};
-use crate::parse::{parse_text, parse_yaml};
-use crate::route::{self, Item, Shared};
+use crate::parse::{parse_text, parse_yaml, Yaml};
+use crate::pr::{gh_user, open_pr};
+use crate::route::{self, Act, Item, Shared};
 use crate::{die, info, provenance, warn};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -41,30 +43,34 @@ pub fn main(args: &[String]) -> Result<()> {
     }
     let name = pos.first().map(String::as_str).unwrap_or("");
     match verb {
-        "new" => {
-            if pos.len() != 1 {
-                die!("usage: delphi workspace new <layout> [--as <ws>] [--ref <branch>]");
-            }
-            ws_new(name, &o)
-        }
+        "new" if pos.is_empty() => die!("usage: delphi workspace new <layout> [--as <ws>] [--ref <branch>]"),
+        "new" => ws_new(name, &o),
         "open" => ws_open(&resolve(name)?, &o),
         "refresh" => {
             let ws = resolve(name)?;
             delphi_fetch();
             refresh(&ws, &o.ref_)
         }
-        "diff" => diff(&resolve(name)?, o.upstream),
+        "diff" if o.upstream => diff_upstream(&resolve(name)?),
+        "diff" => diff(&resolve(name)?),
         "propose" => propose(&resolve(name)?, &o),
-        _ => {
-            if !pos.is_empty() {
-                die!("usage: delphi workspace status [--offline]");
-            }
-            status()
-        }
+        _ if !pos.is_empty() => die!("usage: delphi workspace status [--offline]"),
+        _ => status(),
     }
 }
 
-// ---- helpers ----
+// ---- the workspace ----
+/// path -> (mode, blob) at a revision.
+pub type Tree = HashMap<String, (String, String)>;
+
+/// A `.git/delphi/copied` row: the source path is as of compile_commit.
+pub struct Copied {
+    pub dest: String,
+    pub source: String,
+    /// The Delphi commit it was copied from.
+    pub commit: String,
+}
+
 pub struct Ws {
     pub dir: PathBuf,
     pub name: String,
@@ -75,40 +81,35 @@ impl Ws {
         Ws { dir: workspace_root().join(name), name: name.into() }
     }
 
-    pub fn git(&self) -> Command {
-        git_in(&self.dir)
+    fn git(&self) -> Command {
+        git(&self.dir)
     }
 
-    fn meta_file(&self) -> PathBuf {
-        self.dir.join(".git/delphi/meta")
+    fn bookkeeping(&self, f: &str) -> PathBuf {
+        self.dir.join(".git/delphi").join(f)
     }
 
     pub fn meta(&self, k: &str) -> String {
-        let text = fs::read_to_string(self.meta_file()).unwrap_or_default();
-        awk_lines(&text)
-            .into_iter()
-            .map(|l| l.split_once('=').unwrap_or((l, l)))
-            .find(|(key, _)| *key == k)
-            .map(|(_, v)| v.to_string())
-            .unwrap_or_default()
+        let text = fs::read_to_string(self.bookkeeping("meta")).unwrap_or_default();
+        kv(&text, k).unwrap_or("").to_string()
     }
 
-    pub fn meta_set(&self, k: &str, v: &str) -> Result<()> {
-        let f = self.meta_file();
+    fn meta_set(&self, k: &str, v: &str) -> Result<()> {
+        let f = self.bookkeeping("meta");
         let text = fs::read_to_string(&f).unwrap_or_default();
-        let mut d = false;
-        let mut res = String::new();
-        for l in awk_lines(&text) {
-            if l.split_once('=').map_or(l, |x| x.0) == k {
-                res.push_str(&format!("{k}={v}\n"));
-                d = true;
-            } else {
-                res.push_str(l);
-                res.push('\n');
-            }
-        }
-        if !d {
-            res.push_str(&format!("{k}={v}\n"));
+        let mut found = false;
+        let mut res: String = text
+            .lines()
+            .map(|l| match l.split_once('=') {
+                Some((key, _)) if key == k => {
+                    found = true;
+                    format!("{k}={v}\n")
+                }
+                _ => format!("{l}\n"),
+            })
+            .collect();
+        if !found {
+            res += &format!("{k}={v}\n");
         }
         if write_replace(&f, res.as_bytes()).is_err() {
             die!("cannot write {}", f.display());
@@ -118,52 +119,63 @@ impl Ws {
 
     /// A file at a workspace revision.
     pub fn show(&self, rev: &str, path: &str) -> Option<Vec<u8>> {
-        let (ok, data) = out_raw(self.git().args(["show", &format!("{rev}:{path}")]).stderr(Stdio::null()));
-        ok.then_some(data)
+        show_in(&self.dir, rev, path)
     }
 
     pub fn lock(&self, rev: &str) -> Vec<Row> {
-        parse_lock(&String::from_utf8_lossy(&self.show(rev, ".delphi/lock.tsv").unwrap_or_default()))
+        parse_lock(&String::from_utf8_lossy(&self.show(rev, LOCK).unwrap_or_default()))
     }
 
-    /// path -> (mode, blob) at a revision.
-    pub fn tree(&self, rev: &str) -> HashMap<String, (String, String)> {
+    /// `.delphi/manifest.yml` at a revision, and its `sync:` entries.
+    pub fn manifest(&self, rev: &str) -> Result<(Yaml, Vec<Entry>)> {
+        let Some(m) = self.show(rev, MANIFEST) else { die!("cannot read {MANIFEST}") };
+        let y = parse_text(&String::from_utf8_lossy(&m), MANIFEST)?;
+        let syncs = entries(&y, harness::load(&self.meta("harness"))?, MANIFEST)?;
+        Ok((y, syncs.into_iter().filter(|e| e.kind == Kind::Sync).collect()))
+    }
+
+    pub fn tree(&self, rev: &str) -> Tree {
         let t = out(self.git().args(["ls-tree", "-r", rev])).unwrap_or_default();
         t.lines()
             .filter_map(|l| {
                 let (meta, path) = l.split_once('\t')?;
-                let f: Vec<&str> = meta.split(' ').collect();
-                Some((path.to_string(), (f.first()?.to_string(), f.get(2)?.to_string())))
+                let mut f = meta.split(' ');
+                let (mode, blob) = (f.next()?, f.nth(1)?);
+                Some((path.to_string(), (mode.to_string(), blob.to_string())))
             })
             .collect()
     }
 
-    pub fn copied(&self) -> Vec<(String, String, String)> {
-        let text = fs::read_to_string(self.dir.join(".git/delphi/copied")).unwrap_or_default();
+    pub fn copied(&self) -> Vec<Copied> {
+        let text = fs::read_to_string(self.bookkeeping("copied")).unwrap_or_default();
         text.lines()
-            .filter_map(|l| {
-                let f: Vec<&str> = l.split('\t').collect();
-                (f.len() == 3).then(|| (f[0].to_string(), f[1].to_string(), f[2].to_string()))
+            .filter_map(|l| match l.split('\t').collect::<Vec<_>>()[..] {
+                [d, s, c] => Some(Copied { dest: d.into(), source: s.into(), commit: c.into() }),
+                _ => None,
             })
             .collect()
     }
 
-    /// Blob of a copied source at the commit it was copied from (`src` is its path as of
-    /// compile_commit, so moves since then are undone).
-    pub fn copied_blob(&self, src: &str, c: &str) -> Option<String> {
-        let p = unmove_path(&moves_since(c, &self.meta("compile_commit")), src);
-        out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{c}:context/{p}")]))
+    fn save_copied(&self, rows: &[Copied]) -> Result<()> {
+        let text: String = rows.iter().map(|r| format!("{}\t{}\t{}\n", r.dest, r.source, r.commit)).collect();
+        fs::write(self.bookkeeping("copied"), text)?;
+        Ok(())
+    }
+
+    /// Blob of a copied source at the commit it was copied from (moves since then are undone).
+    pub fn copied_blob(&self, cp: &Copied) -> Option<String> {
+        blob(&cp.commit, &unmove_path(&moves_since(&cp.commit, &self.meta("compile_commit")), &cp.source))
     }
 
     /// Committed changes since the latest merged compile: (status, path), without bookkeeping
     /// (the lock, copied files).
     pub fn pending(&self) -> Vec<(String, String)> {
-        let copied: Vec<String> = self.copied().into_iter().map(|c| c.0).collect();
+        let copied: Vec<String> = self.copied().into_iter().map(|c| c.dest).collect();
         let d = out(self.git().args(["diff", "--name-status", "--no-renames", "generated-merged", "HEAD"]));
         d.unwrap_or_default()
             .lines()
             .filter_map(|l| l.split_once('\t').map(|(s, p)| (s.to_string(), p.to_string())))
-            .filter(|(_, p)| p != ".delphi/lock.tsv" && !copied.contains(p))
+            .filter(|(_, p)| p != LOCK && !copied.contains(p))
             .collect()
     }
 
@@ -171,15 +183,8 @@ impl Ws {
     pub fn diff_of(&self, path: &str) -> String {
         let args = ["diff", "--no-renames", "--no-ext-diff", "--no-color", "generated-merged", "HEAD", "--", path];
         let d = out(self.git().args(args)).unwrap_or_default();
-        let mut p = false;
-        let v: Vec<&str> = d
-            .lines()
-            .filter(|l| {
-                p |= l.starts_with("@@") || l.starts_with("Binary");
-                p
-            })
-            .collect();
-        v.join("\n")
+        let start = d.lines().position(|l| l.starts_with("@@") || l.starts_with("Binary"));
+        d.lines().skip(start.unwrap_or(usize::MAX)).collect::<Vec<_>>().join("\n")
     }
 
     /// Hash of the pending diff of `paths` (hunk headers and index lines dropped).
@@ -187,7 +192,7 @@ impl Ws {
         let mut c = self.git();
         c.args(["--literal-pathspecs", "diff", "-U0", "--no-renames", "--no-ext-diff", "--no-color"]);
         c.args(["generated-merged", "HEAD", "--"]).args(paths);
-        let p = String::from_utf8_lossy(&out_raw(&mut c).1).into_owned();
+        let p = String::from_utf8_lossy(&run(&mut c, false).unwrap_or_default()).into_owned();
         let kept: String =
             p.lines().filter(|l| !l.starts_with("@@") && !l.starts_with("index ")).map(|l| format!("{l}\n")).collect();
         out_stdin(Command::new("git").args(["hash-object", "--stdin"]), kept.as_bytes()).unwrap_or_default()
@@ -205,43 +210,59 @@ impl Ws {
         out(self.git().args(["rev-parse", r])).unwrap_or_default()
     }
 
-    /// Created by the v1 CLI (line-level lock).
-    fn v1(&self) -> bool {
-        self.show("generated", ".delphi/lock.tsv").is_some_and(|l| l.starts_with(b"# output\t"))
+    /// origin/<ref>, if the branch still exists.
+    fn tip(&self) -> Option<String> {
+        delphi_commit(&self.meta("ref")).ok()
     }
 
-    fn v1_msg(&self) -> String {
-        format!(
-            "{} is a v1 workspace, which this Delphi no longer supports; recreate it: delphi workspace new {} --as <new-name> (then move your edits over)",
-            self.name,
-            self.meta("layout")
-        )
+    fn tip_or_die(&self) -> Result<String> {
+        match self.tip() {
+            Some(t) => Ok(t),
+            None => die!("branch '{}' is gone — run: delphi workspace refresh --ref main", self.meta("ref")),
+        }
+    }
+
+    /// The error for a workspace created by the v1 CLI (line-level lock), if this is one.
+    fn v1_error(&self) -> Option<String> {
+        self.show("generated", LOCK).filter(|l| l.starts_with(b"# output\t")).map(|_| {
+            format!(
+                "{} is a v1 workspace, which this Delphi no longer supports; recreate it: delphi workspace new {} --as <new-name> (then move your edits over)",
+                self.name,
+                self.meta("layout")
+            )
+        })
     }
 }
 
 /// Dests whose changes count as proposable (everything but local files).
 fn proposable(items: &[Item]) -> Vec<String> {
-    items.iter().filter(|i| i.kind != "local").map(|i| i.dest.clone()).collect()
+    items.iter().filter(|i| i.act != Act::Local).map(|i| i.dest.clone()).collect()
 }
 
 fn ws_names() -> Vec<String> {
     let r = workspace_root();
-    glob_dir(&r).into_iter().filter(|d| r.join(d).join(".git/delphi/meta").is_file()).collect()
+    let mut v: Vec<String> = fs::read_dir(&r)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| !n.starts_with('.') && r.join(n).join(".git/delphi/meta").is_file())
+        .collect();
+    v.sort();
+    v
 }
 
-fn ws_name_ok(n: &str) -> Result<()> {
-    let bad =
-        n.is_empty() || n.starts_with('.') || !n.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
-    if bad {
-        die!("invalid workspace name: '{n}'");
-    }
-    Ok(())
+/// A workspace or repo directory name: letters, digits, `._-`, not starting with `.`.
+fn plain_name(n: &str) -> bool {
+    !n.is_empty() && !n.starts_with('.') && n.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
 /// The workspace from a name, the current directory, or a picker.
 fn resolve(name: &str) -> Result<Ws> {
     let dir = if !name.is_empty() {
-        ws_name_ok(name)?;
+        if !plain_name(name) {
+            die!("invalid workspace name: '{name}'");
+        }
         workspace_root().join(name)
     } else if let Some(d) = cwd().ancestors().find(|d| d.join(".git/delphi/meta").is_file()) {
         d.to_path_buf()
@@ -267,8 +288,8 @@ fn resolve(name: &str) -> Result<Ws> {
     }
     let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let ws = Ws { dir, name };
-    if ws.v1() {
-        die!("{}", ws.v1_msg());
+    if let Some(e) = ws.v1_error() {
+        die!("{e}");
     }
     Ok(ws)
 }
@@ -277,9 +298,6 @@ fn resolve(name: &str) -> Result<Ws> {
 /// Compile into a temp dir; returns (dir, harness).
 fn ws_compile(src: &Path, lp: &str) -> Result<(PathBuf, &'static Harness)> {
     let d = make_tmp()?.join("out");
-    if fs::create_dir_all(d.join(".delphi")).is_err() {
-        die!("mkdir failed");
-    }
     let h = compile(src, lp, &d)?;
     Ok((d, h))
 }
@@ -289,7 +307,7 @@ fn ws_compile(src: &Path, lp: &str) -> Result<(PathBuf, &'static Harness)> {
 fn commit_compile(ws: &Ws, outdir: &Path, c: &str) -> Result<bool> {
     let idx = make_tmp()?.join("index");
     let gd = format!("--git-dir={}", ws.dir.join(".git").display());
-    if !ok(git_c(outdir).env("GIT_INDEX_FILE", &idx).args([gd.as_str(), "--work-tree=.", "add", "-A", "-f"])) {
+    if !ok(git(outdir).env("GIT_INDEX_FILE", &idx).args([gd.as_str(), "--work-tree=.", "add", "-A", "-f"])) {
         die!("cannot stage compile");
     }
     let Some(tree) = out(Command::new("git").env("GIT_INDEX_FILE", &idx).args([gd.as_str(), "write-tree"])) else {
@@ -315,26 +333,23 @@ fn commit_compile(ws: &Ws, outdir: &Path, c: &str) -> Result<bool> {
 /// that already exists is left alone. Copies are never overwritten afterwards.
 fn add_copies(ws: &Ws) -> Result<()> {
     let c = ws.meta("compile_commit");
-    let done: Vec<String> = ws.copied().into_iter().map(|r| r.0).collect();
-    let (mut rec, mut added) = (String::new(), vec![]);
-    for r in ws.lock("generated").into_iter().filter(|r| r.kind == "copy" && !done.contains(&r.dest)) {
-        rec.push_str(&format!("{}\t{}\t{c}\n", r.dest, r.source));
+    let mut rows = ws.copied();
+    let mut added = vec![];
+    for r in ws.lock("generated") {
+        if r.kind != Kind::Copy || rows.iter().any(|x| x.dest == r.dest) {
+            continue;
+        }
         let p = safe_path(&ws.dir, &r.dest)?;
         if fs::symlink_metadata(&p).is_ok() {
             warn!("not copying context/{}: {} already exists", r.source, r.dest);
-            continue;
+        } else {
+            let path = format!("context/{}", r.source);
+            let Some(data) = show(&c, &path) else { die!("cannot read {path} at {c}") };
+            let exec = out(&mut dgit(["ls-tree", &c, "--", &path])).unwrap_or_default().starts_with("100755");
+            write_file(&p, &data, exec, &r.dest)?;
+            added.push(r.dest.clone());
         }
-        let path = format!("context/{}", r.source);
-        let Some(data) = show(&c, &path) else { die!("cannot read {path} at {c}") };
-        let mode = out(&mut dgit(["ls-tree", &c, "--", &path])).unwrap_or_default();
-        let mode = if mode.starts_with("100755") { 0o755 } else { 0o644 };
-        let wrote = p.parent().is_some_and(|d| fs::create_dir_all(d).is_ok())
-            && fs::write(&p, data).is_ok()
-            && fs::set_permissions(&p, fs::Permissions::from_mode(mode)).is_ok();
-        if !wrote {
-            die!("cannot write {}", r.dest);
-        }
-        added.push(r.dest);
+        rows.push(Copied { dest: r.dest, source: r.source, commit: c.clone() });
     }
     if !added.is_empty() {
         let msg = format!("delphi: copy {}", added.join(", "));
@@ -347,11 +362,7 @@ fn add_copies(ws: &Ws) -> Result<()> {
             info!("  copied {d}");
         }
     }
-    let f = ws.dir.join(".git/delphi/copied");
-    let mut all = fs::read(&f).unwrap_or_default();
-    all.extend(rec.as_bytes());
-    fs::write(&f, all)?;
-    Ok(())
+    ws.save_copied(&rows)
 }
 
 const HOOK: &str = r#"#!/bin/sh
@@ -366,16 +377,17 @@ exit 0
 fn ws_new(layout: &str, o: &Opts) -> Result<()> {
     let r#ref = if o.ref_.is_empty() { "main" } else { &o.ref_ };
     let name = if o.as_.is_empty() { layout } else { &o.as_ };
-    ws_name_ok(name)?;
+    if !plain_name(name) {
+        die!("invalid workspace name: '{name}'");
+    }
     let ws = Ws::at(name);
     if ws.dir.exists() {
         die!("workspace already exists: {}", ws.dir.display());
     }
     delphi_fetch();
     let c = delphi_commit(r#ref)?;
-    let src = delphi_worktree_at(&c)?;
-    let lp = find_layout(&src, layout)?;
-    let recs = parse_yaml(&src.join("context").join(&lp).join("manifest.yml"))?;
+    let lp = find_layout(&c, layout)?;
+    let src = delphi_worktree(&["--detach"], &c, &format!("cannot check out Delphi at {c}"))?;
     let (outdir, h) = ws_compile(&src, &lp)?;
 
     if fs::create_dir_all(&ws.dir).is_err() || !ok(Command::new("git").args(["init", "-q"]).arg(&ws.dir)) {
@@ -392,15 +404,13 @@ fn ws_new(layout: &str, o: &Opts) -> Result<()> {
     let hook = g.join("hooks/commit-msg");
     fs::write(&hook, HOOK)?;
     fs::set_permissions(&hook, fs::Permissions::from_mode(0o755))?;
-    fs::write(
-        g.join("delphi/meta"),
-        format!(
-            "layout={layout}\nlayout_path={lp}\nref={}\nharness={}\ncreated={}\nlast_proposed=\nlast_proposed_hash=\npending_since=\ncompile_commit={c}\n",
-            r#ref,
-            h.name,
-            now()
-        ),
-    )?;
+    let meta = format!(
+        "layout={layout}\nlayout_path={lp}\nref={}\nharness={}\ncreated={}\ncompile_commit={c}\n",
+        r#ref,
+        h.name,
+        now()
+    );
+    fs::write(ws.bookkeeping("meta"), meta)?;
     if !commit_compile(&ws, &outdir, &c)? {
         die!("empty compile");
     }
@@ -412,15 +422,15 @@ fn ws_new(layout: &str, o: &Opts) -> Result<()> {
     add_copies(&ws)?;
 
     let mut failed = String::new();
-    for (n, url) in recs.map("repos") {
-        if n.starts_with('.') || !n.bytes().all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b)) {
+    for (n, url) in parse_yaml(&outdir.join(MANIFEST))?.map("repos") {
+        if !plain_name(&n) {
             warn!("skipping repo with invalid name '{n}'");
             continue;
         }
         info!("cloning {n}…");
         if !ok(Command::new("git").args(["clone", "-q", "--", &url]).arg(ws.dir.join("repos").join(&n))) {
             warn!("clone failed: {n} ({url})");
-            failed.push_str(&format!(" {n}"));
+            failed += &format!(" {n}");
         }
     }
     info!("workspace ready: {}", ws.dir.display());
@@ -432,27 +442,19 @@ fn ws_new(layout: &str, o: &Opts) -> Result<()> {
 }
 
 // ---- refresh ----
-fn tip(ws: &Ws) -> Option<String> {
-    out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("origin/{}^{{commit}}", ws.meta("ref"))]))
-}
-
 /// Compile origin/<meta.ref> onto `generated`. True if it changed.
 fn compile_ref(ws: &Ws) -> Result<bool> {
-    let Some(c) = tip(ws) else {
-        die!("branch '{}' is gone — run: delphi workspace refresh --ref main", ws.meta("ref"))
-    };
-    let src = delphi_worktree_at(&c)?;
-    let rows = moves_since(&ws.meta("compile_commit"), &c);
-    let lp = move_path(&rows, &ws.meta("layout_path"));
+    let c = ws.tip_or_die()?;
+    let src = delphi_worktree(&["--detach"], &c, &format!("cannot check out Delphi at {c}"))?;
+    let lp = move_path(&moves_since(&ws.meta("compile_commit"), &c), &ws.meta("layout_path"));
     ws.meta_set("layout_path", &lp)?;
     let (outdir, h) = ws_compile(&src, &lp)?;
     ws.meta_set("harness", h.name)?;
     if commit_compile(ws, &outdir, &c)? {
-        Ok(true)
-    } else {
-        apply_moves(ws, &c)?;
-        Ok(false)
+        return Ok(true);
     }
+    apply_moves(ws, &c)?;
+    Ok(false)
 }
 
 fn merge(ws: &Ws) -> Result<()> {
@@ -463,12 +465,11 @@ fn merge(ws: &Ws) -> Result<()> {
         die!("merge of generated failed in {}", ws.dir.display());
     }
     info!("conflicts in {}:", ws.name);
-    let u = out(ws.git().args(["diff", "--name-only", "--diff-filter=U"])).unwrap_or_default();
-    for l in awk_lines(&u) {
+    for l in out(ws.git().args(["diff", "--name-only", "--diff-filter=U"])).unwrap_or_default().lines() {
         info!("  {l}");
     }
     info!("resolve them, commit, then re-run: delphi workspace refresh {}", ws.name);
-    Err(Exit(2).into())
+    Err(exit(2))
 }
 
 /// Rewrite paths moved since compile_commit in .delphi/manifest.yml and the copied records; the
@@ -479,9 +480,12 @@ fn apply_moves(ws: &Ws, c: &str) -> Result<()> {
     if rows.is_empty() {
         return Ok(());
     }
-    let cp: String = ws.copied().iter().map(|(d, s, k)| format!("{d}\t{}\t{k}\n", move_path(&rows, s))).collect();
-    fs::write(ws.dir.join(".git/delphi/copied"), cp)?;
-    if rewrite_moves(&rows, &ws.dir.join(".delphi/manifest.yml")).unwrap_or(false)
+    let mut copied = ws.copied();
+    for cp in &mut copied {
+        cp.source = move_path(&rows, &cp.source);
+    }
+    ws.save_copied(&copied)?;
+    if rewrite_moves(&rows, &ws.dir.join(MANIFEST)).unwrap_or(false)
         && !ok(ws.git().args(["commit", "-q", "--no-verify", "-am", "delphi: apply moves"]))
     {
         die!("cannot commit moved paths");
@@ -499,23 +503,23 @@ fn who(range: &str, paths: &[String]) -> String {
     }
 }
 
+/// Move `generated-merged` to the merged compile, then list which files Delphi updated and who
+/// changed them.
 fn finalize(ws: &Ws) -> Result<()> {
     let old = ws.rev("generated-merged^{commit}");
     let old_cc = ws.meta("compile_commit");
     if !ok(ws.git().args(["tag", "-f", "generated-merged", "generated"]).stdout(Stdio::null())) {
         die!("cannot move generated-merged");
     }
-    let t = out(ws.git().args(["log", "-1", "--format=%(trailers:key=Delphi-Compile,valueonly)", "generated"]))
-        .unwrap_or_default();
-    let c = t.trim().to_string();
+    let t = out(ws.git().args(["log", "-1", "--format=%(trailers:key=Delphi-Compile,valueonly)", "generated"]));
+    let c = t.unwrap_or_default().trim().to_string();
     apply_moves(ws, &c)?;
     info!("{}: merged compile of origin/{} ({})", ws.name, ws.meta("ref"), &c[..c.len().min(7)]);
-    // which files Delphi updated, and who changed them
     let names = out(ws.git().args(["diff", "--name-only", "--no-renames", &old, "generated"])).unwrap_or_default();
     let lock = ws.lock("generated");
     let sh = Shared::load(&ws.meta("layout"));
-    for d in names.lines().filter(|d| *d != ".delphi/lock.tsv") {
-        let srcs: Vec<&Row> = lock.iter().filter(|r| r.dest == d && r.kind != "copy").collect();
+    for d in names.lines().filter(|d| *d != LOCK) {
+        let srcs: Vec<&Row> = lock.iter().filter(|r| r.dest == d && r.kind != Kind::Copy).collect();
         match srcs.first() {
             None => info!("  removed {d}"),
             Some(r) => {
@@ -569,14 +573,12 @@ fn refresh(ws: &Ws, new_ref: &str) -> Result<()> {
 // ---- diff / status ----
 /// Delphi paths whose changes reach this workspace on refresh.
 fn watched(ws: &Ws) -> Vec<String> {
-    let mut v = vec![format!("context/{}", ws.meta("layout_path"))];
-    v.extend(ws.lock("generated-merged").into_iter().filter(|r| r.kind != "copy").map(|r| r.source));
-    let m = ws.show("generated-merged", ".delphi/manifest.yml").unwrap_or_default();
-    if let Ok(y) = parse_text(&String::from_utf8_lossy(&m), "manifest") {
-        v.extend(y.list("sync").iter().map(|s| s.split(" -> ").next().unwrap_or("").trim_end_matches('/').to_string()));
+    let mut v = vec![ws.meta("layout_path")];
+    v.extend(ws.lock("generated-merged").into_iter().filter(|r| r.kind != Kind::Copy).map(|r| r.source));
+    if let Ok((_, syncs)) = ws.manifest("generated-merged") {
+        v.extend(syncs.into_iter().map(|e| e.source));
     }
-    let mut v: Vec<String> =
-        v.into_iter().map(|p| if p.starts_with("context/") { p } else { format!("context/{p}") }).collect();
+    let mut v: Vec<String> = v.into_iter().map(|p| format!("context/{p}")).collect();
     v.sort();
     v.dedup();
     v
@@ -585,80 +587,11 @@ fn watched(ws: &Ws) -> Vec<String> {
 /// "yes" if origin/<ref> has changes since compile_commit to this workspace's sources.
 fn behind(ws: &Ws) -> &'static str {
     let rc = ws.meta("compile_commit");
-    match tip(ws) {
+    match ws.tip() {
         None => "gone",
-        Some(t) if t == rc => "no",
-        Some(t) => {
-            if ok_q(dgit(["diff", "--quiet", &rc, &t, "--"]).args(watched(ws))) {
-                "no"
-            } else {
-                "yes"
-            }
-        }
+        Some(t) if t == rc || ok_q(dgit(["diff", "--quiet", &rc, &t, "--"]).args(watched(ws))) => "no",
+        Some(_) => "yes",
     }
-}
-
-fn diff(ws: &Ws, upstream: bool) -> Result<()> {
-    delphi_fetch();
-    let sh = Shared::load(&ws.meta("layout"));
-    if !upstream {
-        warn_dirty(ws);
-        let items = route::plan(ws)?;
-        if items.is_empty() {
-            info!("{}: no changes since the last refresh", ws.name);
-        }
-        print!("{}", route::listing(&items, &sh));
-        return Ok(());
-    }
-    let Some(t) = tip(ws) else {
-        die!("branch '{}' is gone — run: delphi workspace refresh --ref main", ws.meta("ref"))
-    };
-    let (cc, lp) = (ws.meta("compile_commit"), ws.meta("layout_path"));
-    let lock = ws.lock("generated-merged");
-    let m = ws.show("generated-merged", ".delphi/manifest.yml").unwrap_or_default();
-    let ents =
-        entries(&parse_text(&String::from_utf8_lossy(&m), "manifest")?, harness::load(&ws.meta("harness"))?, "")?;
-    let mut s = String::new();
-    let changed = if cc == t {
-        String::new()
-    } else {
-        out(dgit(["diff", "--name-only", "--no-renames", &cc, &t, "--"]).args(watched(ws))).unwrap_or_default()
-    };
-    for p in changed.lines() {
-        let src = p.strip_prefix("context/").unwrap_or(p);
-        let mut dests: Vec<(String, String)> = lock
-            .iter()
-            .filter(|r| r.source == src && r.kind != "copy")
-            .map(|r| (r.kind.clone(), r.dest.clone()))
-            .collect();
-        if dests.is_empty() {
-            let files = format!("{lp}/files");
-            if let Some(rel) = under(src, &files) {
-                dests.push(("layout".into(), rel.into()));
-            } else if let Some(e) = ents.iter().find(|e| e.key == "sync" && under(src, &e.source).is_some()) {
-                let rel = under(src, &e.source).unwrap_or("");
-                dests.push(("sync".into(), if rel.is_empty() { e.dest.clone() } else { format!("{}/{rel}", e.dest) }));
-            }
-        }
-        let w = who(&format!("{cc}..{t}"), &[p.to_string()]);
-        for (k, d) in dests {
-            s.push_str(&format!("  {k:<9} {d} <- {src}{w}{}\n", sh.tag(src)));
-        }
-    }
-    let later = moves_since(&cc, &t);
-    for (d, src, c) in ws.copied() {
-        let at_t = move_path(&later, &src);
-        let now = out_q(&mut dgit(["rev-parse", "-q", "--verify", &format!("{t}:context/{at_t}")]));
-        if ws.copied_blob(&src, &c) != now {
-            let w = who(&format!("{c}..{t}"), &[format!("context/{at_t}")]);
-            s.push_str(&format!("  {:<9} {d} <- {at_t}{w}  (your copy is not updated)\n", "copy"));
-        }
-    }
-    if s.is_empty() {
-        info!("{}: up to date with origin/{}", ws.name, ws.meta("ref"));
-    }
-    print!("{s}");
-    Ok(())
 }
 
 /// Only committed changes are listed or proposed.
@@ -668,9 +601,67 @@ fn warn_dirty(ws: &Ws) {
     }
 }
 
+fn diff(ws: &Ws) -> Result<()> {
+    delphi_fetch();
+    warn_dirty(ws);
+    let items = route::plan(ws)?;
+    if items.is_empty() {
+        info!("{}: no changes since the last refresh", ws.name);
+    }
+    print!("{}", route::listing(&items, &Shared::load(&ws.meta("layout"))));
+    Ok(())
+}
+
+/// Sources changed on origin/<ref> since the compile, with the dests they reach; then copies whose
+/// source moved on.
+fn diff_upstream(ws: &Ws) -> Result<()> {
+    delphi_fetch();
+    let t = ws.tip_or_die()?;
+    let sh = Shared::load(&ws.meta("layout"));
+    let (cc, files) = (ws.meta("compile_commit"), format!("{}/files", ws.meta("layout_path")));
+    let lock = ws.lock("generated-merged");
+    let (_, syncs) = ws.manifest("generated-merged")?;
+    let changed = if cc == t {
+        String::new()
+    } else {
+        out(dgit(["diff", "--name-only", "--no-renames", &cc, &t, "--"]).args(watched(ws))).unwrap_or_default()
+    };
+    let mut s = String::new();
+    for p in changed.lines() {
+        let src = p.strip_prefix("context/").unwrap_or(p);
+        let mut dests: Vec<(Kind, String)> =
+            lock.iter().filter(|r| r.source == src && r.kind != Kind::Copy).map(|r| (r.kind, r.dest.clone())).collect();
+        if dests.is_empty() {
+            if let Some(rel) = under(src, &files) {
+                dests.push((Kind::Layout, rel.into()));
+            } else if let Some((e, rel)) = syncs.iter().find_map(|e| Some((e, under(src, &e.source)?))) {
+                dests.push((Kind::Sync, join(&e.dest, rel)));
+            }
+        }
+        let w = who(&format!("{cc}..{t}"), &[p.to_string()]);
+        for (k, d) in dests {
+            s += &format!("  {k:<9} {d} <- {src}{w}{}\n", sh.tag(src));
+        }
+    }
+    let later = moves_since(&cc, &t);
+    for cp in ws.copied() {
+        let at_t = move_path(&later, &cp.source);
+        if ws.copied_blob(&cp) != blob(&t, &at_t) {
+            let w = who(&format!("{}..{t}", cp.commit), &[format!("context/{at_t}")]);
+            s += &format!("  {:<9} {} <- {at_t}{w}  (your copy is not updated)\n", Kind::Copy, cp.dest);
+        }
+    }
+    if s.is_empty() {
+        info!("{}: up to date with origin/{}", ws.name, ws.meta("ref"));
+    }
+    print!("{s}");
+    Ok(())
+}
+
 struct State {
     dirty: bool,
     state: &'static str,
+    /// Days unproposed ("-" unless unproposed).
     age: String,
     stale: bool,
 }
@@ -680,8 +671,7 @@ fn stale_days() -> i64 {
 }
 
 fn state(ws: &Ws) -> State {
-    let dirty = !ws.clean();
-    let paths = route::plan(ws).map(|v| proposable(&v)).unwrap_or_else(|_| vec![".delphi/manifest.yml".into()]);
+    let paths = route::plan(ws).map(|v| proposable(&v)).unwrap_or_else(|_| vec![MANIFEST.into()]);
     let state = if paths.is_empty() {
         "clean"
     } else if ws.hash(&paths) == ws.meta("last_proposed_hash") {
@@ -691,15 +681,12 @@ fn state(ws: &Ws) -> State {
     };
     let (mut age, mut stale) = ("-".to_string(), false);
     if state == "unproposed" {
-        let mut base = ws.meta("last_proposed");
-        if base.is_empty() {
-            base = ws.meta("created");
-        }
+        let base = Some(ws.meta("last_proposed")).filter(|b| !b.is_empty()).unwrap_or_else(|| ws.meta("created"));
         let days = (now() as i64 - base.trim().parse::<i64>().unwrap_or(0)) / 86400;
-        age = format!("{days}d");
         stale = days > stale_days();
+        age = format!("{days}d");
     }
-    State { dirty, state, age, stale }
+    State { dirty: !ws.clean(), state, age, stale }
 }
 
 fn status() -> Result<()> {
@@ -708,14 +695,15 @@ fn status() -> Result<()> {
         println!("{:<22} {:<16} {:<8} {:<5} {:<10} {:<5} {:<6} {}", c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7])
     };
     row(["WORKSPACE", "LAYOUT", "REF", "DIRTY", "STATE", "AGE", "BEHIND", "NEXT"]);
-    let (mut n, mut c, mut p, mut u, mut s) = (0, 0, 0, 0, 0);
+    let (mut states, mut stale) = (vec![], 0);
     for name in ws_names() {
         let ws = Ws::at(&name);
-        if ws.v1() {
-            row([&name, &ws.meta("layout"), &ws.meta("ref"), "-", "v1", "-", "-", &ws.v1_msg()]);
+        let (layout, r#ref) = (ws.meta("layout"), ws.meta("ref"));
+        if let Some(e) = ws.v1_error() {
+            row([&name, &layout, &r#ref, "-", "v1", "-", "-", &e]);
             continue;
         }
-        let mut st = state(&ws);
+        let st = state(&ws);
         let b = behind(&ws);
         let next = if ws.merging() {
             format!("resolve conflicts, commit, then: delphi ws refresh {name}")
@@ -730,22 +718,19 @@ fn status() -> Result<()> {
         } else {
             format!("delphi ws open {name}")
         };
-        if st.stale {
-            st.age.push('!');
-            s += 1;
-        }
-        let dirty = if st.dirty { "yes" } else { "no" };
-        row([&name, &ws.meta("layout"), &ws.meta("ref"), dirty, st.state, &st.age, b, &next]);
-        n += 1;
-        match st.state {
-            "clean" => c += 1,
-            "proposed" => p += 1,
-            _ => u += 1,
-        }
+        let age = if st.stale { format!("{}!", st.age) } else { st.age };
+        row([&name, &layout, &r#ref, if st.dirty { "yes" } else { "no" }, st.state, &age, b, &next]);
+        states.push(st.state);
+        stale += st.stale as usize;
     }
+    let count = |k| states.iter().filter(|s| **s == k).count();
     println!(
-        "{n} workspace(s): {c} clean, {p} proposed, {u} unproposed ({s} stale: unproposed > {} days)",
-        conf_get("stale_days", "14")
+        "{} workspace(s): {} clean, {} proposed, {} unproposed ({stale} stale: unproposed > {} days)",
+        states.len(),
+        count("clean"),
+        count("proposed"),
+        count("unproposed"),
+        stale_days()
     );
     Ok(())
 }
@@ -755,29 +740,23 @@ fn ws_open(ws: &Ws, o: &Opts) -> Result<()> {
     delphi_fetch();
     for name in ws_names() {
         let other = Ws::at(&name);
-        if other.v1() {
-            continue;
-        }
-        let st = state(&other);
-        if st.stale {
-            warn!("{name} has been unproposed for {}; run: delphi ws propose {name}", st.age);
+        if other.v1_error().is_none() {
+            let st = state(&other);
+            if st.stale {
+                warn!("{name} has been unproposed for {}; run: delphi ws propose {name}", st.age);
+            }
         }
     }
     if behind(ws) != "no" {
-        warn!(
-            "{} is behind origin/{} (or its branch is gone); run: delphi ws refresh {}",
-            ws.name,
-            ws.meta("ref"),
-            ws.name
-        );
+        let (n, r) = (&ws.name, ws.meta("ref"));
+        warn!("{n} is behind origin/{r} (or its branch is gone); run: delphi ws refresh {n}");
     }
     let h = harness::load(&ws.meta("harness"))?;
     let [dh, _, _] = (h.provenance)();
-    let pick =
-        |flag: &str, var: &str| if flag.is_empty() { std::env::var(var).unwrap_or_default() } else { flag.to_string() };
+    let pick = |flag: &str, var| if flag.is_empty() { std::env::var(var).unwrap_or_default() } else { flag.into() };
     let (model, effort) = (pick(&o.model, "DELPHI_MODEL"), pick(&o.effort, "DELPHI_EFFORT"));
     let mut cmd = if o.shell {
-        Command::new(crate::core::env_nonempty("SHELL").unwrap_or_else(|| "/bin/sh".into()))
+        Command::new(env_nonempty("SHELL").unwrap_or_else(|| "/bin/sh".into()))
     } else {
         (h.launch)(&model, &effort)
     };
@@ -799,7 +778,7 @@ fn prov_rows(ws: &Ws, me: &str) -> String {
     let range = if since.is_empty() { "HEAD".to_string() } else { format!("{since}..HEAD") };
     let log = out(ws.git().args(["log", "--no-merges", &format!("--format={f}"), &range])).unwrap_or_default();
     let mut seen: Vec<&str> = vec![];
-    for l in awk_lines(&log) {
+    for l in log.lines() {
         if l != "||" && l != me && !seen.contains(&l) {
             seen.push(l);
         }
@@ -812,10 +791,7 @@ fn warn_open_pr(ws: &Ws, branch: &str) {
     if ws.meta("last_pushed").is_empty() {
         return;
     }
-    let q = ".[0].number // empty";
-    let mut c = Command::new("gh");
-    c.current_dir(root()).args(["pr", "list", "--head", branch, "--state", "open", "--json", "number", "--jq", q]);
-    let n = out_q(&mut c).unwrap_or_default();
+    let n = open_pr(branch, "number");
     if !n.is_empty() {
         warn!("PR #{n} still contains earlier changes; close it with: gh pr close {n}");
     }
@@ -838,16 +814,11 @@ fn propose(ws: &Ws, o: &Opts) -> Result<()> {
     refresh(ws, "")?;
     let items = route::plan(ws)?;
     let sh = Shared::load(&ws.meta("layout"));
-    let mut user = String::new();
-    if out_q(&mut dgit(["remote", "get-url", "origin"])).unwrap_or_default().contains("github.com") {
-        user = out_q(Command::new("gh").args(["api", "user", "--jq", ".login"])).unwrap_or_default();
-    }
-    if user.is_empty() {
-        user = crate::core::env_nonempty("USER").unwrap_or_else(|| "me".into());
-    }
+    let on_github = out_q(&mut dgit(["remote", "get-url", "origin"])).unwrap_or_default().contains("github.com");
+    let user = on_github.then(gh_user).flatten().or_else(|| env_nonempty("USER")).unwrap_or_else(|| "me".into());
     let branch = format!("delphi/propose/{user}/{}", ws.name);
     if !items.iter().any(Item::routed) {
-        if items.iter().any(|i| i.kind == "unresolved") {
+        if items.iter().any(|i| i.act == Act::Unresolved) {
             eprint!("{}", route::listing(&items, &sh));
         }
         info!("nothing to propose");
@@ -858,7 +829,7 @@ fn propose(ws: &Ws, o: &Opts) -> Result<()> {
     let Some(ls) = out(&mut dgit(["ls-remote", "--heads", "origin", &format!("refs/heads/{branch}")])) else {
         die!("cannot reach origin")
     };
-    let remote = awk_lines(&ls).iter().map(|l| l.split('\t').next().unwrap_or("")).collect::<Vec<_>>().join("\n");
+    let remote = ls.lines().map(|l| l.split('\t').next().unwrap_or("")).collect::<Vec<_>>().join("\n");
     if !remote.is_empty() && remote != ws.meta("last_pushed") {
         ws.meta_set("last_pushed", &remote)?;
         die!("the propose branch changed on GitHub (someone pushed to it); review the PR, then re-run to overwrite it");
@@ -872,9 +843,8 @@ fn propose(ws: &Ws, o: &Opts) -> Result<()> {
         &cc[..cc.len().min(7)]
     );
     prov.rows = prov_rows(ws, &format!("{}|{}|{}", prov.harness, prov.model, prov.effort));
-    let mut pr = crate::pr::begin(&branch, &cc, prov)?;
-    route::apply(&items, ws, &pr)?;
-    if !pr.has_commits() {
+    let pr = crate::pr::begin(&branch, &cc, prov)?;
+    if !route::apply(&items, ws, &pr)? {
         info!("nothing to propose: the routed files already match Delphi");
         warn_open_pr(ws, &branch);
         return Ok(());
@@ -882,13 +852,11 @@ fn propose(ws: &Ws, o: &Opts) -> Result<()> {
     if !check_tree(&pr.wt)? {
         die!("check failed on the proposed tree; not pushed (branch {} kept locally)", pr.branch);
     }
-    let body = route::pr_body(&items, ws, &sh);
     let title = format!("delphi: changes from workspace {} ({})", ws.name, ws.meta("layout"));
-    pr.finish(&title, body.trim_end_matches('\n'), Some(&remote))?;
-    if pr.pushed {
+    if pr.finish(&title, route::pr_body(&items, ws, &sh).trim_end_matches('\n'), Some(&remote))? {
         ws.meta_set("last_proposed", &now().to_string())?;
         ws.meta_set("last_proposed_hash", &ws.hash(&proposable(&items)))?;
-        ws.meta_set("last_pushed", &out(git_c(&pr.wt).args(["rev-parse", "HEAD"])).unwrap_or_default())?;
+        ws.meta_set("last_pushed", &out(git(&pr.wt).args(["rev-parse", "HEAD"])).unwrap_or_default())?;
     }
     Ok(())
 }
