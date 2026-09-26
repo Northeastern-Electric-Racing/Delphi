@@ -4,7 +4,7 @@
 use crate::core::{basename, exit, find, path_ok, rel_to, root, under};
 use crate::harness::HARNESSES;
 use crate::parse::parse_yaml;
-use crate::workspace::{folder_of, load, KEYS, YML};
+use crate::workspace::{below, folder_of, load, KEYS, YML};
 use crate::{die, info};
 use anyhow::Result;
 use std::path::Path;
@@ -112,23 +112,46 @@ fn check_ws(ctx: &Path, f: &str, folders: &[String], names: &mut Vec<String>, er
     for p in w.parts.iter().filter(|p| !ctx.join(p).is_file()) {
         err(format!("instructions: missing context/{p}"));
     }
-    let mut dests: Vec<(&str, bool)> = vec![];
-    for (s, d) in &w.links {
-        let sp = ctx.join(s);
-        if !sp.is_file() && !sp.is_dir() {
-            err(format!("links: missing source context/{s}"));
-        } else if in_workspace(s).is_some() {
-            err(format!("links: source context/{s} is inside a workspace folder"));
-        } else if let Some(f) = folders.iter().find(|f| under(f, s).is_some()) {
-            err(format!("links: source context/{s} contains workspace folder context/{f}"));
+    for p in &w.mcp {
+        if !ctx.join(p).is_file() {
+            err(format!("mcp: missing context/{p}"));
+        } else if below(p, "harness/mcp").is_none_or(|r| r.is_empty()) {
+            err(format!("mcp: context/{p} must be a file under a scope's harness/mcp/"));
         }
-        if !w.parts.is_empty() && d == w.h.instructions {
-            err(format!("links: {d} is generated from instructions:"));
+    }
+    if w.y.list("settings").len() > 1 {
+        err("settings: at most one entry".into());
+    }
+    let mut dests: Vec<(&str, bool)> = vec![];
+    for (k, s, d) in &w.links {
+        let sp = ctx.join(s);
+        let fits = match *k {
+            "skills" => below(s, "harness/skills").is_some_and(|r| !r.is_empty() && !r.contains('/') && sp.is_dir()),
+            "settings" => below(s, "harness/settings").is_some_and(|r| !r.is_empty() && sp.is_file()),
+            _ => below(s, k).is_some(),
+        };
+        if !sp.is_file() && !sp.is_dir() {
+            err(format!("{k}: missing source context/{s}"));
+        } else if in_workspace(s).is_some() {
+            err(format!("{k}: source context/{s} is inside a workspace folder"));
+        } else if let Some(f) = folders.iter().find(|f| under(f, s).is_some()) {
+            err(format!("{k}: source context/{s} contains workspace folder context/{f}"));
+        } else if !fits {
+            let want = match *k {
+                "skills" => "a skill directory directly under a scope's harness/skills/",
+                "settings" => "a file under a scope's harness/settings/",
+                "docs" => "under a scope's docs/",
+                _ => "under a scope's blocks/",
+            };
+            err(format!("{k}: context/{s} must be {want}"));
+        }
+        for (g, _, file, _) in w.generated().into_iter().filter(|g| g.2 == d) {
+            err(format!("{k}: {file} is generated from {g}:"));
         }
         for (o, dir) in &dests {
             let nested = |a: &str, b: &str, is_dir: bool| is_dir && under(a, b).is_some();
             if o == d || nested(d, o, *dir) || nested(o, d, sp.is_dir()) {
-                err(format!("links: dests overlap: '{o}' and '{d}'"));
+                err(format!("{k}: dests overlap: '{o}' and '{d}'"));
             }
         }
         dests.push((d, sp.is_dir()));

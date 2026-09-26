@@ -15,9 +15,8 @@ directly.
    - `linked … <- <source>`: a shared file. Propose writes the edit to the source and to every
      other workspace that links it. `(shared: a, b)` names those workspaces: tell the user their
      edit reaches those teams, and ask them to confirm.
-   - `generated`: `CLAUDE.md` built from `instructions:`. Hand edits are rejected: revert it and
-     edit a part instead (link the part into the folder under `links:` in `workspace.yml` and edit
-     the copy, or change the part in Delphi).
+   - `generated`: `CLAUDE.md` built from `instructions:` or `.mcp.json` built from `mcp:`. Hand
+     edits are rejected: revert it and edit the part or fragment in Delphi instead.
    - `sync`: a file outside the folder written by an earlier propose (a source or another
      workspace's copy).
    `delphi diff --upstream` shows what changed on `main` since the last refresh.
@@ -27,10 +26,10 @@ directly.
    - `different edits in A, B`: the same shared file was changed differently in two places (two
      copies in this folder, or this folder and a change already on `main`). Make them identical,
      or keep the edit in only one of them, commit, and re-run.
-   - `… is newly linked to <source> but differs from it`: a new `links:` entry points at a file
-     that already exists here with other content. Delete the file to take the source (or make it
-     identical), commit, re-run.
-   - `generated from instructions:`: see `generated` above.
+   - `… is newly linked to <source> but differs from it`: a new `blocks`/`docs`/`skills`/`settings`
+     entry points at a file that already exists here with other content. Delete the file to take
+     the source (or make it identical), commit, re-run.
+   - `generated from instructions:` / `generated from mcp:`: see `generated` above.
    Suggest a fix and apply it only after the user approves.
 5. Run `delphi propose --model <your model> --effort <effort> --yes`. It merges `main` first: on
    exit code 2 (merge conflicts), help resolve them with git, commit, and run it again. Then it

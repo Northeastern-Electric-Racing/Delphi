@@ -1,7 +1,7 @@
 //! `delphi sync [--check] [--base <rev>]` (spec §3). For every linked source file, its source and
 //! all linked copies (across every workspace) are compared with the base revision(s): one distinct
-//! new state is written everywhere, several are a conflict. Then instruction files are regenerated
-//! from `instructions:`. Works on any full Delphi working tree; deterministic and idempotent.
+//! new state is written everywhere, several are a conflict. Then generated files (instruction
+//! file, MCP file) are regenerated from `instructions:` and `mcp:`. Works on any full Delphi working tree; deterministic and idempotent.
 
 use crate::core::{
     commit, exit, find, git, join, out, out_q, out_stdin, parse_args, rel_to, root, safe_path, under, write_file,
@@ -71,7 +71,7 @@ impl Report {
 /// A base revision: its files and each workspace's links.
 struct Base {
     tree: HashMap<String, (bool, String)>,
-    links: HashMap<String, Vec<(String, String)>>,
+    links: HashMap<String, Vec<(&'static str, String, String)>>,
 }
 
 fn load_base(dir: &Path, rev: &str) -> Base {
@@ -187,19 +187,23 @@ fn remove(dir: &Path, f: &Path) {
     }
 }
 
-/// The instruction file text assembled from parts, or the missing part.
-fn assemble(dir: &Path, parts: &[String]) -> Result<Result<Vec<u8>, String>> {
-    let mut text = vec![];
-    for p in parts {
+/// A generated file assembled from parts (instructions: joined by a blank line; mcp: wrapped in
+/// `mcpServers`, joined by `,` lines), or the missing part.
+fn assemble(dir: &Path, key: &str, parts: &[String]) -> Result<Result<Vec<u8>, String>> {
+    let (head, sep, tail): (&[u8], &[u8], &[u8]) =
+        if key == "mcp" { (b"{\"mcpServers\": {\n", b",\n", b"}}\n") } else { (b"", b"\n", b"") };
+    let mut text = head.to_vec();
+    for (i, p) in parts.iter().enumerate() {
         let Ok(t) = fs::read(safe_path(dir, &format!("context/{p}"))?) else { return Ok(Err(p.clone())) };
-        if !text.is_empty() {
-            text.push(b'\n');
+        if i > 0 {
+            text.extend(sep);
         }
         text.extend(t);
         if text.last() != Some(&b'\n') {
             text.push(b'\n');
         }
     }
+    text.extend(tail);
     Ok(Ok(text))
 }
 
@@ -214,14 +218,14 @@ fn groups(dir: &Path, wss: &[Ws], bases: &[Base]) -> Groups {
     let under_base = |p: &str| bases.iter().any(|b| b.tree.keys().any(|k| under(k, p).is_some()));
     let add = |groups: &mut Groups, w: &Ws, s: String, d: String| {
         let mut old = bases.iter().filter_map(|b| b.links.get(&w.folder)).flatten();
-        let old = old.any(|(bs, bd)| under(&s, bs).is_some_and(|r| join(bd, r) == d));
+        let old = old.any(|(_, bs, bd)| under(&s, bs).is_some_and(|r| join(bd, r) == d));
         let m = groups.entry(s).or_default();
         if !m.iter().any(|x| x.0 == w.path(&d)) {
             m.push((w.path(&d), old));
         }
     };
     for w in wss {
-        for (src, dest) in &w.links {
+        for (_, src, dest) in &w.links {
             let (sp, dp) = (format!("context/{src}"), w.path(dest));
             let is_dir = match (dir.join(&sp).is_file(), dir.join(&sp).is_dir()) {
                 (true, _) => false,
@@ -250,17 +254,17 @@ fn groups(dir: &Path, wss: &[Ws], bases: &[Base]) -> Groups {
     groups
 }
 
-/// Regenerate each workspace's instruction file from `instructions:`; a hand edit is a conflict.
-fn instructions(dir: &Path, wss: &[Ws], bases: &[Base], check: bool, r: &mut Report) -> Result<()> {
-    for w in wss.iter().filter(|w| !w.parts.is_empty()) {
-        let text = match assemble(dir, &w.parts)? {
+/// Regenerate each workspace's generated files (`instructions:`, `mcp:`); a hand edit is a conflict.
+fn generate(dir: &Path, wss: &[Ws], bases: &[Base], check: bool, r: &mut Report) -> Result<()> {
+    for (w, (key, parts, file, what)) in wss.iter().flat_map(|w| w.generated().into_iter().map(move |g| (w, g))) {
+        let text = match assemble(dir, key, parts)? {
             Ok(t) => t,
             Err(p) => {
-                r.conflicts.push(format!("{}: instructions: missing context/{p}", w.path(YML)));
+                r.conflicts.push(format!("{}: {key}: missing context/{p}", w.path(YML)));
                 continue;
             }
         };
-        let ip = w.path(w.h.instructions);
+        let ip = w.path(file);
         let f = safe_path(dir, &ip)?;
         let now = fs::read(&f).ok();
         if now.as_deref() == Some(&text[..]) {
@@ -268,7 +272,7 @@ fn instructions(dir: &Path, wss: &[Ws], bases: &[Base], check: bool, r: &mut Rep
         }
         let st = states(dir, [&ip])?.remove(&ip).flatten();
         if now.is_some() && !bases.iter().any(|b| b.tree.get(&ip).cloned() == st) {
-            r.conflicts.push(format!("{ip}: generated from instructions: in {YML} (don't hand-edit it; edit a part)"));
+            r.conflicts.push(format!("{ip}: generated from {key}: in {YML} (don't hand-edit it; edit a {what})"));
             continue;
         }
         if !check {
@@ -314,6 +318,6 @@ pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
             r.writes.push((verb, p));
         }
     }
-    instructions(dir, &wss, &bases, check, &mut r)?;
+    generate(dir, &wss, &bases, check, &mut r)?;
     Ok(r)
 }

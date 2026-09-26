@@ -180,7 +180,7 @@ fn sync_new_links_dest_missing_source_missing_and_differing() {
     let root = sb.root();
     let yml = root.join(ND).join("workspace.yml");
     let base = sb.read(&yml);
-    sb.write(&yml, &format!("{base}  - software/docs/guide.md\n  - software/docs/new.md\n"));
+    sb.write(&yml, &format!("{base}docs:\n  - software/docs/guide.md\n  - software/docs/new.md\n"));
     sb.write(&root.join(ND).join("docs/new.md"), "# New\n");
     let r = sb.ok(&root, &["sync"]);
     assert_eq!(r.stdout, format!("  created {ND}/docs/guide.md\n  created context/software/docs/new.md\n"));
@@ -189,8 +189,10 @@ fn sync_new_links_dest_missing_source_missing_and_differing() {
 
     // a new link whose dest already exists with different content is a conflict
     sb.sh(&root, "git add -A && git commit -qm links && git push -q origin HEAD:main");
-    let base = sb.read(&yml);
-    sb.write(&yml, &format!("{base}  - software/application-software/argos/blocks/pr-body.md -> CLAUDE.md\n"));
+    let base = sb
+        .read(&yml)
+        .replace("blocks:\n", "blocks:\n  - software/application-software/argos/blocks/pr-body.md -> CLAUDE.md\n");
+    sb.write(&yml, &base);
     let r = sb.d(&root, &["sync"]);
     assert_eq!(r.code, 1);
     assert!(
@@ -510,7 +512,7 @@ fn create_from_file_and_list() {
     let f = sb.dir.join("tools.yml");
     sb.write(
         &f,
-        "name: tools-dev\nharness: claude-code\ninstructions:\n  - software/harness/instructions/base.md\nlinks:\n  - software/harness/skills/run-tests\n",
+        "name: tools-dev\nharness: claude-code\ninstructions:\n  - software/harness/instructions/base.md\nskills:\n  - software/harness/skills/run-tests\n",
     );
     let fs_ = f.to_str().unwrap();
     for (args, err) in [
@@ -548,13 +550,12 @@ fn create_from_file_and_list() {
 #[test]
 fn mv_rewrites_links_and_keeps_dests() {
     let sb = Sb::new("mv");
-    let r = sb
-        .ok(&sb.dir, &["mv", "software/docs/guide.md", "software/application-software/argos/blocks/guide.md", "--yes"]);
+    let r = sb.ok(&sb.dir, &["mv", "software/docs/guide.md", "software/docs/guides/guide.md", "--yes"]);
     let br = r.stdout.lines().last().unwrap().to_string();
     assert!(br.starts_with("delphi/mv/guide.md-"), "{br}");
     sb.git(&sb.root(), &["fetch", "-q", "origin"]);
     let yml = sb.git(&sb.root(), &["show", &format!("origin/{br}:{AD}/workspace.yml")]);
-    assert!(yml.contains("  - software/application-software/argos/blocks/guide.md -> docs/guide.md\n"), "{yml}");
+    assert!(yml.contains("docs:\n  - software/docs/guides/guide.md -> docs/guide.md\n"), "{yml}");
     assert!(!yml.contains("software/docs/guide.md"));
 
     let r = sb.ok(
@@ -580,7 +581,12 @@ fn check_passes_then_reports_every_failure() {
     let n = root.join(ND);
     sb.write(
         &n.join("workspace.yml"),
-        "name: nero\nharness: claude-code\nbogus: 1\ninstructions:\n  - software/nope.md\nlinks:\n  - software/missing\n  - software/docs/guide.md -> CLAUDE.md\n  - software/docs/guide.md -> CLAUDE.md\n  - software/application-software/argos/workspaces/argos-dev/docs/guide.md -> x.md\n  - software/application-software/argos -> stuff\n",
+        "name: nero\nharness: claude-code\nbogus: 1\nlinks:\n  - software/docs/guide.md\ninstructions:\n  - software/nope.md\n\
+         docs:\n  - software/missing\n  - software/docs/guide.md -> CLAUDE.md\n  - software/docs/guide.md -> CLAUDE.md\n  - software/application-software/argos/workspaces/argos-dev/docs/guide.md -> x.md\n\
+         blocks:\n  - software/application-software/argos -> stuff\n  - software/docs/guide.md -> y.md\n\
+         skills:\n  - software/harness/skills/run-tests/scripts\n  - software/application-software/argos/blocks/pr-body.md\n\
+         settings:\n  - software/docs/guide.md\n  - software/harness/skills/run-tests/SKILL.md -> z.json\n\
+         mcp:\n  - software/harness/mcp/nope.json\n  - software/docs/guide.md\n",
     );
     sb.write(&root.join("context/software/tools/README.md"), "x\n");
     sb.write(&root.join("context/software/docs/CLAUDE.md"), "x\n");
@@ -596,13 +602,22 @@ check: context/software/docs/link.md: symlinks are not allowed
 check: context/software/application-software/argos/workspaces/stray: workspace folder has no workspace.yml
 check: {y}: name 'nero' must equal its folder 'nero-dev'
 check: {y}: unknown key 'bogus'
+check: {y}: unknown key 'links'
 check: {y}: instructions: missing context/software/nope.md
-check: {y}: links: missing source context/software/missing
-check: {y}: links: CLAUDE.md is generated from instructions:
-check: {y}: links: CLAUDE.md is generated from instructions:
-check: {y}: links: dests overlap: 'CLAUDE.md' and 'CLAUDE.md'
-check: {y}: links: source context/software/application-software/argos/workspaces/argos-dev/docs/guide.md is inside a workspace folder
-check: {y}: links: source context/software/application-software/argos contains workspace folder context/software/application-software/argos/workspaces/argos-dev
+check: {y}: mcp: missing context/software/harness/mcp/nope.json
+check: {y}: mcp: context/software/docs/guide.md must be a file under a scope's harness/mcp/
+check: {y}: settings: at most one entry
+check: {y}: blocks: source context/software/application-software/argos contains workspace folder context/software/application-software/argos/workspaces/argos-dev
+check: {y}: blocks: context/software/docs/guide.md must be under a scope's blocks/
+check: {y}: docs: missing source context/software/missing
+check: {y}: docs: CLAUDE.md is generated from instructions:
+check: {y}: docs: CLAUDE.md is generated from instructions:
+check: {y}: docs: dests overlap: 'CLAUDE.md' and 'CLAUDE.md'
+check: {y}: docs: source context/software/application-software/argos/workspaces/argos-dev/docs/guide.md is inside a workspace folder
+check: {y}: skills: context/software/harness/skills/run-tests/scripts must be a skill directory directly under a scope's harness/skills/
+check: {y}: skills: context/software/application-software/argos/blocks/pr-body.md must be a skill directory directly under a scope's harness/skills/
+check: {y}: settings: context/software/docs/guide.md must be a file under a scope's harness/settings/
+check: {y}: settings: context/software/harness/skills/run-tests/SKILL.md must be a file under a scope's harness/settings/
 "
     );
     let mut got: Vec<&str> = r.stderr.lines().collect();
@@ -613,21 +628,21 @@ check: {y}: links: source context/software/application-software/argos contains w
 
     sb.write(
         &n.join("workspace.yml"),
-        "name: nero-dev\nharness: claude-code\nlinks:\n  - software/docs -> repos/docs\n",
+        "name: nero-dev\nharness: claude-code\ndocs:\n  - software/docs -> repos/docs\n",
     );
     let r = sb.d(&root, &["check"]);
     assert!(
-        r.stderr.contains(&format!("check: {y}: links: unsafe or reserved path in 'software/docs -> repos/docs'")),
+        r.stderr.contains(&format!("check: {y}: docs: unsafe or reserved path in 'software/docs -> repos/docs'")),
         "{}",
         r.stderr
     );
     // a link must not overwrite the workspace's own workspace.yml
     sb.write(
         &n.join("workspace.yml"),
-        "name: nero-dev\nharness: claude-code\nlinks:\n  - software/docs/guide.md -> workspace.yml\n",
+        "name: nero-dev\nharness: claude-code\ndocs:\n  - software/docs/guide.md -> workspace.yml\n",
     );
     let r = sb.d(&root, &["check"]);
-    let want = format!("check: {y}: links: unsafe or reserved path in 'software/docs/guide.md -> workspace.yml'\n");
+    let want = format!("check: {y}: docs: unsafe or reserved path in 'software/docs/guide.md -> workspace.yml'\n");
     assert_eq!(r.code, 1);
     assert!(r.stderr.contains(&want), "{}", r.stderr);
 }
@@ -743,7 +758,7 @@ fn ci_main_sync_commits_as_the_bot_once_and_tolerates_a_moved_main() {
     sb.upstream(
         "Add tools-dev",
         "mkdir -p context/software/workspaces/tools-dev/.claude/skills\n\
-         printf 'name: tools-dev\\nharness: claude-code\\nlinks:\\n  - software/harness/skills/run-tests\\n' > context/software/workspaces/tools-dev/workspace.yml\n\
+         printf 'name: tools-dev\\nharness: claude-code\\nskills:\\n  - software/harness/skills/run-tests\\n' > context/software/workspaces/tools-dev/workspace.yml\n\
          cp -r context/software/harness/skills/run-tests context/software/workspaces/tools-dev/.claude/skills/",
     );
     sb.upstream(
@@ -767,4 +782,68 @@ fn ci_main_sync_commits_as_the_bot_once_and_tolerates_a_moved_main() {
     sb.upstream("Newer", "echo n >> context/software/docs/guide.md");
     ci_sync_main(&sb, &main);
     assert_eq!(sb.git(&main, &["log", "-1", "--format=%s", "origin/main"]), "Newer");
+}
+
+#[test]
+fn per_key_default_dests_mcp_generation_and_settings_link() {
+    let sb = Sb::new("keys");
+    let root = sb.root();
+    let (h, t) = ("context/software/harness", "context/software/workspaces/tools-dev");
+    sb.write(&root.join(h).join("mcp/github.json"), "\"github\": {\n  \"command\": \"gh-mcp\"\n}\n");
+    sb.write(&root.join(h).join("mcp/local.json"), "\"local\": {\"command\": \"run\"}");
+    sb.write(&root.join(h).join("settings/default.json"), "{\"model\": \"opus\"}\n");
+    sb.write(&root.join("context/software/docs/sub/notes.md"), "Notes.\n");
+    let yml = "name: tools-dev\nharness: claude-code\nblocks:\n  - software/application-software/argos/blocks/pr-body.md\n\
+               docs:\n  - software/docs/sub/notes.md\nskills:\n  - software/harness/skills/run-tests\n\
+               settings: software/harness/settings/default.json\nmcp:\n  - software/harness/mcp/github.json\n  - software/harness/mcp/local.json\n";
+    sb.write(&root.join(t).join("workspace.yml"), yml);
+    sb.ok(&root, &["sync"]);
+    assert_eq!(
+        sb.sh(&root.join(t), "find . -type f | LC_ALL=C sort"),
+        "./.claude/settings.json\n./.claude/skills/run-tests/SKILL.md\n./.claude/skills/run-tests/scripts/run.sh\n./.mcp.json\n\
+         ./context/software/application-software/argos/blocks/pr-body.md\n./docs/sub/notes.md\n./workspace.yml\n"
+    );
+    let mcp = root.join(t).join(".mcp.json");
+    assert_eq!(
+        sb.read(&mcp),
+        "{\"mcpServers\": {\n\"github\": {\n  \"command\": \"gh-mcp\"\n}\n,\n\"local\": {\"command\": \"run\"}\n}}\n"
+    );
+    assert_eq!(sb.read(&root.join(t).join(".claude/settings.json")), "{\"model\": \"opus\"}\n");
+    sb.ok(&root, &["check"]);
+    sb.sh(&root, "git add -A && git commit -qm tools && git push -q origin HEAD:main");
+
+    // .mcp.json is generated: a hand edit is a conflict; a fragment edit regenerates it
+    sb.sh(&root, &format!("echo hand >> {t}/.mcp.json"));
+    let r = sb.d(&root, &["sync"]);
+    assert_eq!(r.code, 1);
+    assert!(r.stderr.starts_with(&format!(
+        "conflict: {t}/.mcp.json: generated from mcp: in workspace.yml (don't hand-edit it; edit a fragment)\n"
+    )));
+    sb.sh(&root, &format!("git checkout -q {t}/.mcp.json && printf '\"local\": {{}}\\n' > {h}/mcp/local.json"));
+    let r = sb.ok(&root, &["sync"]);
+    assert_eq!(r.stdout, format!("  updated {t}/.mcp.json\n"));
+    assert!(sb.read(&mcp).ends_with(",\n\"local\": {}\n}}\n"));
+
+    // the settings file is linked: an edit to the copy reaches the source; `-> dest` works too
+    sb.write(&root.join(t).join(".claude/settings.json"), "{}\n");
+    let r = sb.ok(&root, &["sync"]);
+    assert_eq!(r.stdout, format!("  updated {h}/settings/default.json\n"));
+    sb.write(
+        &root.join(t).join("workspace.yml"),
+        &yml.replace("default.json\n", "default.json -> .claude/team.json\n"),
+    );
+    sb.sh(&root, &format!("rm {t}/.claude/settings.json"));
+    let r = sb.ok(&root, &["sync"]);
+    assert_eq!(r.stdout, format!("  created {t}/.claude/team.json\n"));
+    sb.ok(&root, &["check"]);
+    sb.sh(&root, "git add -A && git commit -qm team && git push -q origin HEAD:main");
+
+    // mv rewrites the scalar settings entry
+    let r = sb
+        .ok(&sb.dir, &["mv", "software/harness/settings/default.json", "software/harness/settings/base.json", "--yes"]);
+    let br = r.stdout.lines().last().unwrap().to_string();
+    sb.git(&root, &["fetch", "-q", "origin"]);
+    let y = sb.git(&root, &["show", &format!("origin/{br}:{t}/workspace.yml")]);
+    assert!(y.contains("\nsettings: software/harness/settings/base.json -> .claude/team.json\n"), "{y}");
+    sb.assert_cleaned_up();
 }

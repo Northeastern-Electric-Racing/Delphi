@@ -334,7 +334,7 @@ fn listing(dir: &Path, folder: &str, args: &[&str], md: bool) -> Result<String> 
         if let Some(rel) = under(p, folder).filter(|r| !r.is_empty()) {
             (kind, path) = ("own", rel);
             if let Some(w) = &w {
-                let link = w.links.iter().find_map(|(s, d)| under(rel, d).map(|r| join(s, r)));
+                let link = w.links.iter().find_map(|(_, s, d)| under(rel, d).map(|r| join(s, r)));
                 if let Some(src) = link {
                     let sh = sharing(&all, &src, &w.folder);
                     kind = "linked";
@@ -342,7 +342,7 @@ fn listing(dir: &Path, folder: &str, args: &[&str], md: bool) -> Result<String> 
                     if !sh.is_empty() {
                         extra += &format!(" (shared: {})", sh.join(", "));
                     }
-                } else if rel == w.h.instructions && !w.parts.is_empty() {
+                } else if w.generated().iter().any(|g| g.2 == rel) {
                     kind = "generated";
                 }
             }

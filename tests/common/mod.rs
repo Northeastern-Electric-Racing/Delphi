@@ -52,9 +52,11 @@ harness: claude-code
 instructions:
   - harness/instructions/ws.md
   - software/harness/instructions/base.md
-links:
+skills:
   - software/harness/skills/run-tests
+docs:
   - software/docs/guide.md
+blocks:
   - $S/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
   - $S/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
 repos:
@@ -63,8 +65,9 @@ EOF
 cat > "$ND/workspace.yml" <<EOF
 name: nero-dev
 harness: claude-code
-links:
+skills:
   - software/harness/skills/run-tests
+blocks:
   - $S/argos/blocks/pr-body.md -> .claude/skills/pr/pr-body.md
 EOF
 

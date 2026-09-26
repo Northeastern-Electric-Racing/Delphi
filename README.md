@@ -1,12 +1,13 @@
 # Delphi
 
-NER's AI-harness context (instructions, docs, skills, settings), stored once by org chart under
+NER's AI-harness context (instructions, blocks, docs, skills, MCP, settings), stored once by org chart under
 `context/`, plus a small Rust CLI.
 
 Every **workspace** is a folder in Delphi, `context/<scope>/workspaces/<name>/`, fully
 materialized on `main`: its `CLAUDE.md`, `.claude/skills/…`, and `docs/…` are real files. Some
 files are **linked** to a shared source elsewhere in `context/` (a skill several teams use);
-`delphi sync` keeps the source and every linked copy identical. The rest are the workspace's own.
+`delphi sync` keeps the source and every linked copy identical. `CLAUDE.md` and `.mcp.json` can be
+generated from shared parts. The rest are the workspace's own.
 
 - **checkout** a workspace: a sparse clone holding just that folder, on your own branch, with
   its code repos cloned into `repos/`,
@@ -43,9 +44,15 @@ harness: claude-code
 instructions:                         # optional: CLAUDE.md is generated from these parts
   - harness/instructions/workspace.md
   - software/harness/instructions/base.md
-links:                                # shared source -> path in this folder, kept in sync
+skills:                               # linked: <source> [-> <dest>], kept in sync
   - software/harness/skills/commit    # default dest: .claude/skills/commit
+blocks:                               # default dest: context/<source>
   - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
+docs:                                 # default dest: docs/<path below docs/>
+  - software/application-software/argos/docs/CONTEXT.md
+mcp:                                  # optional: .mcp.json is generated from these fragments
+  - software/harness/mcp/github.json
+settings: software/harness/settings/default.json   # linked to .claude/settings.json
 repos:                                # cloned into repos/ in a checkout, git-ignored
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```

@@ -8,7 +8,7 @@ use crate::core::{
 use crate::parse::parse_yaml;
 use crate::pr::{self, Pr};
 use crate::sync::sync;
-use crate::workspace::{self, default_dest, split_link, YML};
+use crate::workspace::{self, default_dest, split_link, LINK_KEYS, YML};
 use crate::{die, harness, info, provenance};
 use anyhow::Result;
 use std::fs;
@@ -90,29 +90,35 @@ fn create(scope: &str, name: &str, o: &Opts) -> Result<()> {
     finish(&pr, &c, &format!("delphi: create workspace {name}"), &body)
 }
 
-/// Rewrite `old` -> `new` in list items under `keys` (and keep default link dests stable).
+/// Rewrite `old` -> `new` in path entries (and keep default link dests stable).
 fn rewrite(file: &Path, old: &str, new: &str) -> Result<()> {
     let text = fs::read_to_string(file)?;
     let h = harness::load(&parse_yaml(file).map(|y| y.get("harness")).unwrap_or_default()).ok();
     let (mut key, mut res) = (String::new(), String::new());
     for l in text.lines() {
-        if !l.starts_with(' ') && l.ends_with(':') {
-            key = l.trim_end_matches(':').to_string();
+        let bare = l.split(" #").next().unwrap_or("").trim_end();
+        if !l.starts_with(' ') {
+            key = bare.split_once(':').map_or("", |x| x.0).to_string();
         }
-        let item = l.strip_prefix("  - ").filter(|_| ["links", "instructions", "recommend"].contains(&key.as_str()));
-        let v = item.map(|i| i.split(" #").next().unwrap_or("").trim_end());
-        let Some((src, dest)) = v.map(split_link).filter(|(s, _)| under(s, old).is_some()) else {
+        let link = LINK_KEYS.contains(&key.as_str());
+        let item = match bare.strip_prefix("  - ") {
+            Some(v) if link || ["instructions", "mcp", "recommend"].contains(&key.as_str()) => Some(("  - ", v)),
+            _ => bare.strip_prefix("settings: ").map(|v| ("settings: ", v)),
+        };
+        let Some((pre, (src, dest))) =
+            item.map(|(p, v)| (p, split_link(v))).filter(|(_, (s, _))| under(s, old).is_some())
+        else {
             res += &format!("{l}\n");
             continue;
         };
         let moved = join(new, under(&src, old).unwrap_or(""));
         let dest = match (dest, &h) {
-            (None, Some(h)) if key == "links" && default_dest(&src, h) != default_dest(&moved, h) => {
-                Some(default_dest(&src, h))
+            (None, Some(h)) if link && default_dest(&key, &src, h) != default_dest(&key, &moved, h) => {
+                Some(default_dest(&key, &src, h))
             }
             (d, _) => d,
         };
-        res += &dest.map_or_else(|| format!("  - {moved}\n"), |d| format!("  - {moved} -> {d}\n"));
+        res += &dest.map_or_else(|| format!("{pre}{moved}\n"), |d| format!("{pre}{moved} -> {d}\n"));
     }
     if res != text {
         write_replace(file, res.as_bytes())?;
@@ -161,6 +167,7 @@ fn mv(old: &str, new: &str, o: &Opts) -> Result<()> {
         write_replace(&wy, named.as_bytes())?;
     }
     info!("moved context/{old} -> context/{new}");
-    let body = format!("Moves `context/{old}` to `context/{new}` and rewrites `links`/`instructions` that use it.");
+    let body =
+        format!("Moves `context/{old}` to `context/{new}` and rewrites the `workspace.yml` entries that use it.");
     finish(&pr, &c, &format!("delphi: move {old} -> {new}"), &body)
 }

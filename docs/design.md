@@ -10,8 +10,9 @@ Every workspace is a **folder inside Delphi**, fully materialized and committed:
 against `main` with plain git.
 
 Some files in a workspace are **linked** to a shared source elsewhere in Delphi (e.g. a skill
-several teams use). `delphi sync` reconciles links: a change made on one side (the source or any
-linked copy) is written to the source and every linked copy. Sync runs when you propose, CI
+several teams use): the `blocks`, `docs`, `skills` and `settings` entries of `workspace.yml`.
+`delphi sync` reconciles links: a change made on one side (the source or any linked copy) is
+written to the source and every linked copy. Sync runs when you propose, CI
 checks it on every PR, and CI re-runs it on `main` after merges, so `main` is always reconciled.
 
 ## 2. Repository
@@ -23,34 +24,58 @@ context/                                   # scopes (org chart), as before
   <scope>/workspaces/<name>/               # a workspace
     workspace.yml
     CLAUDE.md                              # committed (generated if `instructions:` is set)
+    .mcp.json                              # generated if `mcp:` is set
     .claude/skills/…  docs/…  anything else
 ```
 
 ```yaml
 # workspace.yml
 name: argos-dev                    # = folder name, unique repo-wide
-harness: claude-code               # adapter: instruction file name, launch, provenance
+harness: claude-code               # adapter: file names, launch, provenance
 instructions:                      # optional: CLAUDE.md is generated from these parts (don't hand-edit)
   - harness/instructions/workspace.md
   - software/harness/instructions/base.md
-links:                             # shared source -> path in this folder, kept in sync
-  - software/harness/skills/run-local                 # default dest: .claude/skills/run-local
+blocks:                            # linked: shared source -> path in this folder, kept in sync
   - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
+docs:
+  - software/application-software/argos/docs/CONTEXT.md           # default dest: docs/CONTEXT.md
+skills:
+  - software/harness/skills/run-local                             # default dest: .claude/skills/run-local
+mcp:                               # optional: .mcp.json is generated from these fragments
+  - software/harness/mcp/github.json
+settings: software/harness/settings/default.json                  # default dest: .claude/settings.json
 repos:                             # cloned into repos/ in your checkout, git-ignored
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```
 
-- Link = `<source> [-> <dest>]`; source is a file or directory under `context/`; a directory links
-  every file under it. Default dest: `…/harness/skills/<n>` → `<skills dir>/<n>`,
-  `…/docs/<rest>` → `docs/<rest>`, else `context/<source>`.
-- Link sources live outside workspace folders (a workspace's own files are not link sources).
-- Files in the folder that aren't linked are the workspace's own. There is no "copy" mode: copying
-  something in is just adding a file.
+Only `name` and `harness` are required. Paths are relative to `context/`. A scope's shared
+sources sit in its `blocks/`, `docs/` and `harness/{instructions,skills,mcp,settings}/`.
+
+- **Linked keys** (`blocks`, `docs`, `skills`, `settings`): entries are `<source> [-> <dest>]`,
+  and each source must sit in its key's directory. Default dests:
+
+  | Key | Source | Default dest |
+  |---|---|---|
+  | `blocks` | a file or directory under a scope's `blocks/` | `context/<source>` |
+  | `docs` | under a scope's `docs/` | `docs/<path below that docs/>` |
+  | `skills` | a native skill directory `…/harness/skills/<n>` | `<skills dir>/<n>` (`.claude/skills/<n>`) |
+  | `settings` | at most one file under a scope's `harness/settings/` | the harness settings file (`.claude/settings.json`) |
+
+  A directory source links every file under it.
+- **Generated keys**: `instructions` (parts under `…/harness/instructions/`) → the instruction file
+  (`CLAUDE.md`), parts joined by a blank line; `mcp` (fragments under `…/harness/mcp/`, each one
+  `"name": {…}` member of `mcpServers`, no trailing comma) → the harness MCP file (`.mcp.json`) =
+  `{"mcpServers": {` line + fragments joined by `,` lines + `}}` line. Omitted when the key is
+  empty.
+- Sources live outside workspace folders (a workspace's own files are not link sources).
+- Files in the folder that aren't linked or generated are the workspace's own. There is no "copy"
+  mode: copying something in is just adding a file.
 - YAML subset as before.
 
 ## 3. Sync (`delphi sync [--check] [--base <rev>]`)
 
-For every link (source `S`, linked copies `C1…Cn` across all workspaces), per file, against the
+For every link (a `blocks`, `docs`, `skills` or `settings` entry: source `S`, linked copies `C1…Cn`
+across all workspaces), per file, against the
 base revision (default: merge-base with `origin/main`):
 
 | Situation | Result |
@@ -61,6 +86,7 @@ base revision (default: merge-base with `origin/main`):
 | New link, dest missing | copied from `S` |
 | New link, source missing | `S` created from the copy |
 | `instructions:` set | `CLAUDE.md` regenerated from its parts; a hand edit is a conflict ("generated; edit a part") |
+| `mcp:` set | `.mcp.json` regenerated from its fragments; a hand edit is a conflict ("generated; edit a fragment") |
 
 `--check` changes nothing and exits 1 if anything would change. Sync is deterministic and
 idempotent.
@@ -77,7 +103,7 @@ Details:
   to (or deleted from) one copy is added to (deleted from) the source and every copy. Deleting
   removes emptied directories.
 - Conflicting files are left untouched; everything else is still written.
-- `CLAUDE.md` = the parts joined by a blank line; it is regenerated after links are reconciled.
+- Generated files (§2) are regenerated after links are reconciled.
 - `propose`'s base, once it has pushed, is the last commit it pushed (already reconciled) merged
   with `origin/main` (`git merge-tree`), so re-proposing a shared edit never conflicts with its own
   earlier sync and reverting it is a new state; if that merge conflicts, it passes two bases (the
@@ -106,7 +132,7 @@ last pushed commit). `refresh` and `propose` need a clean checkout (commit or st
 | `delphi diff [checkout] [--upstream]` | your committed changes vs `main`, per file, tagged **own**, **linked** (`<- source`, `shared: <workspaces>`), **generated**, or **sync** (outside the folder, written by an earlier propose); `--upstream`: files changed on `main` since your last refresh, with author and subject |
 | `delphi propose [checkout] [--dry-run]` | refresh, sync (in a temp full worktree at the branch head; commits `delphi: sync shared files` with trailers), `check`, push the branch (lease: absent or last pushed), fast-forward the local branch, open/update one PR per checkout; PR body lists changed files as in `diff` (shared impact) plus the provenance table. `--dry-run`: no refresh or push; shows the sync writes and the PR body |
 | `delphi status` | every local checkout: dirty, ahead (own commits not pushed and not on `main`), behind `main` |
-| `delphi mv <old> <new>` | move a source or workspace path, rewrite `links`/`instructions` in every `workspace.yml` (and scope `recommend:`), PR; a link whose default dest would change gets an explicit `-> <old dest>`; a moved workspace gets its new `name` |
+| `delphi mv <old> <new>` | move a source or workspace path, rewrite its entries (`instructions`, `mcp`, `blocks`, `docs`, `skills`, `settings`) in every `workspace.yml` (and scope `recommend:`), PR; a link whose default dest would change gets an explicit `-> <old dest>`; a moved workspace gets its new `name` |
 | `delphi sync [--check] [--base <rev>]` | reconcile links (§3) in the current Delphi checkout |
 | `delphi check` | validate (§6) |
 | `delphi setup [dir]` | remember where the Delphi checkout is |
@@ -125,10 +151,12 @@ run; if `main` moved meanwhile the push is dropped and the newer push's run sync
 ## 6. check
 
 Scopes have `scope.yml`; every `workspace.yml` parses; `name` = folder and unique; adapter
-exists; only known keys; instruction parts and link sources exist, sources neither inside nor
-containing workspace folders; dests are inside the folder, unique, not nested in a directory link's
-dest, not under `repos/`, not `workspace.yml`, not the generated instruction file; no file named after an instruction file outside a
-workspace folder; every folder under `workspaces/` has a `workspace.yml`; scope `recommend:`
+exists; only known keys (`links:` is unknown); instruction parts, MCP fragments and link sources
+exist; each entry sits in its key's directory (§2: `skills` entries are a directory directly under
+`harness/skills/`, `mcp`/`settings` entries are files); at most one `settings`; sources neither
+inside nor containing workspace folders; dests are inside the folder, unique, not nested in a
+directory link's dest, not under `repos/`, not `workspace.yml`, not a generated file; no file named
+after an instruction file outside a workspace folder; every folder under `workspaces/` has a `workspace.yml`; scope `recommend:`
 paths exist; no symlinks.
 
 ## 7. Unchanged

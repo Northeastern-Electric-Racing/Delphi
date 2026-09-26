@@ -4,9 +4,10 @@ instructions:                      # CLAUDE.md is generated from these parts (ed
   - software/application-software/argos/harness/instructions/workspace.md
   - software/application-software/argos/harness/instructions/base.md
   - software/application-software/argos/harness/instructions/argos.md
-links:                             # shared with other workspaces; delphi sync keeps them equal
+skills:                            # shared with other workspaces; delphi sync keeps them equal
   - software/application-software/argos/harness/skills/commit
   - software/application-software/argos/harness/skills/to-tickets
+blocks:
   - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
   - software/application-software/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
 repos:
