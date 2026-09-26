@@ -1,15 +1,18 @@
 //! `delphi sync [--check] [--base <rev>]` (spec §3). For every linked source file, its source and
 //! all linked copies (across every workspace) are compared with the base revision(s): one distinct
-//! new state is written everywhere, several are a conflict. Then generated files (instruction
-//! file, MCP file) are regenerated from `instructions:` and `mcp:`. Works on any full Delphi working tree; deterministic and idempotent.
+//! new state is written everywhere, several are a conflict. Each `skill.yml`'s `SKILL.md` is
+//! generated first (so it fans out via links); the instruction and MCP files are generated last
+//! from `instructions:` and `mcp:`. Works on any full Delphi working tree; deterministic and
+//! idempotent.
 
 use crate::core::{
     commit, exit, find, git, join, out, out_q, out_stdin, parse_args, rel_to, root, safe_path, under, write_file,
 };
-use crate::workspace::{self, folder_of, Ws, YML};
+use crate::parse::{parse_yaml, Yaml};
+use crate::workspace::{self, folder_of, Ws, SKILL_YML, YML};
 use crate::{die, info};
 use anyhow::Result;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
@@ -187,11 +190,9 @@ fn remove(dir: &Path, f: &Path) {
     }
 }
 
-/// A generated file assembled from parts (instructions: joined by a blank line; mcp: wrapped in
-/// `mcpServers`, joined by `,` lines), or the missing part.
-fn assemble(dir: &Path, key: &str, parts: &[String]) -> Result<Result<Vec<u8>, String>> {
-    let (head, sep, tail): (&[u8], &[u8], &[u8]) =
-        if key == "mcp" { (b"{\"mcpServers\": {\n", b",\n", b"}}\n") } else { (b"", b"\n", b"") };
+/// A generated file: `head`, the parts joined by `sep` (each ending in a newline), `tail`; or the
+/// missing part.
+fn assemble(dir: &Path, head: &[u8], sep: &[u8], tail: &[u8], parts: &[String]) -> Result<Result<Vec<u8>, String>> {
     let mut text = head.to_vec();
     for (i, p) in parts.iter().enumerate() {
         let Ok(t) = fs::read(safe_path(dir, &format!("context/{p}"))?) else { return Ok(Err(p.clone())) };
@@ -205,6 +206,57 @@ fn assemble(dir: &Path, key: &str, parts: &[String]) -> Result<Result<Vec<u8>, S
     }
     text.extend(tail);
     Ok(Ok(text))
+}
+
+/// Write generated `text` to `p`; a hand edit since the bases is a conflict ("generated from
+/// {why}"). Returns false on a conflict.
+fn put(dir: &Path, bases: &[Base], check: bool, r: &mut Report, p: String, text: &[u8], why: &str) -> Result<bool> {
+    let f = safe_path(dir, &p)?;
+    let now = fs::read(&f).ok();
+    if now.as_deref() == Some(text) {
+        return Ok(true);
+    }
+    let st = states(dir, [&p])?.remove(&p).flatten();
+    if now.is_some() && !bases.iter().any(|b| b.tree.get(&p).cloned() == st) {
+        r.conflicts.push(format!("{p}: generated from {why}"));
+        return Ok(false);
+    }
+    if !check {
+        write_file(&f, text, false, &p)?;
+    }
+    r.writes.push((if now.is_none() { "created" } else { "updated" }, p));
+    Ok(true)
+}
+
+/// Every `skill.yml` in the working tree: (repo-relative skill directory, parsed), sorted.
+fn skills(dir: &Path) -> Result<Vec<(String, Yaml)>> {
+    let ctx = dir.join("context");
+    let mut v = vec![];
+    for (p, ft) in find(&ctx, &|_| false) {
+        let rel = format!("context/{}", rel_to(&p, &ctx));
+        if let (true, Some(d)) = (ft.is_file(), rel.strip_suffix(&format!("/{SKILL_YML}"))) {
+            v.push((d.to_string(), parse_yaml(&p)?));
+        }
+    }
+    v.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(v)
+}
+
+/// Generate each skill's `SKILL.md` from its `skill.yml`; returns the hand-edited ones.
+fn gen_skills(dir: &Path, bases: &[Base], check: bool, r: &mut Report) -> Result<HashSet<String>> {
+    let mut edited = HashSet::new();
+    for (d, y) in skills(dir)? {
+        let head = format!("---\nname: {}\ndescription: {}\n---\n", y.get("name"), y.get("description"));
+        let p = format!("{d}/SKILL.md");
+        match assemble(dir, head.as_bytes(), b"\n", b"", &y.list("body"))? {
+            Err(b) => r.conflicts.push(format!("{d}/{SKILL_YML}: body: missing context/{b}")),
+            Ok(t) if !put(dir, bases, check, r, p.clone(), &t, "skill.yml (don't hand-edit it; edit a block)")? => {
+                edited.insert(p);
+            }
+            Ok(_) => {}
+        }
+    }
+    Ok(edited)
 }
 
 /// Every linked file grouped by its source (relative to context/): (copy path, whether its link
@@ -257,28 +309,13 @@ fn groups(dir: &Path, wss: &[Ws], bases: &[Base]) -> Groups {
 /// Regenerate each workspace's generated files (`instructions:`, `mcp:`); a hand edit is a conflict.
 fn generate(dir: &Path, wss: &[Ws], bases: &[Base], check: bool, r: &mut Report) -> Result<()> {
     for (w, (key, parts, file, what)) in wss.iter().flat_map(|w| w.generated().into_iter().map(move |g| (w, g))) {
-        let text = match assemble(dir, key, parts)? {
-            Ok(t) => t,
-            Err(p) => {
-                r.conflicts.push(format!("{}: {key}: missing context/{p}", w.path(YML)));
-                continue;
-            }
-        };
-        let ip = w.path(file);
-        let f = safe_path(dir, &ip)?;
-        let now = fs::read(&f).ok();
-        if now.as_deref() == Some(&text[..]) {
-            continue;
+        let (head, sep, tail): (&[u8], &[u8], &[u8]) =
+            if key == "mcp" { (b"{\"mcpServers\": {\n", b",\n", b"}}\n") } else { (b"", b"\n", b"") };
+        let why = format!("{key}: in {YML} (don't hand-edit it; edit a {what})");
+        match assemble(dir, head, sep, tail, parts)? {
+            Ok(t) => drop(put(dir, bases, check, r, w.path(file), &t, &why)?),
+            Err(p) => r.conflicts.push(format!("{}: {key}: missing context/{p}", w.path(YML))),
         }
-        let st = states(dir, [&ip])?.remove(&ip).flatten();
-        if now.is_some() && !bases.iter().any(|b| b.tree.get(&ip).cloned() == st) {
-            r.conflicts.push(format!("{ip}: generated from {key}: in {YML} (don't hand-edit it; edit a {what})"));
-            continue;
-        }
-        if !check {
-            write_file(&f, &text, false, &ip)?;
-        }
-        r.writes.push((if now.is_none() { "created" } else { "updated" }, ip));
     }
     Ok(())
 }
@@ -287,14 +324,19 @@ fn generate(dir: &Path, wss: &[Ws], bases: &[Base], check: bool, r: &mut Report)
 pub fn sync(dir: &Path, base_revs: &[String], check: bool) -> Result<Report> {
     let wss = workspaces(dir)?;
     let bases: Vec<Base> = base_revs.iter().map(|r| load_base(dir, r)).collect();
+    let mut r = Report { writes: vec![], conflicts: vec![] };
+    let edited = gen_skills(dir, &bases, check, &mut r)?;
     let groups = groups(dir, &wss, &bases);
     let paths: BTreeSet<String> = groups
         .iter()
         .flat_map(|(s, m)| std::iter::once(format!("context/{s}")).chain(m.iter().map(|x| x.0.clone())))
         .collect();
     let cur = states(dir, &paths)?;
-    let mut r = Report { writes: vec![], conflicts: vec![] };
     for (src, members) in &groups {
+        // a hand-edited generated SKILL.md is not spread to its source or copies
+        if edited.contains(&format!("context/{src}")) || members.iter().any(|m| edited.contains(&m.0)) {
+            continue;
+        }
         let writes = match plan(src, members, &cur, &bases) {
             Ok(w) => w,
             Err(c) => {

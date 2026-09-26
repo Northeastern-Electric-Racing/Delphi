@@ -27,7 +27,7 @@ const USAGE: &str = "usage: delphi <command> [args]
   propose [<checkout>] [--dry-run]               refresh, sync, check, push, open/update the PR
   status                                         every local checkout
   mv <old> <new>                                 move a source or workspace path (PR)
-  sync [--check] [--base <rev>]                  reconcile links in this Delphi checkout
+  sync [--check] [--base <rev>]                  reconcile links, regenerate generated files
   check                                          validate the repo
   setup [dir]                                    record this Delphi checkout for use anywhere
 

@@ -7,8 +7,5 @@ instructions:                      # CLAUDE.md is generated from these parts (ed
 skills:                            # shared with other workspaces; delphi sync keeps them equal
   - software/application-software/argos/harness/skills/commit
   - software/application-software/argos/harness/skills/to-tickets
-blocks:
-  - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
-  - software/application-software/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
 repos:
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git

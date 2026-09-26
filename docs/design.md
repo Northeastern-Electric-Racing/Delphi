@@ -25,7 +25,7 @@ context/                                   # scopes (org chart), as before
     workspace.yml
     CLAUDE.md                              # committed (generated if `instructions:` is set)
     .mcp.json                              # generated if `mcp:` is set
-    .claude/skills/…  docs/…  anything else
+    .claude/skills/…  docs/…  anything else  # a skill may be composed from blocks (§2.1)
 ```
 
 ```yaml
@@ -36,7 +36,7 @@ instructions:                      # optional: CLAUDE.md is generated from these
   - harness/instructions/workspace.md
   - software/harness/instructions/base.md
 blocks:                            # linked: shared source -> path in this folder, kept in sync
-  - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
+  - software/application-software/argos/blocks/glossary.md          # default dest: context/<same path>
 docs:
   - software/application-software/argos/docs/CONTEXT.md           # default dest: docs/CONTEXT.md
 skills:
@@ -72,6 +72,26 @@ sources sit in its `blocks/`, `docs/` and `harness/{instructions,skills,mcp,sett
   mode: copying something in is just adding a file.
 - YAML subset as before.
 
+### 2.1 Composed skills
+
+Any skill directory under `context/` (a scope's `harness/skills/<n>/` source, or `<skills dir>/<n>/`
+in a workspace folder) may hold a `skill.yml`; its `SKILL.md` is then generated from blocks:
+
+```yaml
+# .claude/skills/open-pr/skill.yml
+name: open-pr                                          # required
+description: Run pre-PR checks and open a draft PR     # required
+body:                                                  # blocks, each a file under a scope's blocks/
+  - software/application-software/argos/blocks/open-pr.md
+  - software/application-software/argos/blocks/pr-body.md
+```
+
+`SKILL.md` = `---`, `name: <name>`, `description: <description>`, `---` lines, then each body
+block, one blank line between blocks (each block ends with one newline). `skill.yml` is an
+ordinary file: a linked skill directory carries it to every copy, so a block edit regenerates the
+source's and every copy's `SKILL.md` alike. A shared block is edited once, in its source; it is
+not linked into the workspace.
+
 ## 3. Sync (`delphi sync [--check] [--base <rev>]`)
 
 For every link (a `blocks`, `docs`, `skills` or `settings` entry: source `S`, linked copies `C1…Cn`
@@ -87,6 +107,7 @@ base revision (default: merge-base with `origin/main`):
 | New link, source missing | `S` created from the copy |
 | `instructions:` set | `CLAUDE.md` regenerated from its parts; a hand edit is a conflict ("generated; edit a part") |
 | `mcp:` set | `.mcp.json` regenerated from its fragments; a hand edit is a conflict ("generated; edit a fragment") |
+| A `skill.yml` (§2.1) | its `SKILL.md` regenerated from its blocks; a hand edit is a conflict ("generated from skill.yml; edit a block") |
 
 `--check` changes nothing and exits 1 if anything would change. Sync is deterministic and
 idempotent.
@@ -103,7 +124,10 @@ Details:
   to (or deleted from) one copy is added to (deleted from) the source and every copy. Deleting
   removes emptied directories.
 - Conflicting files are left untouched; everything else is still written.
-- Generated files (§2) are regenerated after links are reconciled.
+- Skills' `SKILL.md` (§2.1) are generated before links are reconciled, so a regenerated source
+  fans out to its copies; a hand-edited one (it changed since the base and differs from what
+  generation gives) is a conflict and its link is left alone. `CLAUDE.md` and `.mcp.json` are
+  generated after links are reconciled.
 - `propose`'s base, once it has pushed, is the last commit it pushed (already reconciled) merged
   with `origin/main` (`git merge-tree`), so re-proposing a shared edit never conflicts with its own
   earlier sync and reverting it is a new state; if that merge conflicts, it passes two bases (the
@@ -129,10 +153,10 @@ last pushed commit). `refresh` and `propose` need a clean checkout (commit or st
 | `delphi checkout <name> [--as <checkout>]` | sparse clone, branch, clone repos |
 | `delphi open [checkout] [--shell]` | warn if behind `main`; launch the harness (or a shell) in the folder |
 | `delphi refresh [checkout]` | `git fetch` + `git merge origin/main` (exit 2 on conflict; resolve with git) |
-| `delphi diff [checkout] [--upstream]` | your committed changes vs `main`, per file, tagged **own**, **linked** (`<- source`, `shared: <workspaces>`), **generated**, or **sync** (outside the folder, written by an earlier propose); `--upstream`: files changed on `main` since your last refresh, with author and subject |
+| `delphi diff [checkout] [--upstream]` | your committed changes vs `main`, per file, tagged **own**, **linked** (`<- source`, `shared: <workspaces>`), **generated** (`CLAUDE.md`, `.mcp.json`, a `SKILL.md` with a `skill.yml`), or **sync** (outside the folder, written by an earlier propose); `--upstream`: files changed on `main` since your last refresh, with author and subject |
 | `delphi propose [checkout] [--dry-run]` | refresh, sync (in a temp full worktree at the branch head; commits `delphi: sync shared files` with trailers), `check`, push the branch (lease: absent or last pushed), fast-forward the local branch, open/update one PR per checkout; PR body lists changed files as in `diff` (shared impact) plus the provenance table. `--dry-run`: no refresh or push; shows the sync writes and the PR body |
 | `delphi status` | every local checkout: dirty, ahead (own commits not pushed and not on `main`), behind `main` |
-| `delphi mv <old> <new>` | move a source or workspace path, rewrite its entries (`instructions`, `mcp`, `blocks`, `docs`, `skills`, `settings`) in every `workspace.yml` (and scope `recommend:`), PR; a link whose default dest would change gets an explicit `-> <old dest>`; a moved workspace gets its new `name` |
+| `delphi mv <old> <new>` | move a source or workspace path, rewrite its entries (`instructions`, `mcp`, `blocks`, `docs`, `skills`, `settings`) in every `workspace.yml` (and scope `recommend:`, skill `body:`), PR; a link whose default dest would change gets an explicit `-> <old dest>`; a moved workspace gets its new `name` |
 | `delphi sync [--check] [--base <rev>]` | reconcile links (§3) in the current Delphi checkout |
 | `delphi check` | validate (§6) |
 | `delphi setup [dir]` | remember where the Delphi checkout is |
@@ -157,7 +181,8 @@ exist; each entry sits in its key's directory (§2: `skills` entries are a direc
 inside nor containing workspace folders; dests are inside the folder, unique, not nested in a
 directory link's dest, not under `repos/`, not `workspace.yml`, not a generated file; no file named
 after an instruction file outside a workspace folder; every folder under `workspaces/` has a `workspace.yml`; scope `recommend:`
-paths exist; no symlinks.
+paths exist; every `skill.yml` parses, has `name` and `description`, only known keys (`name`,
+`description`, `body`), and its `body` entries are existing files under a scope's `blocks/`; no symlinks.
 
 ## 7. Unchanged
 

@@ -32,6 +32,14 @@ Drive the CLI. Don't write to `context/` yourself.
    - `mcp:` (optional): MCP fragments under `…/harness/mcp/` (each one `"name": {…}` member, no
      trailing comma); `.mcp.json` is generated from them and must not be hand-edited.
    - `repos:` as `name: git-url` (cloned into `repos/` in a checkout).
+   **Composing a skill from blocks** (instead of linking a block file next to it): a skill
+   directory, shared (`…/harness/skills/<n>/`) or the workspace's own (`.claude/skills/<n>/`), may
+   hold a `skill.yml` with `name`, `description` and `body:` (block paths under a scope's
+   `blocks/`, relative to `context/`). `delphi sync` generates its `SKILL.md`: frontmatter, then
+   the blocks joined by a blank line. Put the skill's own text in a block too. The generated file
+   must not be hand-edited; users edit a block or `skill.yml`. A workspace's own composed skill is
+   added in a checkout after the PR merges, like any own file (list the blocks in `body:`, not in
+   `blocks:`).
    Only link what should stay shared. Anything team-specific becomes the workspace's own file:
    after the PR merges, add it in a checkout and propose it. Tell the user which sources other
    workspaces already link: edits to those reach other teams.
@@ -39,6 +47,6 @@ Drive the CLI. Don't write to `context/` yourself.
 5. **Create it:**
    `delphi create <scope> <name> --from <draft> --model <your model> --effort <effort> --yes`
    It writes the folder, runs `delphi sync` (materializing linked files, `CLAUDE.md`,
-   `.mcp.json`) and `delphi check`, and prints the branch (`delphi/create/<name>`). On a check
+   `.mcp.json`, composed `SKILL.md`s) and `delphi check`, and prints the branch (`delphi/create/<name>`). On a check
    failure, fix the draft and retry.
 6. Once the PR merges: `delphi checkout <name>`, then `delphi open <name>`.

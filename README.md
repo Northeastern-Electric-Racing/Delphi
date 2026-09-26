@@ -7,7 +7,8 @@ Every **workspace** is a folder in Delphi, `context/<scope>/workspaces/<name>/`,
 materialized on `main`: its `CLAUDE.md`, `.claude/skills/…`, and `docs/…` are real files. Some
 files are **linked** to a shared source elsewhere in `context/` (a skill several teams use);
 `delphi sync` keeps the source and every linked copy identical. `CLAUDE.md` and `.mcp.json` can be
-generated from shared parts. The rest are the workspace's own.
+generated from shared parts, and a skill's `SKILL.md` can be composed from shared blocks
+(`skill.yml`). The rest are the workspace's own.
 
 - **checkout** a workspace: a sparse clone holding just that folder, on your own branch, with
   its code repos cloned into `repos/`,
@@ -47,7 +48,7 @@ instructions:                         # optional: CLAUDE.md is generated from th
 skills:                               # linked: <source> [-> <dest>], kept in sync
   - software/harness/skills/commit    # default dest: .claude/skills/commit
 blocks:                               # default dest: context/<source>
-  - software/application-software/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
+  - software/application-software/argos/blocks/glossary.md          # default dest: context/<same path>
 docs:                                 # default dest: docs/<path below docs/>
   - software/application-software/argos/docs/CONTEXT.md
 mcp:                                  # optional: .mcp.json is generated from these fragments
@@ -55,6 +56,17 @@ mcp:                                  # optional: .mcp.json is generated from th
 settings: software/harness/settings/default.json   # linked to .claude/settings.json
 repos:                                # cloned into repos/ in a checkout, git-ignored
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
+```
+
+A skill directory (shared or the workspace's own) may hold a `skill.yml`; `delphi sync` then
+generates its `SKILL.md` from blocks (don't hand-edit it; edit a block):
+
+```yaml
+name: open-pr
+description: Run pre-PR checks and open a draft pull request
+body:                                 # blocks under a scope's blocks/, joined by a blank line
+  - software/application-software/argos/blocks/open-pr.md
+  - software/application-software/argos/blocks/pr-body.md
 ```
 
 ## Commands

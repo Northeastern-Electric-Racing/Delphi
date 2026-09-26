@@ -15,8 +15,9 @@ directly.
    - `linked … <- <source>`: a shared file. Propose writes the edit to the source and to every
      other workspace that links it. `(shared: a, b)` names those workspaces: tell the user their
      edit reaches those teams, and ask them to confirm.
-   - `generated`: `CLAUDE.md` built from `instructions:` or `.mcp.json` built from `mcp:`. Hand
-     edits are rejected: revert it and edit the part or fragment in Delphi instead.
+   - `generated`: `CLAUDE.md` built from `instructions:`, `.mcp.json` built from `mcp:`, or a
+     skill's `SKILL.md` built from the blocks in its `skill.yml`. Hand edits are rejected: revert it
+     and edit the part, fragment, or block (or `skill.yml`) in Delphi instead.
    - `sync`: a file outside the folder written by an earlier propose (a source or another
      workspace's copy).
    `delphi diff --upstream` shows what changed on `main` since the last refresh.
@@ -29,7 +30,11 @@ directly.
    - `… is newly linked to <source> but differs from it`: a new `blocks`/`docs`/`skills`/`settings`
      entry points at a file that already exists here with other content. Delete the file to take
      the source (or make it identical), commit, re-run.
-   - `generated from instructions:` / `generated from mcp:`: see `generated` above.
+   - `generated from instructions:` / `generated from mcp:` / `generated from skill.yml (don't
+     hand-edit it; edit a block)`: see `generated` above. Restore the file (`git checkout
+     origin/main -- <file>`), make the change in the block or `skill.yml`, commit, re-run.
+   - `…/skill.yml: body: missing context/<block>`: a `body:` entry names a block that doesn't
+     exist; fix the path.
    Suggest a fix and apply it only after the user approves.
 5. Run `delphi propose --model <your model> --effort <effort> --yes`. It merges `main` first: on
    exit code 2 (merge conflicts), help resolve them with git, commit, and run it again. Then it

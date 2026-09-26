@@ -847,3 +847,141 @@ fn per_key_default_dests_mcp_generation_and_settings_link() {
     assert!(y.contains("\nsettings: software/harness/settings/base.json -> .claude/team.json\n"), "{y}");
     sb.assert_cleaned_up();
 }
+
+const SKILL_HEAD: &str = "---\nname: run-tests\ndescription: Run the test suites.\n---\n";
+
+/// Compose the linked skill run-tests from a block (plus pr-body.md), sync, and push it to main.
+fn compose_run_tests(sb: &Sb) {
+    let root = sb.root();
+    sb.write(&root.join("context/software/blocks/run.md"), "Run both suites.\n");
+    sb.write(
+        &root.join(RT).join("skill.yml"),
+        "name: run-tests\ndescription: Run the test suites.\nbody:\n  - software/blocks/run.md\n  - software/application-software/argos/blocks/pr-body.md\n",
+    );
+    sb.ok(&root, &["sync"]);
+    sb.ok(&root, &["check"]);
+    sb.sh(&root, "git add -A && git commit -qm compose && git push -q origin HEAD:main");
+}
+
+#[test]
+fn sync_generates_linked_skill_from_blocks_and_fans_out() {
+    let sb = Sb::new("skill");
+    let root = sb.root();
+    compose_run_tests(&sb);
+    let want = format!("{SKILL_HEAD}Run both suites.\n\n**PR body:** fill the template.\n");
+    for d in [RT.to_string(), format!("{AD}/.claude/skills/run-tests"), format!("{ND}/.claude/skills/run-tests")] {
+        assert_eq!(sb.read(&root.join(&d).join("SKILL.md")), want, "{d}");
+        assert!(root.join(&d).join("skill.yml").is_file(), "{d}");
+    }
+
+    // a block edit: --check reports it stale; sync regenerates the source and both copies
+    sb.sh(&root, "printf 'Run them in parallel.\\n' >> context/software/blocks/run.md");
+    let r = sb.d(&root, &["sync", "--check"]);
+    assert_eq!(r.code, 1);
+    assert_eq!(
+        r.stdout,
+        format!(
+            "  would be updated {AD}/.claude/skills/run-tests/SKILL.md\n  would be updated {ND}/.claude/skills/run-tests/SKILL.md\n  would be updated {RT}/SKILL.md\n"
+        )
+    );
+    assert_eq!(r.stderr, "sync: out of sync (run: delphi sync)\n");
+    assert_eq!(sb.read(&root.join(RT).join("SKILL.md")), want);
+    sb.ok(&root, &["sync"]);
+    let want = format!("{SKILL_HEAD}Run both suites.\nRun them in parallel.\n\n**PR body:** fill the template.\n");
+    for d in [RT.to_string(), format!("{AD}/.claude/skills/run-tests"), format!("{ND}/.claude/skills/run-tests")] {
+        assert_eq!(sb.read(&root.join(&d).join("SKILL.md")), want, "{d}");
+    }
+    let r = sb.ok(&root, &["sync"]);
+    assert_eq!((r.stdout.as_str(), r.stderr.as_str()), ("", "sync: ok\n"));
+    sb.sh(&root, "git add -A && git commit -qm parallel && git push -q origin HEAD:main");
+
+    // a hand edit to a copy is a conflict, and is not spread to the source or the other copy
+    sb.sh(&root, &format!("echo hand >> {ND}/.claude/skills/run-tests/SKILL.md"));
+    let r = sb.d(&root, &["sync"]);
+    assert_eq!(r.code, 1);
+    assert_eq!(
+        r.stderr,
+        format!(
+            "conflict: {ND}/.claude/skills/run-tests/SKILL.md: generated from skill.yml (don't hand-edit it; edit a block)\nsync: 1 conflict(s); fix them by hand, then re-run: delphi sync\n"
+        )
+    );
+    assert_eq!(r.stdout, "");
+    assert_eq!(sb.read(&root.join(RT).join("SKILL.md")), want);
+
+    // mv of a body block rewrites every skill.yml that uses it
+    sb.sh(&root, &format!("git checkout -q {ND}"));
+    let r = sb.ok(&sb.dir, &["mv", "software/blocks/run.md", "software/blocks/tests/run.md", "--yes"]);
+    let br = r.stdout.lines().last().unwrap().to_string();
+    sb.git(&root, &["fetch", "-q", "origin"]);
+    for d in [RT.to_string(), format!("{AD}/.claude/skills/run-tests"), format!("{ND}/.claude/skills/run-tests")] {
+        let y = sb.git(&root, &["show", &format!("origin/{br}:{d}/skill.yml")]);
+        assert!(y.contains("body:\n  - software/blocks/tests/run.md\n  - software/"), "{d}: {y}");
+    }
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn workspace_own_skill_generated_diff_tag_and_hand_edit_conflict() {
+    let sb = Sb::new("ownskill");
+    let root = sb.root();
+    let op = format!("{AD}/.claude/skills/open-pr");
+    sb.write(
+        &root.join(&op).join("skill.yml"),
+        "name: open-pr\ndescription: Open a PR.\nbody:\n  - software/application-software/argos/blocks/pr-body.md\n",
+    );
+    let r = sb.ok(&root, &["sync"]);
+    assert_eq!(r.stdout, format!("  updated {op}/SKILL.md\n"));
+    assert_eq!(
+        sb.read(&root.join(&op).join("SKILL.md")),
+        "---\nname: open-pr\ndescription: Open a PR.\n---\n**PR body:** fill the template.\n"
+    );
+    sb.ok(&root, &["check"]);
+    sb.sh(&root, "git add -A && git commit -qm own && git push -q origin HEAD:main");
+
+    // a hand edit is a conflict; editing skill.yml (or a block) regenerates it
+    sb.sh(&root, &format!("echo hand >> {op}/SKILL.md"));
+    let r = sb.d(&root, &["sync", "--check"]);
+    assert_eq!(r.code, 1);
+    assert!(
+        r.stderr.starts_with(&format!(
+            "conflict: {op}/SKILL.md: generated from skill.yml (don't hand-edit it; edit a block)\n"
+        )),
+        "{}",
+        r.stderr
+    );
+    sb.sh(&root, &format!("git checkout -q {op} && sed -i 's/Open a PR./Open a draft PR./' {op}/skill.yml"));
+    let r = sb.ok(&root, &["sync"]);
+    assert_eq!(r.stdout, format!("  updated {op}/SKILL.md\n"));
+    assert!(sb.read(&root.join(&op).join("SKILL.md")).contains("description: Open a draft PR.\n"));
+
+    // diff tags a generated SKILL.md
+    let co = sb.checkout("argos-dev", "a");
+    sb.edit(&co.join(AD), "echo x >> .claude/skills/open-pr/SKILL.md");
+    let r = sb.ok(&co.join(AD), &["diff"]);
+    assert_eq!(r.stdout, "  M generated .claude/skills/open-pr/SKILL.md\n");
+    sb.assert_cleaned_up();
+}
+
+#[test]
+fn check_reports_skill_yml_failures() {
+    let sb = Sb::new("skillcheck");
+    let root = sb.root();
+    let op = root.join(AD).join(".claude/skills/open-pr/skill.yml");
+    sb.write(
+        &op,
+        "description: Open a PR.\nextra: 1\nbody:\n  - software/docs/guide.md\n  - software/blocks/nope.md\n  - ../x.md\n",
+    );
+    let r = sb.d(&root, &["check"]);
+    assert_eq!(r.code, 1);
+    let y = format!("{AD}/.claude/skills/open-pr/skill.yml");
+    assert_eq!(
+        r.stderr,
+        format!(
+            "check: {y}: missing name\ncheck: {y}: unknown key 'extra'\ncheck: {y}: body: context/software/docs/guide.md must be a file under a scope's blocks/\ncheck: {y}: body: missing context/software/blocks/nope.md\ncheck: {y}: body: missing context/../x.md\n"
+        )
+    );
+    sb.write(&op, "name: open-pr\nbody: [x]\n");
+    let r = sb.d(&root, &["check"]);
+    assert_eq!(r.code, 1);
+    assert!(r.stderr.contains(&format!("{y}:2: unsupported YAML syntax")), "{}", r.stderr);
+}

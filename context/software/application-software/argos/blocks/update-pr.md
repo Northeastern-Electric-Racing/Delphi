@@ -1,0 +1,1 @@
+Rewrite the current branch's PR body (`gh pr view`) to match `git diff develop...HEAD`. Keep human-written text that's still accurate, `user-attachments` screenshots, and `Closes`/`Fixes` refs. Apply it with `gh pr edit --body-file`.

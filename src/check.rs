@@ -4,7 +4,7 @@
 use crate::core::{basename, exit, find, path_ok, rel_to, root, under};
 use crate::harness::HARNESSES;
 use crate::parse::parse_yaml;
-use crate::workspace::{below, folder_of, load, KEYS, YML};
+use crate::workspace::{below, folder_of, load, KEYS, SKILL_YML, YML};
 use crate::{die, info};
 use anyhow::Result;
 use std::path::Path;
@@ -67,6 +67,8 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
                     }
                 }
             }
+        } else if ft.is_file() && basename(&r) == SKILL_YML {
+            check_skill(&ctx, p, &r, &mut errs);
         }
     }
 
@@ -81,6 +83,28 @@ pub fn check_tree(root_dir: &Path) -> Result<bool> {
         eprintln!("check: {e}");
     }
     Ok(errs.is_empty())
+}
+
+/// Violations in a `skill.yml` (`r` relative to context/).
+fn check_skill(ctx: &Path, p: &Path, r: &str, errs: &mut Vec<String>) {
+    let y = match parse_yaml(p) {
+        Ok(y) => y,
+        Err(e) => return errs.push(format!("{e:#}")),
+    };
+    let mut err = |m: String| errs.push(format!("context/{r}: {m}"));
+    for k in ["name", "description"].into_iter().filter(|k| y.get(k).is_empty()) {
+        err(format!("missing {k}"));
+    }
+    for k in y.keys().into_iter().filter(|k| !["name", "description", "body"].contains(&k.as_str())) {
+        err(format!("unknown key '{k}'"));
+    }
+    for b in y.list("body") {
+        if !path_ok(&b) || !ctx.join(&b).is_file() {
+            err(format!("body: missing context/{b}"));
+        } else if below(&b, "blocks").is_none_or(|x| x.is_empty()) {
+            err(format!("body: context/{b} must be a file under a scope's blocks/"));
+        }
+    }
 }
 
 /// Violations in workspace folder `f` (relative to context/); `names` collects names seen so far.

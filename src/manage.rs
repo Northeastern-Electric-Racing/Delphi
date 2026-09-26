@@ -8,7 +8,7 @@ use crate::core::{
 use crate::parse::parse_yaml;
 use crate::pr::{self, Pr};
 use crate::sync::sync;
-use crate::workspace::{self, default_dest, split_link, LINK_KEYS, YML};
+use crate::workspace::{self, default_dest, split_link, LINK_KEYS, SKILL_YML, YML};
 use crate::{die, harness, info, provenance};
 use anyhow::Result;
 use std::fs;
@@ -102,7 +102,9 @@ fn rewrite(file: &Path, old: &str, new: &str) -> Result<()> {
         }
         let link = LINK_KEYS.contains(&key.as_str());
         let item = match bare.strip_prefix("  - ") {
-            Some(v) if link || ["instructions", "mcp", "recommend"].contains(&key.as_str()) => Some(("  - ", v)),
+            Some(v) if link || ["instructions", "mcp", "recommend", "body"].contains(&key.as_str()) => {
+                Some(("  - ", v))
+            }
             _ => bare.strip_prefix("settings: ").map(|v| ("settings: ", v)),
         };
         let Some((pre, (src, dest))) =
@@ -153,7 +155,7 @@ fn mv(old: &str, new: &str, o: &Opts) -> Result<()> {
         die!("git mv failed");
     }
     for (f, ft) in find(&ctx, &|_| false) {
-        if ft.is_file() && f.file_name().is_some_and(|n| n == YML || n == "scope.yml") {
+        if ft.is_file() && f.file_name().is_some_and(|n| n == YML || n == "scope.yml" || n == SKILL_YML) {
             rewrite(&f, old, new)?;
         }
     }
@@ -168,6 +170,6 @@ fn mv(old: &str, new: &str, o: &Opts) -> Result<()> {
     }
     info!("moved context/{old} -> context/{new}");
     let body =
-        format!("Moves `context/{old}` to `context/{new}` and rewrites the `workspace.yml` entries that use it.");
+        format!("Moves `context/{old}` to `context/{new}` and rewrites the `workspace.yml`, `scope.yml` and `skill.yml` entries that use it.");
     finish(&pr, &c, &format!("delphi: move {old} -> {new}"), &body)
 }

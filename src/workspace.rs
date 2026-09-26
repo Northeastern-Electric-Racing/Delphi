@@ -11,6 +11,8 @@ use anyhow::Result;
 use std::path::Path;
 
 pub const YML: &str = "workspace.yml";
+/// A skill directory's `name`, `description` and `body` (blocks) its `SKILL.md` is generated from.
+pub const SKILL_YML: &str = "skill.yml";
 pub const KEYS: &[&str] = &["name", "harness", "instructions", "mcp", "blocks", "docs", "skills", "settings", "repos"];
 pub const LINK_KEYS: &[&str] = &["blocks", "docs", "skills", "settings"];
 

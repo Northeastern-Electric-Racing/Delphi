@@ -11,7 +11,7 @@ use crate::core::{
 use crate::parse::parse_yaml;
 use crate::pr::{open_pr, user, Pr};
 use crate::sync::{merge_base, sync};
-use crate::workspace::{self, sharing, YML};
+use crate::workspace::{self, sharing, SKILL_YML, YML};
 use crate::{die, harness, info, provenance, warn};
 use anyhow::Result;
 use std::fs;
@@ -322,7 +322,8 @@ fn refresh(co: &Co) -> Result<()> {
 
 // ---- diff ----
 /// Changed files between two points of `dir` (git diff args), per file: own / linked (with the
-/// workspaces sharing its source) / generated inside the folder, `sync` outside it.
+/// workspaces sharing its source) / generated (an instruction, MCP or skill-generated `SKILL.md`)
+/// inside the folder, `sync` outside it.
 fn listing(dir: &Path, folder: &str, args: &[&str], md: bool) -> Result<String> {
     let text = fs::read_to_string(safe_path(dir, &format!("{folder}/{YML}"))?).unwrap_or_default();
     let w = workspace::load(folder.strip_prefix("context/").unwrap_or(folder), &text, YML).ok();
@@ -342,7 +343,11 @@ fn listing(dir: &Path, folder: &str, args: &[&str], md: bool) -> Result<String> 
                     if !sh.is_empty() {
                         extra += &format!(" (shared: {})", sh.join(", "));
                     }
-                } else if w.generated().iter().any(|g| g.2 == rel) {
+                }
+                let skill = rel.strip_suffix("SKILL.md").filter(|d| d.is_empty() || d.ends_with('/'));
+                let skill = skill
+                    .is_some_and(|d| safe_path(dir, &format!("{folder}/{d}{SKILL_YML}")).is_ok_and(|p| p.is_file()));
+                if skill || w.generated().iter().any(|g| g.2 == rel) {
                     kind = "generated";
                 }
             }

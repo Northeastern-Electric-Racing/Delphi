@@ -12,7 +12,7 @@ what any change must keep.
 - `src/core.rs`: messages (`die!`, `warn!`, `info!`), deferred cleanup, prompts, config, `safe_path`, running git, fetch/commit/worktree helpers, `parse_args`, path helpers.
 - `src/parse.rs`: strict YAML-subset parser.
 - `src/workspace.rs`: `workspace.yml` (linked keys `blocks`/`docs`/`skills`/`settings` as `<source> [-> <dest>]` with per-key default dests; generated keys `instructions`/`mcp`) and listing workspaces at a revision.
-- `src/sync.rs`: `delphi sync`: reconcile linked files across workspaces against base revisions; regenerate instruction and MCP files.
+- `src/sync.rs`: `delphi sync`: generate skills' `SKILL.md` from `skill.yml`, reconcile linked files across workspaces against base revisions, regenerate instruction and MCP files.
 - `src/check.rs`: `delphi check`: repo validation.
 - `src/checkout.rs`: local checkouts and `checkout`, `open`, `refresh`, `diff`, `propose`, `status`.
 - `src/manage.rs`: `create`, `list`, `mv`.
