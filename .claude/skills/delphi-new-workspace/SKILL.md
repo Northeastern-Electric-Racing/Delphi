@@ -16,7 +16,7 @@ Drive the CLI. Don't write to `context/` yourself.
    `context/`.
    - `name`: the workspace name (`[a-z0-9-]+`, unique repo-wide). `harness: claude-code`.
    - `instructions:` (optional): parts `CLAUDE.md` is generated from, usually
-     `harness/instructions/workspace.md` first. The generated file must not be hand-edited; users
+     the scope's `harness/instructions/workspace.md` first (e.g. `software/application-software/argos/harness/instructions/workspace.md`). The generated file must not be hand-edited; users
      change a part instead.
    - `links:` shared sources kept identical in every workspace that links them. Entry =
      `<source> [-> <dest>]`; a directory links every file under it. Default dests:

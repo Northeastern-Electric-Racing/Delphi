@@ -1,5 +1,1 @@
 name: Software
-recommend:
-  - software/harness/instructions/base.md
-  - software/harness/skills/commit
-  - software/harness/skills/to-tickets
