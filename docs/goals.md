@@ -11,11 +11,12 @@ and send improvements back — with or without an AI harness.
 
 ## Goals
 
-**G1. Workspaces live in Delphi.** Each workspace is a folder in Delphi with every file at its
-normal harness location, fully materialized on `main`. Shared files are linked to one source.
+**G1. Compressed sources, compiled workspaces on `main`.** Context is stored once as blocks and
+selected by layouts. Every layout's compiled workspace (files at normal harness locations) is
+committed on `main` and always matches its sources. Every compiled line is traceable to its block.
 
-**G2. Work locally on just your workspace.** A checkout contains only that folder, on your own
-branch. Code repos listed in the workspace are cloned into it.
+**G2. Work locally on just your workspace.** A checkout contains only that layout's folder, on your
+own branch. Code repos listed in the layout are cloned into it.
 
 **G3. Refresh.** Pull the latest `main` into a checkout without losing the user's edits.
 Conflicts are shown with git's normal tools.
@@ -25,10 +26,9 @@ Conflicts are shown with git's normal tools.
 
 **G5. Propose.** Send a checkout's changes back as one pull request per checkout.
 
-**G5a. Shared stays consistent.** A change to a shared file, made in its source or in any
-workspace that links it, reaches the source and every linked copy before it lands on `main`.
-Editing a shared file is flagged with the workspaces it affects. Conflicting edits are reported,
-never guessed.
+**G5a. Edit line by line.** Any line of a compiled file can be edited; each edit lands in the
+block it came from, new sections become new fragments, and every layout using that block is
+recompiled. Edits Delphi can't place are reported and block the PR, never guessed or dropped.
 
 **G6. Provenance.** Every change written to Delphi records which harness, model, and effort made
 it.
@@ -52,4 +52,4 @@ adapter: file names plus how to launch it.
 
 - Should "proposed" come from GitHub's PR state instead of a local hash?
 - Should a rejected change stop reappearing without reverting it?
-- Resolved: built `.skill` specs dropped (native skill folders only); strict YAML subset kept.
+- Resolved: strict YAML subset kept; `.skill` specs kept (v4).
