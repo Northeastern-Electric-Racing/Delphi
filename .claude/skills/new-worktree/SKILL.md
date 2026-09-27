@@ -1,14 +1,18 @@
 ---
 name: new-worktree
-description: Create or reuse the worktree for a branch in this Delphi workspace (repos/worktrees/<branch>), checking out an existing branch or starting a new one from origin/develop. Use before starting a ticket, reviewing or fixing a PR branch, or whenever work needs its own checkout.
+description: Create or reuse a worktree for a branch of a repo in repos/ (repos/worktrees/<repo>/<branch>). Worktrees are the default way to make or check out any new branch; use this before starting a ticket, reviewing or fixing a PR branch, or any other branch work, unless the user says not to use worktrees.
 ---
+
+Make every new branch as a worktree, never by branching in `repos/<repo>/`, unless the user explicitly says not to use worktrees. `repos/<repo>/` stays a clean checkout of the default branch.
 
 Run from the workspace root:
 
 ```
-bash .claude/skills/new-worktree/scripts/new-worktree.sh <branch>
+bash .delphi/new-worktree.sh <repo> <branch> [<base>]
 ```
 
-An existing branch (local or on origin, e.g. a PR's head) is checked out; anything else is created from `origin/develop`. New ticket branches follow `{issue-number}-{kebab-case-title}`. It's safe to re-run.
+An existing branch (local or on origin, e.g. a PR's head) is checked out; anything else is created from `<base>` (default: the repo's default branch). It's safe to re-run. It prints the worktree path: `cd` there and do all work in it.
 
-It prints the worktree path: `cd` there and do all work in it. Run `npm ci` in its `angular-client/` before building, testing, or running the client.
+After the branch merges, remove it with `git -C repos/<repo> worktree remove ../worktrees/<repo>/<branch>`.
+
+Argos: always pass `origin/develop` as `<base>`. New ticket branches follow `{issue-number}-{kebab-case-title}`. Run `npm ci` in the worktree's `angular-client/` before building, testing, or running the client.

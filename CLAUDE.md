@@ -1,18 +1,6 @@
 # Delphi workspace
 
-This repo root is branch `ws/argos-dev` of Delphi (or a branch cut from it): the folder `software/application-software/argos/workspaces/argos-dev/` on Delphi's `main`, as its own root. It holds two kinds of git repo, and every change belongs to exactly one:
-
-| Path | What it is | Changes go |
-|---|---|---|
-| `CLAUDE.md`, `.claude/`, `docs/`, other files here | The workspace | A branch cut from `ws/argos-dev`, then a PR into `ws/argos-dev` |
-| `repos/<name>/` | A clone of a code repo listed in `workspace.yml` (git-ignored here) | That repo's git, branches, and PRs, per its conventions |
-
-- First time in a clone: run `.delphi/setup.sh` to clone the repos into `repos/`.
-- Run a repo's git, `gh`, build, and test commands inside it (`cd repos/<name>`), never from the root: here, `git` is the workspace branch.
-- Code changes never go in the workspace. Context changes (instructions, skills, docs) never go in a code repo.
-- Never push to `ws/argos-dev` or Delphi's `main` directly. After your PR merges into `ws/argos-dev`, CI proposes it to `main` as a PR; CI also refreshes `ws/argos-dev` with `main`'s changes.
-- Don't edit `.delphi/setup.sh` or `.github/workflows/delphi.yml`; Delphi manages them.
-- Update your branch with `git fetch origin && git merge origin/ws/argos-dev`.
+You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos live in `repos/`. Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Work here unless the task clearly belongs to another project.
 
 # NER Software conventions
 
@@ -36,9 +24,8 @@ The Argos repo is checked out at `repos/argos/`. Paths below are relative to a c
 ## Worktrees
 
 - `repos/argos/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there. Only fetch, fast-forward `develop`, and manage worktrees from it.
-- Every ticket gets its own worktree at `repos/worktrees/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill; it handles new and existing branches.
+- Every ticket gets its own worktree at `repos/worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
 - A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
-- After the PR merges, remove it with `git -C repos/argos worktree remove ../worktrees/<branch>`.
 
 ## Local Development
 
