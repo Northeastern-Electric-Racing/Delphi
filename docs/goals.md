@@ -12,7 +12,7 @@ anyone, person or agent, work on a workspace with plain git and send improvement
 - **G1. Workspaces live in Delphi.** Each workspace is a folder on `main` with every file at its
   normal harness location.
 - **G2. The workspace is the repo root.** Checking out `ws/<name>` gives exactly that workspace at
-  the root. `.delphi/setup.sh` clones the code repos it lists.
+  the root. `.delphi/setup.sh` checks out the code repos it lists as worktrees.
 - **G3. Both directions, automatically.** Refresh: changes on `main` reach `ws/<name>`. Propose:
   merged workspace changes reach `main` as a PR.
 - **G4. Conflicts are reported, never guessed.** A conflicting workspace is skipped with its files
@@ -25,6 +25,6 @@ anyone, person or agent, work on a workspace with plain git and send improvement
 
 - **I1.** Changes reach `main` and `ws/*` only through PRs (CI's refreshes excepted).
 - **I2.** `ws/<name>` history is joined to `main`; no unrelated histories, no force-pushes to `ws/*`.
-- **I3.** Code repos in `repos/` never appear as workspace changes.
+- **I3.** Code repos in `worktrees/` never appear as workspace changes.
 - **I4.** `setup.sh` works on macOS bash 3.2 and Git Bash.
 - **I5.** Everything is testable end to end without GitHub (`tests/e2e.sh`).
