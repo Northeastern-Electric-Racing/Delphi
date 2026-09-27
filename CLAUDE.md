@@ -1,39 +1,31 @@
-# Delphi — developing the CLI
+# Delphi — developing it
 
-Delphi stores NER's AI-harness context under `context/` and ships a small bash CLI that compiles
-layouts into workspaces, refreshes them, and proposes edits back as PRs. The design spec
-(`context/docs/delphi-design.md`) is the source of truth.
+Delphi stores NER's AI-harness context. Each workspace is a folder `software/**/workspaces/<name>/`
+on `main`; branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
+subtree merges: **refresh** (main → `ws/<name>`) and **propose** (`ws/<name>` → PR to main via
+`propose/<name>`). There is no CLI, just a few shell scripts run by CI. `docs/design.md` is the
+source of truth; `docs/goals.md` lists what any change must keep.
 
 ## Layout
 
-- `bin/delphi`: dispatcher. It resolves its own path and sources `lib/core.sh`, then the group's module.
-- `lib/core.sh`: messages, `defer` cleanup, prompts, config, `safe_path`, Delphi git access, moves, `parse_args`.
-- `lib/parse.sh`: YAML-subset parser (POSIX awk).
-- `lib/compile.sh`: layout → files (instructions, blocks, docs, skills, MCP, settings) + `.delphi/lock.tsv`.
-- `lib/route.sh` + `lib/route.awk`: pending diff + lock → plan → edits in a PR worktree.
-- `lib/pr.sh`: the only write path to Delphi (temp worktree, commit with trailers, push, `gh`).
-- `lib/provenance.sh`: harness/model/effort resolution.
-- `lib/workspace.sh`, `lib/layout.sh`, `lib/block.sh`, `lib/check.sh`, `lib/setup.sh`: the command groups.
-- `lib/harness/<name>.sh`: harness adapters (names + `harness_provenance` + `harness_launch`).
-- `dev/sandbox.sh`: throwaway end-to-end playground. It is the only test harness (no automated tests, no CI).
-- `.claude/skills/`: LLM workflows that drive the CLI (`delphi-new-layout`, `delphi-propose`).
+- `ci/sync.sh [refresh|propose] [<name>]`: refresh and/or propose each workspace (both by default).
+  Runs on pushes to main and `ws/**`.
+- `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
+- `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
+- `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), and the managed
+  files every workspace carries unchanged: `.delphi/setup.sh`, `.github/workflows/delphi.yml`.
+- `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories.
+- `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.
+- `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
 
 ## Rules
 
-- Must run under macOS `/bin/bash` 3.2. Test with `/bin/bash`, never zsh or a newer bash.
-- Tools: POSIX awk (no gawk extensions), git, gh. jq is optional.
-- Keep it small: fewest lines that implement the spec, terse functions, a short header per file.
-- Bash 3.2 pitfalls:
-  - Functions that `defer` cleanup (`make_tmp`, `delphi_worktree_at`, `pr_begin`) must not run
-    inside `$(...)`. They return results in `REPLY`.
-  - errexit is suspended in conditional contexts (`if f`, `f || x`), so critical commands need an explicit `|| die`.
-  - A dying function inside `$(...)` needs `|| exit 1` at the call site.
-  - Empty arrays error under `set -u`. Use newline-separated strings.
-  - A failing command substitution inside a heredoc does not propagate. Assign it to a variable first.
-  - Use `sed` rather than `grep -v`, which exits 1 on empty input and breaks under pipefail.
-  - `"$var…"` (a variable followed by a non-ASCII byte) is parsed as a longer name. Write `${var}…`.
-    An unbound-variable error under the EXIT trap exits with status **0**.
-- Every path from config, flags, lock, or `moves.tsv` goes through `safe_path` before use.
-- Never test against real GitHub repos. Use the sandbox:
-  `eval "$(/bin/bash dev/sandbox.sh /tmp/sb1)"`, then `d <command>`.
-  The sandbox stubs `gh` (log in `$SB/gh.log`), so `--yes` pushes only to its bare origin.
+- Keep it small: fewest lines that implement the design; a short header comment per script.
+  Prefer deleting to adapting. Runtime tools: bash, git, and `gh` (only to open or update PRs).
+- Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
+- `.delphi/setup.sh` runs on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
+  features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
+- Changing a managed file (`setup.sh`, the workflow): update the template, `.github/`, and every
+  workspace copy in the same PR, or `ci/check.sh` fails.
+- `bash tests/e2e.sh` and `ci/check.sh` must pass. Add a test there for every behavior change.
+- Never test against real GitHub repos or this checkout's origin; use the sandbox in `tests/e2e.sh`.

@@ -1,44 +1,82 @@
 # Delphi
 
-NER's AI-harness context (knowledge, instructions, skills, MCP, settings), stored compressed
-by org chart under `context/`, plus a small bash CLI:
+NER's AI-harness context (instructions, skills, docs, settings), organized by the org chart under
+`software/`. A **workspace** is a folder `software/**/workspaces/<name>/` with a `workspace.yml`.
+For each one, CI keeps a branch **`ws/<name>`** whose repo root *is* that folder, so people and
+agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
 
-- **compile** a *layout* into a local, git-initialized *workspace* where Claude Code runs,
-- **refresh** the workspace when `main` moves,
-- **propose** workspace edits back as one PR, routed to the blocks they came from.
+## How it works
 
-Design: `context/docs/delphi-design.md`.
+```
+   ┌───────────────────────────────┐
+   │ main                          │
+   │ software/…/workspaces/<name>/ │
+   └───────────────────────────────┘
+        │                  ▲
+        │ refresh          │ merge PR
+        │ (CI)             │ (after check.sh)
+        ▼                  │
+   ┌──────────────────┐  ┌──────────────────┐
+   │ ws/<name>        │  │ propose/<name>   │
+   │ root = workspace │─►│ PR to main       │
+   └──────────────────┘  └──────────────────┘
+        │         ▲    propose (CI)
+        │ branch  │ merge PR
+        ▼         │
+   ┌──────────────────┐
+   │ your branch      │
+   │ edit · commit    │
+   └──────────────────┘
 
-## Quick start
+   refresh: main → ws/<name>        (folder becomes root)
+   propose: ws/<name> → main PR     (root goes back under folder)
+   CI runs both on every push to main or ws/**
+```
+
+Both directions are subtree merges (`git merge -Xsubtree=<folder>`) done by `ci/sync.sh`, so the
+histories stay joined and edits on either side meet in normal three-way merges.
+
+## Using a workspace
 
 ```sh
-bin/delphi setup              # once: puts `delphi` on PATH (~/.local/bin, or pass a dir)
-
-delphi ws new argos-dev       # create the workspace
-delphi ws open argos-dev      # start Claude Code in it
-delphi ws propose             # send context edits back as a PR (run inside the workspace)
-delphi ws refresh             # pull in Delphi updates
+git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
+cd argos-dev && .delphi/setup.sh        # clones workspace.yml's repos into repos/ (git-ignored)
+git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
+git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
 ```
 
-Code changes go in `repos/argos` with its own PRs. Context changes (CLAUDE.md, skills, docs) are
-committed in the workspace and sent back with `propose`.
+After your PR merges into `ws/<name>`, CI proposes it: a PR `ws/<name> → main` from
+`propose/<name>`. Merge that with a merge commit or squash, never rebase. Never push to `ws/*` or
+`main` directly (protect them). Code changes go in `repos/<name>`, through that repo's own PRs.
 
-## Commands
+**Conflicts.** If `main` and `ws/<name>` changed the same lines, CI lists the files and skips that
+workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, run
+`git merge -Xsubtree=<folder> origin/main`, resolve, commit.
 
+## workspace.yml
+
+```yaml
+harness: claude-code
+repos:                  # cloned into repos/<name> by .delphi/setup.sh
+  argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```
-delphi layout new <scope> <layout> [--from <file>]   create a layout (branch + PR)
-delphi layout list                                   list layouts on origin/main
-delphi workspace new <layout> [--as <ws>] [--ref <branch>]
-delphi workspace open|refresh|propose|status         (alias: ws)
-delphi block mv <old> <new>                          move a block (branch + PR)
-delphi check                                         validate the repo
-delphi setup [dir]                                   put `delphi` on PATH
-```
 
-Commands that write to Delphi accept `--model`, `--effort` (provenance) and `--yes`. Without
-`--yes`, a non-interactive run fails fast instead of prompting.
+The workspace's name is its folder name (unique repo-wide). Every other file in the folder is the
+workspace's own, at its normal harness path, except two Delphi manages: `.delphi/setup.sh` and
+`.github/workflows/delphi.yml` (copies of the template's).
 
-## Developing Delphi
+## New workspace
 
-Test CLI changes in the sandbox, never against GitHub (see `CLAUDE.md`):
-`eval "$(/bin/bash dev/sandbox.sh /tmp/delphi-sb)"`, then `d <command>`.
+`tools/new-workspace.sh <org-path under software/> <name>` copies `templates/workspace/` into
+`software/<org-path>/workspaces/<name>/` and opens a PR to `main`. Once it merges, CI creates
+`ws/<name>`.
+
+## CI (`.github/workflows/delphi.yml`)
+
+- PRs to `main`: `ci/check.sh` validates the repo.
+- Pushes to `main` or `ws/**`: `ci/sync.sh` refreshes and proposes every workspace.
+
+Repo settings: allow GitHub Actions to create PRs. Don't make `check` a required status check:
+PRs opened by CI don't trigger workflows (sync.sh runs `ci/check.sh` itself before proposing).
+
+Developing Delphi: see `CLAUDE.md`; `bash tests/e2e.sh` runs everything in a local sandbox.
