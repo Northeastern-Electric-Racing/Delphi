@@ -40,7 +40,7 @@ in normal three-way merges. Nothing is shared or generated between workspaces.
 
 ```
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
-                                      .delphi/setup.sh  .github/workflows/delphi.yml  .gitattributes
+                                      .delphi/setup.sh  .delphi/new-worktree.sh  .github/workflows/delphi.yml  .gitattributes
 ci/sync.sh  ci/check.sh               CI scripts
 tools/new-workspace.sh                new workspace as a PR
 templates/workspace/                  what new-workspace copies
@@ -51,7 +51,7 @@ tests/e2e.sh                          sandbox test of all of the above
 Org folders under `software/` are plain directories. `workspace.yml` is tiny YAML: `harness:
 <adapter>` and an optional `repos:` map of `<name>: <git-url>`. The name is the folder name:
 lowercase letters, digits, `-`; unique repo-wide. Workspaces never nest; no symlinks under
-`software/`. Each workspace's `.delphi/setup.sh` and `.github/workflows/delphi.yml` equal the
+`software/`. Each workspace's `.delphi/setup.sh`, `.delphi/new-worktree.sh`, and `.github/workflows/delphi.yml` equal the
 template's, and the template's workflow equals main's. `ci/check.sh` enforces all of this and lists
 every problem. `.gitattributes` (`eol=lf`) keeps `setup.sh` runnable in Git Bash clones.
 `.github/CODEOWNERS` assigns reviewers per org folder.
@@ -90,6 +90,10 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 Reads `repos:` from `workspace.yml`, clones each into `repos/<name>` unless present, and adds
 `/repos/` to the clone's `.git/info/exclude` once. Nothing else. Must run on macOS `/bin/bash` 3.2
 and Git Bash: no bash-4 features, POSIX awk only.
+
+`.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `repos/worktrees/<repo>/<branch>`:
+checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
+The template's `new-worktree` skill makes worktrees the default way to start a branch.
 
 ## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
 

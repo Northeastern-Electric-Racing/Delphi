@@ -62,8 +62,8 @@ repos:                  # cloned into repos/<name> by .delphi/setup.sh
 ```
 
 The workspace's name is its folder name (unique repo-wide). Every other file in the folder is the
-workspace's own, at its normal harness path, except two Delphi manages: `.delphi/setup.sh` and
-`.github/workflows/delphi.yml` (copies of the template's).
+workspace's own, at its normal harness path, except three Delphi manages: `.delphi/setup.sh`,
+`.delphi/new-worktree.sh`, and `.github/workflows/delphi.yml` (copies of the template's).
 
 ## New workspace
 

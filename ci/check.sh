@@ -2,7 +2,7 @@
 # ci/check.sh [<dir>]: validate Delphi (CI runs it on PRs to main; sync.sh on each proposal). Rules:
 # a workspace is software/**/workspaces/<name>/ with a workspace.yml; names are lowercase letters,
 # digits, and '-', unique repo-wide; workspaces never nest; no symlinks under software/; each
-# workspace's .delphi/setup.sh and .github/workflows/delphi.yml match templates/workspace/, and the
+# workspace's .delphi/*.sh and .github/workflows/delphi.yml match templates/workspace/, and the
 # template workflow matches .github/workflows/delphi.yml; workspace.yml is `harness: <adapter>` plus
 # an optional `repos:` map of `<name>: <git-url>`. Lists every problem; exits 1 if any.
 set -euo pipefail
@@ -10,7 +10,7 @@ cd "${1:-.}"
 problems=0
 bad() { echo "check: $*" >&2 && problems=$((problems + 1)); }
 tpl=templates/workspace
-managed=".delphi/setup.sh .github/workflows/delphi.yml"
+managed=".delphi/setup.sh .delphi/new-worktree.sh .github/workflows/delphi.yml"
 
 [ -d software ] || bad "software/ is missing"
 cmp -s .github/workflows/delphi.yml $tpl/.github/workflows/delphi.yml ||

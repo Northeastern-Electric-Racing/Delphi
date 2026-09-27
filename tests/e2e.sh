@@ -214,9 +214,24 @@ grep -q "ws/argos-dev: check failed" "$t/err" || fail "check failure not reporte
 [ "$(o rev-parse propose/argos-dev)" = "$prop_before" ] || fail "failing proposal was pushed"
 ok "a proposal failing check.sh is reported and not pushed; exit 1"
 
-# --- 11. shellcheck, if installed
+# --- 11. new-worktree.sh: new branch from the default branch or <base>; existing branch checked out; reruns reuse
+git init -q "$t/code" && git -C "$t/code" commit -q --allow-empty -m one && git -C "$t/code" branch feat &&
+  git -C "$t/code" branch develop && git -C "$t/code" commit -q --allow-empty -m two
+w=$t/nw && git clone -q -b ws/bms-dev "$t/origin.git" "$w" && git clone -q "$t/code" "$w/repos/code"
+nw() { bash "$w/.delphi/new-worktree.sh" "$@"; }
+[ "$(nw code 1-new)" = "$w/repos/worktrees/code/1-new" ] || fail "new-worktree path"
+[ "$(git -C "$w/repos/worktrees/code/1-new" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse main)" ] || fail "new branch not from default"
+nw code feat >/dev/null && [ "$(git -C "$w/repos/worktrees/code/feat" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse feat)" ] ||
+  fail "existing branch not checked out"
+nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/repos/worktrees/code/2-dev" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse develop)" ] ||
+  fail "<base> ignored"
+[ "$(nw code feat)" = "$w/repos/worktrees/code/feat" ] || fail "rerun did not reuse"
+[ "$(git -C "$w/repos/code" branch --show-current)" = main ] || fail "repos/code left its branch"
+ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
+
+# --- 12. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
-  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/templates/workspace/.delphi/setup.sh ||
+  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/templates/workspace/.delphi/*.sh ||
     fail "shellcheck"
   ok "shellcheck clean"
 fi
