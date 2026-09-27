@@ -1,16 +1,17 @@
 # Delphi workspace
 
-You are in a Delphi workspace: the repo root is this workspace (branch `ws/argos-dev` of Delphi, or a branch cut from it). It pairs team context with the code repos it's about, and holds two kinds of git repo. Every change belongs to exactly one:
+You are in a Delphi workspace: this repo root is branch `ws/argos-dev` of Delphi (or a branch cut from it), which mirrors the folder `software/application-software/argos/workspaces/argos-dev/` on Delphi's `main`. It holds two kinds of git repo, and every change belongs to exactly one:
 
 | Path | What it is | Changes go |
 |---|---|---|
-| `CLAUDE.md`, `.claude/`, `docs/`, other files here | The workspace, mirrored from its folder on Delphi's `main` | Commit on your branch; open a PR into `ws/argos-dev` (CI mirrors it to `main`) or run `delphi propose` |
-| `repos/<name>/` | A separate clone of a code repo, with its own remote (git-ignored by the workspace) | That repo's git, branches, and PRs, per its conventions |
+| `CLAUDE.md`, `.claude/`, `docs/`, other files here | The workspace | Commit on a branch cut from `ws/argos-dev`; open a PR into `ws/argos-dev` |
+| `repos/<name>/` | A clone of a code repo listed in `workspace.yml` (git-ignored here) | That repo's git, branches, and PRs, per its conventions |
 
+- First time in a clone: run `.delphi/setup.sh` to clone the repos into `repos/`.
 - Run a repo's git, `gh`, build, and test commands from inside that repo (`cd repos/<name>`), never from the root: here, `git` is the workspace branch.
 - Code changes never go in the workspace's git. Context changes (instructions, skills, docs) never go in a code repo.
-- Every file here belongs to this workspace. To add one, just add it. Never push to `ws/argos-dev` itself: CI rebuilds it from `main`.
-- `delphi diff` shows what you changed versus `ws/argos-dev`; `delphi diff --upstream` shows what changed there since your last `delphi refresh`. `delphi refresh` merges `ws/argos-dev` into your branch (conflicts are resolved with plain git). `delphi propose` sends your committed changes as one PR to `main`.
+- Never push to `ws/argos-dev` or Delphi's `main` directly. After your PR merges into `ws/argos-dev`, CI opens a PR to `main`; once that merges, CI merges `main` back into `ws/argos-dev`.
+- Refresh your branch with `git fetch origin && git merge origin/ws/argos-dev`.
 
 # NER Software conventions
 

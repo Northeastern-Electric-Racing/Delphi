@@ -1,54 +1,30 @@
-# Delphi CLI — Goals
+# Delphi — Goals
 
-What the CLI must achieve, not how. Any rewrite or simplification must keep these.
-Details live in the spec (`docs/design.md`).
+What Delphi must achieve, not how. Any change must keep these. Details: `docs/design.md`.
 
 ## Purpose
 
-Store NER's AI context (instructions, blocks, docs, skills, MCP, settings) once, organized by the
-org chart. Let anyone turn a chosen set of it into a working directory, keep that directory current,
-and send improvements back — with or without an AI harness.
+Store NER's AI context (instructions, skills, docs, settings) once, organized by the org chart. Let
+anyone, person or agent, work on a workspace with plain git and send improvements back.
 
 ## Goals
 
-**G1. Workspaces live in Delphi.** Each workspace is a self-contained folder on `main` with every
-file at its normal harness location.
-
-**G2. The workspace is the repo root.** Checking out a workspace's branch gives exactly that
-workspace at the root, so any agent or person can work on it with plain git. Code repos listed in
-the workspace are cloned into local checkouts.
-
-**G3. Refresh.** Pull the latest `main` into a checkout without losing the user's edits.
-Conflicts are shown with git's normal tools.
-
-**G4. Know what changed.** At any time, show what the user changed versus `main`, what changed on
-`main` since, and whether the changes have been proposed yet.
-
-**G5. Propose.** Send a checkout's changes back as one pull request per checkout.
-
-**G5a. One source of truth.** `main` stays authoritative; workspace branches are derived from it
-and never edited directly. Conflicting edits are reported, never guessed.
-
-**G6. Provenance.** Every change written to Delphi records which harness, model, and effort made
-it.
-
-**G7. Keep Delphi valid.** `check` catches broken manifests, missing paths, and bad structure
-before anything is pushed. New workspaces are created through PRs too.
-
-**G8. Harness-agnostic.** Supporting a new harness (beyond Claude Code) means adding one small
-adapter: file names plus how to launch it.
+- **G1. Workspaces live in Delphi.** Each workspace is a folder on `main` with every file at its
+  normal harness location.
+- **G2. The workspace is the repo root.** Checking out `ws/<name>` gives exactly that workspace at
+  the root. `.delphi/setup.sh` clones the code repos it lists.
+- **G3. Both directions, automatically.** Merged workspace changes reach `main` as a PR; changes on
+  `main` reach the workspace branch. Refreshing is `git merge origin/ws/<name>`.
+- **G4. Conflicts are reported, never guessed.** A conflicting workspace is skipped with its files
+  listed and resolved by a person in a normal PR; other workspaces keep syncing.
+- **G5. Keep Delphi valid.** `ci/check.sh` catches bad manifests and structure before merge. New
+  workspaces arrive through PRs too.
+- **G6. Simple.** No CLI to install: git, `gh`, and a few short shell scripts.
 
 ## Invariants
 
-- **I1.** Changes reach `main` only through PRs; Delphi never rewrites a user's uncommitted work.
-- **I2.** Reject unsafe paths (absolute, `..`, symlinks escaping) before any read or write.
-- **I3.** Workspace bookkeeping never shows up as a user change.
-- **I4.** Clear errors that say what to run next; never hang waiting for input in scripts.
-- **I5.** Works offline where possible; GitHub (`gh`) is only needed to open PRs.
-- **I6.** Easy to install (`cargo install`) and to test end to end without real GitHub.
-
-## Open questions
-
-- Should "proposed" come from GitHub's PR state instead of a local hash?
-- Should a rejected change stop reappearing without reverting it?
-- Resolved: built `.skill` specs dropped (native skill folders only); strict YAML subset kept.
+- **I1.** Changes reach `main` and `ws/*` only through PRs (CI's own merges excepted).
+- **I2.** `ws/<name>` history is joined to `main`; no unrelated histories, no force-pushes to `ws/*`.
+- **I3.** Code repos in `repos/` never show up as workspace changes.
+- **I4.** `setup.sh` works on macOS bash 3.2 and Git Bash.
+- **I5.** Everything is testable end to end without GitHub (`tests/e2e.sh`).

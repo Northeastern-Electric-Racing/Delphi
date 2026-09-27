@@ -1,77 +1,53 @@
 # Delphi
 
-NER's AI-harness context (instructions, docs, skills, settings), stored by org chart under
-`context/`, plus a small Rust CLI.
+NER's AI-harness context (instructions, skills, docs, settings), organized by the org chart under
+`software/`. A **workspace** is a folder `software/**/workspaces/<name>/` with a `workspace.yml`.
+For each workspace, CI keeps a branch **`ws/<name>`** whose repo root *is* that folder, so any
+person or agent works on it with plain git. `main` and `ws/<name>` are kept in sync by subtree
+merges in both directions (`ci/sync.sh`). Design: `docs/design.md`. Goals: `docs/goals.md`.
 
-Every **workspace** is a self-contained folder on `main`, `context/<scope>/workspaces/<name>/`,
-with every file at its normal harness location (`CLAUDE.md`, `.claude/skills/…`, `docs/…`). Each
-workspace owns its files: nothing is shared or generated.
-
-For each workspace, CI keeps a branch **`ws/<name>`** whose repo root *is* that folder (a
-deterministic `git subtree split`, re-run on every push to `main`). So:
-
-- **any agent or person** can work with plain git: check out `ws/<name>`, branch, edit, push, and
-  open a PR into `ws/<name>`; CI mirrors it into a PR to `main` and comments the link,
-- **with the CLI**, `delphi checkout` clones `ws/<name>` on your own branch (code repos cloned into
-  `repos/`), `delphi refresh` merges the latest `ws/<name>`, and `delphi propose` sends your
-  branch's changes as one PR to `main`, re-rooted under the folder.
-
-`main` stays the one source of truth; `ws/*` are derived and written only by CI.
-
-Design: `docs/design.md`. Goals: `docs/goals.md`.
-
-## Quick start
+## Using a workspace
 
 ```sh
-cargo install --path .        # once: puts `delphi` on PATH
-delphi setup                  # once, inside this checkout: remember where Delphi lives
-
-delphi list                   # workspaces on main
-delphi checkout argos-dev     # clone ws/argos-dev into ../Delphi-workspaces/argos-dev
-delphi open argos-dev         # start Claude Code at the workspace root
-delphi diff                   # what you changed vs ws/argos-dev
-delphi propose                # one PR to main with your branch's changes
-delphi refresh                # merge the latest ws/argos-dev into your branch
+git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
+cd argos-dev && .delphi/setup.sh        # clones workspace.yml's repos into repos/ (git-ignored)
+git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
+git fetch origin && git merge origin/ws/argos-dev   # refresh your branch any time
 ```
 
-Code changes go in `repos/<name>` with that repo's own PRs. Context changes are committed in the
-checkout and sent with `propose`.
+1. Your PR into `ws/<name>` is reviewed and merged.
+2. CI opens (or updates) a PR `ws/<name> → main` from branch `up/<name>`. Merge it with a merge
+   commit or squash, never rebase.
+3. CI merges `main` back into `ws/<name>`.
 
-## Workspaces
+Never push to `ws/*` or `main` directly (protect them). Code changes go in `repos/<name>` with that
+repo's own PRs.
 
-`context/<scope>/workspaces/<name>/workspace.yml`:
+**Conflicts.** If `main` and `ws/<name>` changed the same lines, CI reports the files and skips that
+workspace. Fix it in a PR into `ws/<name>`:
+`git merge -Xsubtree=<folder> origin/main` on a branch cut from `ws/<name>`, resolve, commit.
+
+## workspace.yml
 
 ```yaml
-name: argos-dev                       # = the folder name, unique
-harness: claude-code                  # adapter: launch + provenance
-repos:                                # cloned into repos/ in a checkout, git-ignored
+harness: claude-code
+repos:                  # cloned into repos/<name> by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```
 
-Everything else in the folder is the workspace's own files.
+The workspace's name is its folder name (unique repo-wide). Everything else in the folder is the
+workspace's own files, at their normal harness paths.
 
-## Commands
+## New workspace
 
-```
-delphi create <scope> <name> [--from <dir>]           new workspace folder (PR to main)
-delphi list                                           workspaces on origin/main
-delphi checkout <workspace> [--as <checkout>]         clone ws/<workspace> on edit/<you>/<checkout>
-delphi open|refresh|diff [<checkout>]                 work in a checkout (diff --upstream)
-delphi propose [<checkout>] [--dry-run]               the checkout's changes as one PR to main
-delphi propose [<workspace>] --branch <b>             the same for a branch on origin (CI mirror)
-delphi status                                         every local checkout: dirty, ahead, behind
-delphi split [--check] [--push]                       ws/<name> for every workspace
-delphi check                                          validate the repo
-delphi setup [dir]                                    remember this Delphi checkout
-```
+`tools/new-workspace.sh <org-path under software/> <name>` copies `templates/workspace/` into
+`software/<org-path>/workspaces/<name>/` and opens a PR to `main`. After it merges, CI creates
+`ws/<name>`.
 
-Commands that write to Delphi accept `--model`, `--effort` (provenance) and `--yes`. Without
-`--yes`, a non-interactive run fails fast instead of prompting. `propose` exits 1 listing files when
-`main` changed the same lines: refresh, resolve, re-run. CI (`.github/workflows/delphi.yml`) runs
-`check` on PRs to `main`, `split --push` on pushes to `main`, and mirrors PRs into `ws/*` with
-`propose --branch`. Protect `ws/*` so only CI writes them.
+## CI (`.github/workflows/delphi.yml`)
 
-## Developing Delphi
+- PRs to `main`: `ci/check.sh` validates every workspace.
+- Pushes to `main` or `ws/**`: `ci/sync.sh` merges `main` into every `ws/<name>` and opens PRs to
+  `main` for workspace changes. Allow GitHub Actions to create PRs in the repo settings.
 
-`cargo test` runs the end-to-end tests in throwaway sandboxes (stub `gh`, local bare origin);
-never test against GitHub. See `CLAUDE.md`.
+Developing Delphi: see `CLAUDE.md`; `bash tests/e2e.sh` runs everything in a local sandbox.

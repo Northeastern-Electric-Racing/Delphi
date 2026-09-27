@@ -1,87 +1,83 @@
-# Delphi — Design (v5: workspace as branch root)
+# Delphi — Design
 
-Goals: `docs/goals.md`. Diagram: `docs/delphi-flow.png`.
+Goals: `docs/goals.md`. No CLI: plain git plus a few shell scripts run by GitHub Actions.
 
 ## 1. Model
 
-`main` holds every workspace as a self-contained folder, `context/<scope>/workspaces/<name>/`
-(`CLAUDE.md`, `.claude/…`, `docs/…` at normal paths). For each workspace, CI maintains a
-**projection branch** `ws/<name>` whose **repo root is that folder** (`git subtree split
---prefix=<folder>`: deterministic, keeps the folder's history). Anyone — a person, or an agent that
-simply checks out a branch — works on a branch cut from `ws/<name>`; the workspace is the repo root.
-Changes go back as a PR to `main`: the branch's diff is re-rooted under the folder. There are no
-shared blocks, no compile, no sync: each workspace owns its files.
+`main` holds every workspace as a folder, `software/**/workspaces/<name>/`, with its files at their
+normal harness paths (`CLAUDE.md`, `.claude/…`, `docs/…`). For each workspace there is a branch
+**`ws/<name>`** whose **repo root is that folder**. The two are kept in sync by subtree merges
+(`git merge -Xsubtree=<folder>`) in both directions, so both histories stay joined and changes on
+either side meet in normal three-way merges. Nothing is shared or generated between workspaces.
 
 ## 2. Repository (main)
 
 ```
-context/<scope>/scope.yml
-context/<scope>/workspaces/<name>/
-  workspace.yml          # name (= folder), harness, repos
-  CLAUDE.md  .claude/…  docs/…  anything else
+software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…  .delphi/setup.sh
+ci/sync.sh  ci/check.sh               CI scripts
+tools/new-workspace.sh                new workspace as a PR
+templates/workspace/                  what new-workspace copies
+tests/e2e.sh                          sandbox test of all of the above
 ```
 
-`workspace.yml`: `name`, `harness` (adapter: launch + provenance), `repos` (name: git URL, cloned
-into `repos/` in local checkouts, git-ignored). YAML subset as before. Workspace folders never nest.
+Org folders under `software/` are plain directories. `workspace.yml` is tiny YAML: `harness:
+<adapter>` and an optional `repos:` map of `<name>: <git-url>`. The name is the folder name:
+lowercase letters, digits, `-`; unique repo-wide. Workspaces never nest; no symlinks under
+`software/`. `ci/check.sh` enforces this on every PR to `main` and lists all problems.
+`.github/CODEOWNERS` assigns reviewers per org folder.
 
-## 3. Projection branches (`delphi split [--check] [--push]`)
+## 3. Sync (`ci/sync.sh [<name>]`)
 
-For every workspace folder on the current commit: `ws/<name>` = `git subtree split --prefix=<folder>`.
-`--check` exits 1 if any local `ws/*` ref differs; `--push` force-updates the remote `ws/*` refs
-(and deletes `ws/<name>` for removed workspaces). CI runs `delphi split --push` on every push to
-`main`; only CI writes `ws/*` (protect them).
+Runs on every push to `main` or `ws/**`, for every workspace on `origin/main` (or one):
+
+1. **Down.** If `ws/<name>` is missing, create it as one commit, `git commit-tree
+   <main>:<folder> -p <main>` ("delphi: create ws/<name> from <folder>"): root = folder, parent =
+   main, so there are no unrelated histories. Otherwise merge `origin/main` into `ws/<name>` with
+   `--no-ff -Xsubtree=<folder>` and push if the tree changed. (`--no-ff` matters: once ws commits
+   are in main, a fast-forward would put main's whole tree on the ws branch.)
+2. **Up.** Build `up/<name>` = `origin/main` + `git merge --no-ff -Xsubtree=<folder> ws/<name>`
+   ("delphi: bring ws/<name> into main"). If its tree equals main's, stop. Otherwise run
+   `ci/check.sh` on it, force-push it, and create or update the PR `ws/<name> → main` with `gh`
+   (body: changed files, ws commit subjects and authors).
+
+A conflict in either step is reported with its files; that workspace is skipped, the others
+continue, and the script exits 1. A `ws/*` branch without a folder on main gets a notice (never
+deleted). Merges happen in a temporary worktree, so the caller's checkout is untouched.
 
 ## 4. Working on a workspace
 
-- **Any agent or person:** check out `ws/<name>`, create a branch, edit, push. Open a PR **into
-  `ws/<name>`**; CI mirrors it into a PR to `main` (below) and comments the link. No Delphi CLI
-  needed.
-- **With the CLI:** `delphi checkout <name> [--as <c>]` clones Delphi at `ws/<name>` into
-  `<workspace_root>/<c>`, creates branch `edit/<gh-user>/<c>`, clones repos, installs the provenance
-  commit hook. `refresh` = `git merge origin/ws/<name>` (exit 2 on conflict).
+1. Clone or check out `ws/<name>` (it is the workspace root); run `.delphi/setup.sh` once.
+2. Branch, commit, push, open a PR into `ws/<name>`. Refresh with `git merge origin/ws/<name>`.
+3. After it merges, sync opens the PR to `main`; after that merges (merge commit or squash, never
+   rebase: rebasing replays folder-rooted commits onto main), sync merges main back into ws.
+4. On a sync conflict: on a branch cut from `ws/<name>`, `git merge -Xsubtree=<folder>
+   origin/main`, resolve, and PR it into `ws/<name>`.
 
-## 5. Propose (branch → PR to main)
+Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the exception).
 
-`delphi propose [checkout | [<name>] --branch <b>] [--dry-run]` (`--branch`: a branch on origin;
-the workspace is the one whose `ws/*` it shares history with, unless named):
+## 5. `.delphi/setup.sh` (in every workspace)
 
-1. Base = merge-base of the branch and `origin/ws/<name>`; patch = `base..branch` (binary-safe,
-   modes kept).
-2. In a temp worktree off `origin/main`: apply the patch under the folder with a 3-way apply. A
-   conflict (the folder changed on `main` in the same lines) exits 1 listing files: refresh, resolve,
-   re-run.
-3. `delphi check`, commit with provenance trailers (one commit; message lists the source branch),
-   push `propose/<gh-user>/<name>-<branch>` (`/` etc. in the branch become `-`; `$DELPHI_USER`
-   overrides the user, e.g. `github-actions` in CI) with a lease, open/update one PR to `main`.
+Reads `repos:` from `workspace.yml`, clones each into `repos/<name>` unless present, and adds
+`/repos/` to the clone's `.git/info/exclude` once. Nothing else. Must run on macOS `/bin/bash` 3.2
+and Git Bash: no bash-4 features, POSIX awk only.
 
-CI mirror: on PRs targeting `ws/*`, run `delphi propose --branch <head> --yes` (bot provenance) and
-comment the `main` PR link on the `ws/*` PR. After the `main` PR merges, CI re-splits; the edit
-branch's refresh is a clean merge (same change on both sides).
+## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
 
-## 6. Commands
+Validates the name (format, not on main, no leftover `ws/<name>`), copies `templates/workspace/`
+into `software/<org-path>/workspaces/<name>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
+temporary worktree on branch `new-workspace/<name>`, runs `ci/check.sh`, pushes, opens a PR.
+Sync creates `ws/<name>` once it merges.
 
-| Command | Does |
-|---|---|
-| `delphi create <scope> <name> [--from <dir>]` | new workspace folder (yml + files) via PR to main |
-| `delphi list` | workspaces on `origin/main` (name, scope, harness, branch) |
-| `delphi checkout <name> [--as <c>]` | §4 |
-| `delphi open [c] [--shell]` | warn if behind `ws/<name>`; launch the harness (or a shell) at the root |
-| `delphi refresh [c]` | fetch + merge `origin/ws/<name>` |
-| `delphi diff [c] [--upstream]` | changes vs `ws/<name>`; `--upstream`: new on `ws/<name>` since, with author + subject |
-| `delphi propose [c \| [name] --branch b] [--dry-run]` | §5 |
-| `delphi status` | local checkouts: dirty, ahead (unproposed), behind |
-| `delphi split [--check] [--push]` | §3 |
-| `delphi check` | scopes have `scope.yml`; `workspace.yml` valid, name = folder, unique; adapter exists; no nested workspaces; no symlinks; no instruction-file names outside workspaces |
-| `delphi setup [dir]` | remember where the Delphi checkout is |
+## 7. CI (`.github/workflows/delphi.yml`)
 
-Writers take `--yes`, `--model`, `--effort`.
+- `check`: PRs to main, read-only token, runs `ci/check.sh`.
+- `sync`: pushes to main or `ws/**`; checks out main (scripts never come from a ws branch) with
+  full history, sets the bot identity, runs `ci/sync.sh` (contents + pull-requests write; one run at
+  a time). Pushes and PRs made with `GITHUB_TOKEN` don't trigger workflows: no loops, and
+  CI-opened PRs don't run `check`, which is why sync runs `ci/check.sh` itself.
 
-## 7. Unchanged
+## 8. Testing
 
-Provenance (trailers, commit hook, resolution order), `--yes`/non-interactive rules, `gh` only for
-PRs, `safe_path` on every external path, exit codes (0/1/2), offline tolerance, `delphi.conf`.
-
-## 8. Removed (vs v3)
-
-Links (`blocks`/`docs`/`skills`/`settings` keys), `instructions`/`mcp` generation, `skill.yml`,
-`delphi sync`, sparse checkouts, `mv` (moving a workspace is an ordinary PR; `split` follows).
+`tests/e2e.sh` builds a sandbox (temp dir, bare origin, stub `gh` logging to `gh.log`, two
+workspaces in different org folders) and drives the scripts as CI and people would. Never test
+against GitHub.
