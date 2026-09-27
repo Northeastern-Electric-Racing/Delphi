@@ -45,7 +45,7 @@ The Argos repo is checked out at `repos/argos/`. Paths below are relative to a c
 
 ## Workflow
 
-Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (test-first, then `/code-review` and `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
+Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (test-first, then `/code-review` and `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`. An effort too big for one session starts with `/wayfinder`, which charts decision tickets and merges at `/to-spec`.
 
 ## PR Convention
 
