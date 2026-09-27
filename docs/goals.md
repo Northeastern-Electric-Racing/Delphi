@@ -11,11 +11,12 @@ and send improvements back — with or without an AI harness.
 
 ## Goals
 
-**G1. Workspaces live in Delphi.** Each workspace is a folder in Delphi with every file at its
-normal harness location, fully materialized on `main`. Shared files are linked to one source.
+**G1. Workspaces live in Delphi.** Each workspace is a self-contained folder on `main` with every
+file at its normal harness location.
 
-**G2. Work locally on just your workspace.** A checkout contains only that folder, on your own
-branch. Code repos listed in the workspace are cloned into it.
+**G2. The workspace is the repo root.** Checking out a workspace's branch gives exactly that
+workspace at the root, so any agent or person can work on it with plain git. Code repos listed in
+the workspace are cloned into local checkouts.
 
 **G3. Refresh.** Pull the latest `main` into a checkout without losing the user's edits.
 Conflicts are shown with git's normal tools.
@@ -25,16 +26,14 @@ Conflicts are shown with git's normal tools.
 
 **G5. Propose.** Send a checkout's changes back as one pull request per checkout.
 
-**G5a. Shared stays consistent.** A change to a shared file, made in its source or in any
-workspace that links it, reaches the source and every linked copy before it lands on `main`.
-Editing a shared file is flagged with the workspaces it affects. Conflicting edits are reported,
-never guessed.
+**G5a. One source of truth.** `main` stays authoritative; workspace branches are derived from it
+and never edited directly. Conflicting edits are reported, never guessed.
 
 **G6. Provenance.** Every change written to Delphi records which harness, model, and effort made
 it.
 
 **G7. Keep Delphi valid.** `check` catches broken manifests, missing paths, and bad structure
-before anything is pushed. New workspaces and moves are created through PRs too.
+before anything is pushed. New workspaces are created through PRs too.
 
 **G8. Harness-agnostic.** Supporting a new harness (beyond Claude Code) means adding one small
 adapter: file names plus how to launch it.
