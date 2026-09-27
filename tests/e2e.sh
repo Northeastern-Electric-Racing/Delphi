@@ -64,27 +64,27 @@ sync >/dev/null
 [ "$before" = "$(o for-each-ref --format='%(objectname)' refs/heads)" ] || fail "second sync changed refs"
 ok "sync is a no-op when nothing changed"
 
-# --- 2. an edit merged into ws/argos-dev becomes up/argos-dev and a PR to main
+# --- 2. an edit merged into ws/argos-dev becomes propose/argos-dev and a PR to main
 commit_on ws/argos-dev docs/CONTEXT.md "ws edit one"
 sync argos-dev >"$t/out"
-o show "up/argos-dev:$A/docs/CONTEXT.md" | grep -qx "ws edit one" || fail "up/argos-dev lacks the edit"
-[ "$(o diff --name-only main up/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "up diff not just the edit"
-grep -q "gh pr create --base main --head up/argos-dev --title ws/argos-dev → main" "$t/gh.log" ||
+o show "propose/argos-dev:$A/docs/CONTEXT.md" | grep -qx "ws edit one" || fail "propose/argos-dev lacks the edit"
+[ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose diff not just the edit"
+grep -q "gh pr create --base main --head propose/argos-dev --title ws/argos-dev → main" "$t/gh.log" ||
   fail "no PR created: $(cat "$t/gh.log")"
 grep -q -- "- edit docs/CONTEXT.md on ws/argos-dev (tester)" "$t/gh.log" || fail "PR body lacks ws commit"
-ok "ws edit -> up/argos-dev with the change under the folder, PR opened with gh"
+ok "ws edit -> propose/argos-dev with the change under the folder, PR opened with gh"
 
-# --- 3. merging up/argos-dev into main, then sync: clean, ws unchanged, nothing to bring up
+# --- 3. merging propose/argos-dev into main, then sync: clean, ws unchanged, nothing to propose
 (cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
-  git merge -q --no-ff --no-edit origin/up/argos-dev && git push -q origin main)
+  git merge -q --no-ff --no-edit origin/propose/argos-dev && git push -q origin main)
 ws=$(o rev-parse ws/argos-dev)
 : >"$t/gh.log"
-sync >"$t/out" || fail "sync after merging up failed"
+sync >"$t/out" || fail "sync after merging propose failed"
 [ "$(o rev-parse "ws/argos-dev^{tree}")" = "$(o rev-parse "$ws^{tree}")" ] || fail "ws tree changed"
-[ ! -s "$t/gh.log" ] || fail "gh called after up merged: $(cat "$t/gh.log")"
-ok "after up merges into main, sync is clean and opens no PR"
+[ ! -s "$t/gh.log" ] || fail "gh called after propose merged: $(cat "$t/gh.log")"
+ok "after the propose PR merges into main, sync is clean and opens no PR"
 
-# --- 4. a main change to another file merges down into a ws branch with its own edits, then up
+# --- 4. a main change to another file refreshes into a ws branch with its own edits, then propose
 commit_on ws/argos-dev docs/CONTEXT.md "ws edit two"
 commit_on main "$A/CLAUDE.md" "main edit"
 commit_on main README.md "root edit"
@@ -92,8 +92,8 @@ sync >"$t/out" || fail "sync with non-overlapping edits failed"
 o show ws/argos-dev:CLAUDE.md | grep -qx "main edit" || fail "main edit not in ws"
 o show ws/argos-dev:docs/CONTEXT.md | grep -qx "ws edit two" || fail "ws edit lost"
 ! o cat-file -e ws/argos-dev:README.md 2>/dev/null || fail "root file leaked into ws"
-[ "$(o diff --name-only main up/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "up diff wrong after down"
-ok "main-side edit merges down cleanly alongside ws edits; up carries only the ws edit"
+[ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose diff wrong after refresh"
+ok "main-side edit refreshes cleanly alongside ws edits; propose carries only the ws edit"
 [ "$(o rev-parse "ws/bms-dev^{tree}")" = "$(o rev-parse "main:$B")" ] || fail "bms-dev drifted"
 ok "unrelated main changes leave other ws branches' trees alone"
 
@@ -113,7 +113,7 @@ ok "conflict: reported with files, exit 1, other workspaces still synced"
   { git merge -q -Xsubtree="$B" origin/main >/dev/null 2>&1 || true; } &&
   git checkout -q --ours CLAUDE.md && git commit -qam "resolve" && git push -q origin HEAD:ws/bms-dev)
 sync >"$t/out" 2>"$t/err" || fail "sync after resolving failed: $(cat "$t/err")"
-grep -q "ws/bms-dev: PR to main" "$t/out" || fail "resolved ws not brought up"
+grep -q "ws/bms-dev: PR to main" "$t/out" || fail "resolved ws not proposed"
 ok "conflict resolved by merging main into ws in a PR; sync then succeeds"
 
 # --- 6. removed workspace folder: notice, branch kept
@@ -172,7 +172,23 @@ grep -q "gh pr create --base main --head new-workspace/fw-dev" "$t/gh.log" || fa
 [ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "new-workspace touched the checkout"
 ok "new-workspace.sh opens a PR with the templated folder; rejects duplicates and bad input"
 
-# --- 10. shellcheck, if installed
+# --- 10. one direction at a time: `sync refresh` only updates ws/, `sync propose` only updates propose/
+sync argos-dev >/dev/null || fail "settling sync failed"
+commit_on main "$A/CLAUDE.md" "one-way refresh"
+prop_before=$(o rev-parse propose/argos-dev)
+sync refresh argos-dev >/dev/null || fail "sync refresh failed"
+o show ws/argos-dev:CLAUDE.md | grep -qx "one-way refresh" || fail "sync refresh did not merge main"
+[ "$(o rev-parse propose/argos-dev)" = "$prop_before" ] || fail "sync refresh touched propose/argos-dev"
+commit_on ws/argos-dev docs/CONTEXT.md "one-way propose"
+ws_before=$(o rev-parse ws/argos-dev)
+commit_on main "$A/CLAUDE.md" "not yet refreshed"
+sync propose argos-dev >/dev/null || fail "sync propose failed"
+o show "propose/argos-dev:$A/docs/CONTEXT.md" | grep -qx "one-way propose" || fail "sync propose lacks the ws edit"
+[ "$(o rev-parse ws/argos-dev)" = "$ws_before" ] || fail "sync propose changed ws/argos-dev"
+! o show ws/argos-dev:CLAUDE.md | grep -qx "not yet refreshed" || fail "sync propose merged main into ws"
+ok "sync refresh / sync propose each move changes one way only"
+
+# --- 11. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
   shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/templates/workspace/.delphi/setup.sh ||
     fail "shellcheck"

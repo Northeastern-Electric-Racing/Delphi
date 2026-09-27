@@ -7,9 +7,9 @@ sync with `git merge -Xsubtree=<folder>` both ways. There is no CLI: a few shell
 
 ## Layout
 
-- `ci/sync.sh [<name>]`: per workspace, merge main into `ws/<name>` (creating it joined to main),
-  then PR `ws/<name>` changes into main via `up/<name>`. Runs on pushes to main and `ws/**`.
-- `ci/check.sh [<dir>]`: validates workspaces (runs on PRs to main, and on each `up/<name>`).
+- `ci/sync.sh [refresh|propose] [<name>]`: per workspace (both directions unless one is given), merge main into `ws/<name>` (creating it joined to main),
+  then PR `ws/<name>` changes into main via `propose/<name>`. Runs on pushes to main and `ws/**`.
+- `ci/check.sh [<dir>]`: validates workspaces (runs on PRs to main, and on each `propose/<name>`).
 - `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), `.delphi/setup.sh`.
 - `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories.

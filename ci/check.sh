@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci/check.sh [<dir>]: validate Delphi's workspaces (CI runs it on PRs to main; sync.sh runs it on
-# each up/<name>). Rules: a workspace is software/**/workspaces/<name>/ with a workspace.yml;
+# each propose/<name>). Rules: a workspace is software/**/workspaces/<name>/ with a workspace.yml;
 # names are lowercase letters, digits, and '-', unique repo-wide; workspaces never nest; no
 # symlinks under software/; .delphi/setup.sh matches the template; workspace.yml is
 # `harness: <adapter>` plus an optional `repos:` map of `<name>: <git-url>`.

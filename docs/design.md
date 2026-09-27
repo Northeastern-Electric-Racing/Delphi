@@ -26,16 +26,16 @@ lowercase letters, digits, `-`; unique repo-wide. Workspaces never nest; no syml
 `software/`. `ci/check.sh` enforces this on every PR to `main` and lists all problems.
 `.github/CODEOWNERS` assigns reviewers per org folder.
 
-## 3. Sync (`ci/sync.sh [<name>]`)
+## 3. Sync (`ci/sync.sh [refresh|propose] [<name>]`, no direction = both)
 
 Runs on every push to `main` or `ws/**`, for every workspace on `origin/main` (or one):
 
-1. **Down.** If `ws/<name>` is missing, create it as one commit, `git commit-tree
+1. **Refresh** (main → ws). If `ws/<name>` is missing, create it as one commit, `git commit-tree
    <main>:<folder> -p <main>` ("delphi: create ws/<name> from <folder>"): root = folder, parent =
    main, so there are no unrelated histories. Otherwise merge `origin/main` into `ws/<name>` with
    `--no-ff -Xsubtree=<folder>` and push if the tree changed. (`--no-ff` matters: once ws commits
    are in main, a fast-forward would put main's whole tree on the ws branch.)
-2. **Up.** Build `up/<name>` = `origin/main` + `git merge --no-ff -Xsubtree=<folder> ws/<name>`
+2. **Propose** (ws → PR to main). Build `propose/<name>` = `origin/main` + `git merge --no-ff -Xsubtree=<folder> ws/<name>`
    ("delphi: bring ws/<name> into main"). If its tree equals main's, stop. Otherwise run
    `ci/check.sh` on it, force-push it, and create or update the PR `ws/<name> → main` with `gh`
    (body: changed files, ws commit subjects and authors).

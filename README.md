@@ -16,7 +16,7 @@ git fetch origin && git merge origin/ws/argos-dev   # refresh your branch any ti
 ```
 
 1. Your PR into `ws/<name>` is reviewed and merged.
-2. CI opens (or updates) a PR `ws/<name> → main` from branch `up/<name>`. Merge it with a merge
+2. CI opens (or updates) a PR `ws/<name> → main` from branch `propose/<name>`. Merge it with a merge
    commit or squash, never rebase.
 3. CI merges `main` back into `ws/<name>`.
 
