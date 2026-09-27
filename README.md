@@ -62,14 +62,19 @@ repos:                  # cloned into repos/<name> by .delphi/setup.sh
 ```
 
 The workspace's name is its folder name (unique repo-wide). Every other file in the folder is the
-workspace's own, at its normal harness path, except three Delphi manages: `.delphi/setup.sh`,
-`.delphi/new-worktree.sh`, and `.github/workflows/delphi.yml` (copies of the template's).
+workspace's own, at its normal harness path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`,
+`new-worktree.sh`, `link.sh`) and `.github/workflows/delphi.yml` (copies of the template's).
 
 ## New workspace
 
 `tools/new-workspace.sh <org-path under software/> <name>` copies `templates/workspace/` into
-`software/<org-path>/workspaces/<name>/` and opens a PR to `main`. Once it merges, CI creates
-`ws/<name>`.
+`software/<org-path>/workspaces/<name>/`, adds the project's `defaults/` if it has one, and opens a
+PR to `main`. Once it merges, CI creates `ws/<name>`.
+
+**Project folders.** The folder above `workspaces/` (e.g. `software/application-software/argos/`)
+can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`.
+From any workspace, `.delphi/link.sh main` checks out `main` at `linked/main/` to read them, and
+`.delphi/link.sh <workspace>` checks out another workspace at `linked/<workspace>/`.
 
 ## CI (`.github/workflows/delphi.yml`)
 

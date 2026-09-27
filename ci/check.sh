@@ -3,20 +3,38 @@
 # a workspace is software/**/workspaces/<name>/ with a workspace.yml; names are lowercase letters,
 # digits, and '-', unique repo-wide; workspaces never nest; no symlinks under software/; each
 # workspace's .delphi/*.sh and .github/workflows/delphi.yml match templates/workspace/, and the
-# template workflow matches .github/workflows/delphi.yml; workspace.yml is `harness: <adapter>` plus
-# an optional `repos:` map of `<name>: <git-url>`. Lists every problem; exits 1 if any.
+# template workflow matches .github/workflows/delphi.yml; workspace.yml (and a project's
+# defaults/workspace.yml) is `harness: <adapter>` plus an optional `repos:` map of `<name>: <git-url>`.
+# Lists every problem; exits 1 if any.
 set -euo pipefail
 cd "${1:-.}"
 problems=0
 bad() { echo "check: $*" >&2 && problems=$((problems + 1)); }
 tpl=templates/workspace
-managed=".delphi/setup.sh .delphi/new-worktree.sh .github/workflows/delphi.yml"
+managed=".delphi/setup.sh .delphi/new-worktree.sh .delphi/link.sh .github/workflows/delphi.yml"
 
 [ -d software ] || bad "software/ is missing"
 cmp -s .github/workflows/delphi.yml $tpl/.github/workflows/delphi.yml ||
   bad "$tpl/.github/workflows/delphi.yml: differs from .github/workflows/delphi.yml"
 while IFS= read -r f; do bad "$f: symlinks are not allowed under software/"; done \
   < <(find software -type l 2>/dev/null)
+
+manifest() {
+  while IFS= read -r msg; do bad "$1: $msg"; done < <(awk '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    /^harness:/ { v = $0; sub(/^harness:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+                  if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
+    /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
+    r && /^[[:space:]]/ {
+      if ($0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/) {
+        print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
+      n = $1; sub(/:$/, "", n)
+      if (n == "." || n == "..") print "bad repo name: " n
+      if (seen[n]++) print "duplicate repo: " n
+      next }
+    { print "unexpected line: " $0 }
+    END { if (!h) print "harness is missing" }' "$1")
+}
 
 folders=""
 while IFS= read -r f; do
@@ -34,21 +52,10 @@ while IFS= read -r f; do
   done
   folders="$folders $folder"
   for m in $managed; do cmp -s "$tpl/$m" "$folder/$m" || bad "$folder/$m: differs from $tpl/$m"; done
-  while IFS= read -r msg; do bad "$f: $msg"; done < <(awk '
-    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
-    /^harness:/ { v = $0; sub(/^harness:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
-                  if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
-    /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
-    r && /^[[:space:]]/ {
-      if ($0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/) {
-        print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
-      n = $1; sub(/:$/, "", n)
-      if (n == "." || n == "..") print "bad repo name: " n
-      if (seen[n]++) print "duplicate repo: " n
-      next }
-    { print "unexpected line: " $0 }
-    END { if (!h) print "harness is missing" }' "$f")
-done < <(find software -name workspace.yml -type f 2>/dev/null | sort)
+  manifest "$f"
+done < <(find software -name workspace.yml -type f \( ! -path '*/defaults/workspace.yml' -o -path '*/workspaces/defaults/*' \) 2>/dev/null | sort)
+while IFS= read -r f; do manifest "$f"; done \
+  < <(find software -path '*/defaults/workspace.yml' ! -path '*/workspaces/defaults/*' -type f 2>/dev/null)
 
 [ "$problems" = 0 ] || { echo "check: $problems problem(s)" >&2 && exit 1; }
 echo "check: ok"

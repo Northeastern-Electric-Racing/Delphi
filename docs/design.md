@@ -8,7 +8,8 @@ Goals: `docs/goals.md`. No CLI: plain git plus a few shell scripts run by GitHub
 normal harness paths (`CLAUDE.md`, `.claude/…`, `docs/…`). For each workspace, branch
 **`ws/<name>`** has **that folder as its repo root**. Two directions keep them in sync, both subtree
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
-in normal three-way merges. Nothing is shared or generated between workspaces.
+in normal three-way merges. Nothing is shared or generated between workspaces: a project's
+`defaults/` is copied once at creation, and `link.sh` only checks out other branches to read.
 
 ```
    ┌───────────────────────────────┐
@@ -39,8 +40,9 @@ in normal three-way merges. Nothing is shared or generated between workspaces.
 ## 2. Repository (main)
 
 ```
+software/<org>/…/<project>/           README.md  AUTHORING.md  defaults/   (optional, main only)
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
-                                      .delphi/setup.sh  .delphi/new-worktree.sh  .github/workflows/delphi.yml  .gitattributes
+                                      .delphi/{setup,new-worktree,link}.sh  .github/workflows/delphi.yml  .gitattributes
 ci/sync.sh  ci/check.sh               CI scripts
 tools/new-workspace.sh                new workspace as a PR
 templates/workspace/                  what new-workspace copies
@@ -51,10 +53,15 @@ tests/e2e.sh                          sandbox test of all of the above
 Org folders under `software/` are plain directories. `workspace.yml` is tiny YAML: `harness:
 <adapter>` and an optional `repos:` map of `<name>: <git-url>`. The name is the folder name:
 lowercase letters, digits, `-`; unique repo-wide. Workspaces never nest; no symlinks under
-`software/`. Each workspace's `.delphi/setup.sh`, `.delphi/new-worktree.sh`, and `.github/workflows/delphi.yml` equal the
+`software/`. Each workspace's `.delphi/*.sh` and `.github/workflows/delphi.yml` equal the
 template's, and the template's workflow equals main's. `ci/check.sh` enforces all of this and lists
 every problem. `.gitattributes` (`eol=lf`) keeps `setup.sh` runnable in Git Bash clones.
 `.github/CODEOWNERS` assigns reviewers per org folder.
+
+The folder holding a `workspaces/` directory is a project folder. It may hold shared context
+(`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`: files a new workspace
+there starts with. These live only on `main`; workspaces reach them with `link.sh main`. A
+`defaults/workspace.yml` is checked as a manifest but is not a workspace.
 
 ## 3. Sync (`ci/sync.sh [refresh|propose] [<name>]`; no direction = both)
 
@@ -95,9 +102,14 @@ and Git Bash: no bash-4 features, POSIX awk only.
 checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
 The template's `new-worktree` skill makes worktrees the default way to start a branch.
 
+`.delphi/link.sh <workspace>|main` checks out `origin/ws/<workspace>` (or `origin/main`) as a
+detached worktree at `linked/<name>/`, updates it on re-runs unless it's on a branch, and adds
+`/linked/` to `.git/info/exclude`. The template's `link-workspace` skill explains it.
+
 ## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
 
 Validates the name (format, not on main, no leftover `ws/<name>`), copies `templates/workspace/`
+and then `software/<org-path>/defaults/` if present (its `CLAUDE.md` appended to the template's)
 into `software/<org-path>/workspaces/<name>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
 temporary worktree, runs `ci/check.sh`, pushes branch `new-workspace/<name>`, and opens a PR. Sync
 creates `ws/<name>` once it merges.

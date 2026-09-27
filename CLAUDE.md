@@ -13,9 +13,10 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
 - `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), and the managed
-  files every workspace carries unchanged: `.delphi/setup.sh`, `.delphi/new-worktree.sh`,
-  `.github/workflows/delphi.yml`; and a default `new-worktree` skill.
-- `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories.
+  files every workspace carries unchanged: `.delphi/{setup,new-worktree,link}.sh`,
+  `.github/workflows/delphi.yml`; and default `new-worktree` and `link-workspace` skills.
+- `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
+  folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `defaults/`.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
 
