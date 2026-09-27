@@ -95,9 +95,9 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 ## 5. `.delphi/setup.sh` (in every workspace)
 
 Reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
-`worktrees/<name>/.bare` and checks out its default branch as a worktree at
-`worktrees/<name>/<default-branch>/`. Adds `/worktrees/` to the clone's `.git/info/exclude` once.
-Nothing else: code lives only in worktrees, never in a plain clone. Must run on macOS `/bin/bash` 3.2
+`repos/<name>`, then checks out its default branch as the first worktree,
+`worktrees/<name>/<default-branch>/` (re-created if missing). Adds `/repos/` and `/worktrees/` to
+the clone's `.git/info/exclude` once. Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
 and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `worktrees/<repo>/<branch>`

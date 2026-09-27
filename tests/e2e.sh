@@ -163,7 +163,7 @@ expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "pr
 expect_bad defaults-named-workspace "defaults/.delphi/link.sh: differs" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/defaults && echo x >>software/x/workspaces/defaults/.delphi/link.sh"
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
-# --- 8. setup.sh fetches workspace.yml repos into worktrees/<repo>/.bare, checks out the default branch, and is idempotent
+# --- 8. setup.sh fetches workspace.yml repos into repos/<repo>, checks out the default branch under worktrees/, and is idempotent
 for r in lib1 lib2; do
   git init -q "$t/$r" && git -C "$t/$r" commit -q --allow-empty -m "$r" && git clone -q --bare "$t/$r" "$t/$r.git"
 done
@@ -177,11 +177,17 @@ for r in lib1 lib2; do
   [ "$(git -C "$t/ws/worktrees/$r/$def" rev-parse HEAD)" = "$(git -C "$t/$r" rev-parse HEAD)" ] || fail "$r default worktree missing"
   [ "$(git -C "$t/ws/worktrees/$r/$def" branch --show-current)" = "$def" ] || fail "$r default worktree not on $def"
 done
-[ ! -e "$t/ws/repos" ] || fail "setup.sh made repos/"
-grep -q "worktrees/lib1: already present" "$t/out" || fail "re-run did not skip"
-[ "$(grep -cx /worktrees/ "$t/ws/.git/info/exclude")" = 1 ] || fail "exclude not exactly once"
-[ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "worktrees/ shows in status"
-ok "setup.sh makes worktrees/<repo>/.bare plus a default-branch worktree, excludes them once, and is idempotent"
+[ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = true ] || fail "repos/lib1 not a bare store"
+grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
+for d in /repos/ /worktrees/; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
+[ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/ or worktrees/ shows in status"
+rm -rf "$t/ws/worktrees/lib2" && git -C "$t/ws/repos/lib2" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
+  [ -d "$t/ws/worktrees/lib2/$def" ] || fail "re-run did not restore a missing default worktree"
+ok "setup.sh makes a bare store in repos/ plus a default-branch worktree in worktrees/, excludes both once, and is idempotent"
+w=$t/legacy && git clone -q -b ws/argos-dev "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" && git clone -q "$t/lib1.git" "$w/repos/lib1"
+/bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed on a pre-existing clone"
+{ grep -q "could not check out worktrees/lib1/$def" "$t/err" && [ -d "$w/worktrees/lib2/$def" ]; } || fail "pre-existing clone not reported"
+ok "setup.sh warns and carries on when repos/<repo> is an older plain clone"
 git clone -q -c core.autocrlf=true -b ws/argos-dev "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh fails with core.autocrlf=true"

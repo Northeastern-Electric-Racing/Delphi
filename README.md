@@ -40,7 +40,7 @@ histories stay joined and edits on either side meet in normal three-way merges.
 
 ```sh
 git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
-cd argos-dev && .delphi/setup.sh        # checks out workspace.yml's repos under worktrees/ (git-ignored)
+cd argos-dev && .delphi/setup.sh        # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
 git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
 git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
 ```
@@ -57,7 +57,7 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 
 ```yaml
 harness: claude-code
-repos:                  # checked out under worktrees/<name>/ by .delphi/setup.sh
+repos:                  # stored in repos/<name>, checked out in worktrees/<name>/ by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```
 

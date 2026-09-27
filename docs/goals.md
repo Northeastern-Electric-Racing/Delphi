@@ -25,6 +25,6 @@ anyone, person or agent, work on a workspace with plain git and send improvement
 
 - **I1.** Changes reach `main` and `ws/*` only through PRs (CI's refreshes excepted).
 - **I2.** `ws/<name>` history is joined to `main`; no unrelated histories, no force-pushes to `ws/*`.
-- **I3.** Code repos in `worktrees/` never appear as workspace changes.
+- **I3.** Code repos in `repos/` and `worktrees/` never appear as workspace changes.
 - **I4.** `setup.sh` works on macOS bash 3.2 and Git Bash.
 - **I5.** Everything is testable end to end without GitHub (`tests/e2e.sh`).
