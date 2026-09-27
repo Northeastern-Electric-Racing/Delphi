@@ -1,7 +1,3 @@
-# Delphi workspace
-
-You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos live in `repos/`. Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Work here unless the task clearly belongs to another project.
-
 # NER Software conventions
 
 ## Branch & Commit Conventions
@@ -43,10 +39,6 @@ The Argos repo is checked out at `repos/argos/`. Paths below are relative to a c
 - Lint and format (frontend): `npx prettier --check "src/**/*.{ts,html,scss}" && npx ng lint`.
 - Build (backend): `cargo build`.
 
-## Workflow
-
-Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (test-first, then `/code-review` and `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
-
 ## PR Convention
 
 - The `/commit` skill applies the commit message format.
@@ -66,7 +58,3 @@ Frontend and backend conventions live alongside their code and auto-load when ed
 ## Issue tracker
 
 Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions, and `docs/agents/triage-labels.md` for labels. Specs and tickets avoid file paths and code snippets; they go stale.
-
-## Domain docs
-
-The glossary and ADRs are workspace docs, not files in `repos/argos/`: `docs/CONTEXT.md` and `docs/adr/` at the workspace root. Edit them there and they're proposed back to Delphi. Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR. ADR filenames follow `repos/argos/docs/agents/domain.md` (`<NNNN>-<prefix>-<topic-slug>.md`).

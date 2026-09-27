@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # tools/new-workspace.sh <org-path under software/> <name>: propose a new workspace as a PR to main.
-# In a temporary worktree of origin/main, copies templates/workspace/ to
+# In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
+# project's software/<org-path>/defaults/ (its CLAUDE.md appended to the template's) to
 # software/<org-path>/workspaces/<name>/, checks it, pushes branch new-workspace/<name>, and opens
 # the PR with gh. Your checkout is untouched. After merge, ci/sync.sh creates ws/<name>.
 set -euo pipefail
@@ -24,11 +25,17 @@ branch=new-workspace/$name
 wt=$(mktemp -d)
 git worktree add --quiet --detach "$wt" origin/main
 trap 'git worktree remove --force "$wt"' EXIT
+defaults=$wt/software/$org/defaults
 mkdir -p "$wt/$folder"
 cp -R "$wt/templates/workspace/." "$wt/$folder/"
-sed -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/templates/workspace/CLAUDE.md" >"$wt/$folder/CLAUDE.md"
+if [ -d "$defaults" ]; then
+  cp -R "$defaults/." "$wt/$folder/"
+  cp "$wt/templates/workspace/CLAUDE.md" "$wt/$folder/CLAUDE.md"
+  [ ! -f "$defaults/CLAUDE.md" ] || { echo && cat "$defaults/CLAUDE.md"; } >>"$wt/$folder/CLAUDE.md"
+fi
+sed -i.bak -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/$folder/CLAUDE.md" && rm "$wt/$folder/CLAUDE.md.bak"
 "$wt/ci/check.sh" "$wt"
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $name at $folder"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
-gh pr create --base main --head "$branch" --title "New workspace: $name" --body "Adds \`$folder/\` from templates/workspace. Fill in \`workspace.yml\` repos and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$name\`."
+gh pr create --base main --head "$branch" --title "New workspace: $name" --body "Adds \`$folder/\` from templates/workspace (plus \`software/$org/defaults\` if present). Fill in \`workspace.yml\` repos and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$name\`."

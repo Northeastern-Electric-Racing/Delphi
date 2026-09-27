@@ -32,6 +32,11 @@ cp -R "$src/ci" "$src/tools" "$src/templates" "$src/.github" "$src/README.md" "$
 mkdir -p "$t/seed/$A" "$t/seed/$B"
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
+FD=software/electrical/firmware/defaults # project defaults for new workspaces under electrical/firmware
+mkdir -p "$t/seed/$FD/.claude/skills/fw"
+printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
+printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
+echo "fw skill" >"$t/seed/$FD/.claude/skills/fw/SKILL.md"
 git -C "$t/seed" add -A && git -C "$t/seed" commit -qm init
 git clone -q --bare "$t/seed" "$t/origin.git"
 git clone -q "$t/origin.git" "$t/ci"
@@ -154,6 +159,8 @@ expect_bad bad-name "name must be" sh -c "mkdir -p software/x/workspaces && cp -
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
 expect_bad setup-drift "setup.sh: differs" sh -c "echo x >>$A/.delphi/setup.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
+expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/defaults/workspace.yml"
+expect_bad defaults-named-workspace "defaults/.delphi/link.sh: differs" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/defaults && echo x >>software/x/workspaces/defaults/.delphi/link.sh"
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
 # --- 8. setup.sh clones workspace.yml repos into repos/ and is idempotent
@@ -184,12 +191,18 @@ F=software/electrical/firmware/workspaces/fw-dev
 o cat-file -e "new-workspace/fw-dev:$F/workspace.yml" || fail "no workspace.yml on new-workspace/fw-dev"
 o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "branch \`ws/fw-dev\`" || fail "CLAUDE.md not filled in"
 ! o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "{{" || fail "placeholder left"
+o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -qx "# Firmware for fw-dev" || fail "defaults CLAUDE.md not appended"
+[ "$(o rev-parse "new-workspace/fw-dev:$F/workspace.yml")" = "$(o rev-parse "main:$FD/workspace.yml")" ] ||
+  fail "defaults workspace.yml not used"
+o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
+o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/link-workspace/SKILL.md" || fail "template skill lost"
 grep -q "gh pr create --base main --head new-workspace/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
 (cd "$t/dev" && ! tools/new-workspace.sh x argos-dev 2>/dev/null) || fail "duplicate name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh x Bad 2>/dev/null) || fail "bad name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh ../x ok 2>/dev/null) || fail "bad org path accepted"
 [ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "new-workspace touched the checkout"
 ok "new-workspace.sh opens a PR with the templated folder; rejects duplicates and bad input"
+ok "new-workspace.sh adds the project's defaults/ (CLAUDE.md appended, placeholders filled)"
 ok "new-workspace.sh works when a local new-workspace/<name> branch is left over"
 
 # --- 10. one direction at a time: `sync refresh` only updates ws/, `sync propose` only updates propose/
@@ -214,9 +227,39 @@ grep -q "ws/argos-dev: check failed" "$t/err" || fail "check failure not reporte
 [ "$(o rev-parse propose/argos-dev)" = "$prop_before" ] || fail "failing proposal was pushed"
 ok "a proposal failing check.sh is reported and not pushed; exit 1"
 
-# --- 11. shellcheck, if installed
+# --- 11. new-worktree.sh: new branch from the default branch or <base>; existing branch checked out; reruns reuse
+git init -q "$t/code" && git -C "$t/code" commit -q --allow-empty -m one && git -C "$t/code" branch feat &&
+  git -C "$t/code" branch develop && git -C "$t/code" commit -q --allow-empty -m two
+w=$t/nw && git clone -q -b ws/bms-dev "$t/origin.git" "$w" && git clone -q "$t/code" "$w/repos/code"
+nw() { bash "$w/.delphi/new-worktree.sh" "$@"; }
+[ "$(nw code 1-new)" = "$w/repos/worktrees/code/1-new" ] || fail "new-worktree path"
+[ "$(git -C "$w/repos/worktrees/code/1-new" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse main)" ] || fail "new branch not from default"
+nw code feat >/dev/null && [ "$(git -C "$w/repos/worktrees/code/feat" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse feat)" ] ||
+  fail "existing branch not checked out"
+nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/repos/worktrees/code/2-dev" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse develop)" ] ||
+  fail "<base> ignored"
+[ "$(nw code feat)" = "$w/repos/worktrees/code/feat" ] || fail "rerun did not reuse"
+[ "$(git -C "$w/repos/code" branch --show-current)" = main ] || fail "repos/code left its branch"
+ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
+
+# --- 12. link.sh: other workspaces and main as detached worktrees under linked/, updated on re-run
+lk() { bash "$w/.delphi/link.sh" "$@"; }
+[ "$(lk argos-dev)" = "$w/linked/argos-dev" ] || fail "link.sh path"
+[ "$(git -C "$w/linked/argos-dev" rev-parse HEAD)" = "$(o rev-parse ws/argos-dev)" ] || fail "link not at ws/argos-dev"
+{ lk main >/dev/null && [ -f "$w/linked/main/ci/sync.sh" ]; } || fail "link main"
+commit_on ws/argos-dev docs/CONTEXT.md "linked update"
+{ lk argos-dev >/dev/null && grep -qx "linked update" "$w/linked/argos-dev/docs/CONTEXT.md"; } || fail "re-run did not update"
+git -C "$w/linked/argos-dev" switch -q -c mine && commit_on ws/argos-dev docs/CONTEXT.md "after switch"
+{ lk argos-dev 2>"$t/err" >/dev/null && grep -q "on a branch; not updated" "$t/err"; } || fail "branch not reported"
+[ "$(git -C "$w/linked/argos-dev" branch --show-current)" = mine ] || fail "link moved a branch"
+! lk ../x 2>/dev/null || fail "bad link name accepted"
+[ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
+! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
+ok "link.sh checks out workspaces and main under linked/, updates detached ones, leaves branches"
+
+# --- 13. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
-  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/templates/workspace/.delphi/setup.sh ||
+  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/templates/workspace/.delphi/*.sh ||
     fail "shellcheck"
   ok "shellcheck clean"
 fi
