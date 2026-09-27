@@ -28,7 +28,7 @@ B=software/electrical/workspaces/bms-dev
 
 # --- sandbox: seed repo -> bare origin; "ci" is the clone CI runs in, "dev" a person's clone
 git init -q "$t/seed"
-cp -R "$src/ci" "$src/tools" "$src/templates" "$src/README.md" "$t/seed/"
+cp -R "$src/ci" "$src/tools" "$src/templates" "$src/.github" "$src/README.md" "$t/seed/"
 mkdir -p "$t/seed/$A" "$t/seed/$B"
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
@@ -56,8 +56,11 @@ for w in "$A" "$B"; do
   o cat-file -e "ws/$n:workspace.yml" || fail "ws/$n lacks workspace.yml"
   { ! o cat-file -e "ws/$n:README.md" 2>/dev/null && ! o cat-file -e "ws/$n:ci" 2>/dev/null; } ||
     fail "ws/$n has Delphi root files"
+  [ "$(o rev-parse "ws/$n:.github/workflows/delphi.yml")" = "$(o rev-parse main:.github/workflows/delphi.yml)" ] ||
+    fail "ws/$n root lacks main's workflow (pushes to ws/$n would trigger nothing)"
 done
 ok "sync creates ws/<name> rooted at its folder, parent main, no Delphi root files"
+ok "ws/<name> root carries main's CI workflow, so GitHub runs sync on pushes to ws/**"
 [ ! -s "$t/gh.log" ] || fail "gh called on creation"
 before=$(o for-each-ref --format='%(objectname)' refs/heads)
 sync >/dev/null
@@ -73,6 +76,12 @@ grep -q "gh pr create --base main --head propose/argos-dev --title ws/argos-dev 
   fail "no PR created: $(cat "$t/gh.log")"
 grep -q -- "- edit docs/CONTEXT.md on ws/argos-dev (tester)" "$t/gh.log" || fail "PR body lacks ws commit"
 ok "ws edit -> propose/argos-dev with the change under the folder, PR opened with gh"
+prop=$(o rev-parse propose/argos-dev)
+sleep 1 # a re-built merge commit would get a new timestamp, hence a new id
+: >"$t/gh.log"
+sync argos-dev >/dev/null
+{ [ "$(o rev-parse propose/argos-dev)" = "$prop" ] && [ ! -s "$t/gh.log" ]; } || fail "unchanged proposal re-pushed"
+ok "an unchanged proposal is not re-pushed and its PR not touched"
 
 # --- 3. merging propose/argos-dev into main, then sync: clean, ws unchanged, nothing to propose
 (cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
@@ -113,7 +122,7 @@ ok "conflict: reported with files, exit 1, other workspaces still synced"
   { git merge -q -Xsubtree="$B" origin/main >/dev/null 2>&1 || true; } &&
   git checkout -q --ours CLAUDE.md && git commit -qam "resolve" && git push -q origin HEAD:ws/bms-dev)
 sync >"$t/out" 2>"$t/err" || fail "sync after resolving failed: $(cat "$t/err")"
-grep -q "ws/bms-dev: PR to main" "$t/out" || fail "resolved ws not proposed"
+grep -q "ws/bms-dev: proposed" "$t/out" || fail "resolved ws not proposed"
 ok "conflict resolved by merging main into ws in a PR; sync then succeeds"
 
 # --- 6. removed workspace folder: notice, branch kept
@@ -126,22 +135,26 @@ ok "removed workspace: notice printed, branch kept"
 # --- 7. check.sh: real layout passes; each bad layout fails
 "$src/ci/check.sh" "$src" >/dev/null || fail "check fails on the real repo"
 ok "check passes on the real repo"
-expect_bad() { # <label> <setup command...>: copy the real layout, break it, expect check to fail
-  local d=$t/chk-$1 label=$1
-  shift
-  rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$d/"
+expect_bad() { # <label> <expected message> <setup command...>: copy the real layout, break it, check fails
+  local d=$t/chk-$1 label=$1 want=$2
+  shift 2
+  rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$d/"
   (cd "$d" && "$@")
   if "$src/ci/check.sh" "$d" 2>"$t/err" >/dev/null; then fail "check passed: $label"; fi
-  ok "check fails: $label ($(head -n 1 "$t/err"))"
+  grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
+  ok "check fails: $label ($want)"
 }
-expect_bad no-harness sed -i 's/^harness:.*//' "$A/workspace.yml"
-expect_bad bad-repo sh -c "printf '  ../x: y\n' >>$A/workspace.yml"
-expect_bad bad-key sh -c "printf 'name: x\n' >>$A/workspace.yml"
-expect_bad duplicate sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/"
-expect_bad nested sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
-expect_bad setup-drift sh -c "mkdir -p templates/workspace/.delphi && echo x >templates/workspace/.delphi/setup.sh"
-expect_bad symlink ln -s ../CLAUDE.md "$A/docs/link.md"
-expect_bad bad-name sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
+expect_bad no-harness "harness is missing" sed -i 's/^harness:.*//' "$A/workspace.yml"
+expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>$A/workspace.yml"
+expect_bad bad-repo "bad repos entry" sh -c "printf '  ../x: y\n' >>$A/workspace.yml"
+expect_bad bad-key "unexpected line" sh -c "printf 'name: x\n' >>$A/workspace.yml"
+expect_bad duplicate "is also used by" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/"
+expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
+expect_bad bad-name "name must be" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
+expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
+expect_bad setup-drift "setup.sh: differs" sh -c "echo x >>$A/.delphi/setup.sh"
+expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
+expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
 # --- 8. setup.sh clones workspace.yml repos into repos/ and is idempotent
 for r in lib1 lib2; do
@@ -157,20 +170,27 @@ grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
 [ "$(grep -cx /repos/ "$t/ws/.git/info/exclude")" = 1 ] || fail "exclude not exactly once"
 [ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/ shows in status"
 ok "setup.sh clones repos into repos/, excludes them once, and is idempotent"
+git clone -q -c core.autocrlf=true -b ws/argos-dev "$t/origin.git" "$t/ws-crlf"
+cp "$t/ws/workspace.yml" "$t/ws-crlf/"
+/bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh fails with core.autocrlf=true"
+ok "setup.sh runs in a core.autocrlf=true clone (Git Bash default), thanks to .gitattributes"
 
 # --- 9. new-workspace.sh creates the folder on a branch and opens a PR
 : >"$t/gh.log"
-(cd "$t/dev" && git checkout -q -B main origin/main && tools/new-workspace.sh electrical/firmware fw-dev >/dev/null)
+git -C "$t/dev" branch -q new-workspace/fw-dev origin/main # left by an earlier failed run
+(cd "$t/dev" && git checkout -q -B main origin/main && tools/new-workspace.sh electrical/firmware fw-dev >/dev/null) ||
+  fail "new-workspace.sh failed (blocked by a leftover local branch?)"
 F=software/electrical/firmware/workspaces/fw-dev
 o cat-file -e "new-workspace/fw-dev:$F/workspace.yml" || fail "no workspace.yml on new-workspace/fw-dev"
 o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "branch \`ws/fw-dev\`" || fail "CLAUDE.md not filled in"
-o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "{{" && fail "placeholder left"
+! o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "{{" || fail "placeholder left"
 grep -q "gh pr create --base main --head new-workspace/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
 (cd "$t/dev" && ! tools/new-workspace.sh x argos-dev 2>/dev/null) || fail "duplicate name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh x Bad 2>/dev/null) || fail "bad name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh ../x ok 2>/dev/null) || fail "bad org path accepted"
 [ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "new-workspace touched the checkout"
 ok "new-workspace.sh opens a PR with the templated folder; rejects duplicates and bad input"
+ok "new-workspace.sh works when a local new-workspace/<name> branch is left over"
 
 # --- 10. one direction at a time: `sync refresh` only updates ws/, `sync propose` only updates propose/
 sync argos-dev >/dev/null || fail "settling sync failed"
@@ -187,6 +207,12 @@ o show "propose/argos-dev:$A/docs/CONTEXT.md" | grep -qx "one-way propose" || fa
 [ "$(o rev-parse ws/argos-dev)" = "$ws_before" ] || fail "sync propose changed ws/argos-dev"
 ! o show ws/argos-dev:CLAUDE.md | grep -qx "not yet refreshed" || fail "sync propose merged main into ws"
 ok "sync refresh / sync propose each move changes one way only"
+prop_before=$(o rev-parse propose/argos-dev)
+commit_on ws/argos-dev workspace.yml "bad: line"
+if sync argos-dev 2>"$t/err" >/dev/null; then fail "sync proposed a workspace failing check"; fi
+grep -q "ws/argos-dev: check failed" "$t/err" || fail "check failure not reported: $(cat "$t/err")"
+[ "$(o rev-parse propose/argos-dev)" = "$prop_before" ] || fail "failing proposal was pushed"
+ok "a proposal failing check.sh is reported and not pushed; exit 1"
 
 # --- 11. shellcheck, if installed
 if command -v shellcheck >/dev/null; then

@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
-# ci/check.sh [<dir>]: validate Delphi's workspaces (CI runs it on PRs to main; sync.sh runs it on
-# each propose/<name>). Rules: a workspace is software/**/workspaces/<name>/ with a workspace.yml;
-# names are lowercase letters, digits, and '-', unique repo-wide; workspaces never nest; no
-# symlinks under software/; .delphi/setup.sh matches the template; workspace.yml is
-# `harness: <adapter>` plus an optional `repos:` map of `<name>: <git-url>`.
-# Lists every problem and exits 1 if there are any.
+# ci/check.sh [<dir>]: validate Delphi (CI runs it on PRs to main; sync.sh on each proposal). Rules:
+# a workspace is software/**/workspaces/<name>/ with a workspace.yml; names are lowercase letters,
+# digits, and '-', unique repo-wide; workspaces never nest; no symlinks under software/; each
+# workspace's .delphi/setup.sh and .github/workflows/delphi.yml match templates/workspace/, and the
+# template workflow matches .github/workflows/delphi.yml; workspace.yml is `harness: <adapter>` plus
+# an optional `repos:` map of `<name>: <git-url>`. Lists every problem; exits 1 if any.
 set -euo pipefail
 cd "${1:-.}"
 problems=0
 bad() { echo "check: $*" >&2 && problems=$((problems + 1)); }
+tpl=templates/workspace
+managed=".delphi/setup.sh .github/workflows/delphi.yml"
 
 [ -d software ] || bad "software/ is missing"
+cmp -s .github/workflows/delphi.yml $tpl/.github/workflows/delphi.yml ||
+  bad "$tpl/.github/workflows/delphi.yml: differs from .github/workflows/delphi.yml"
 while IFS= read -r f; do bad "$f: symlinks are not allowed under software/"; done \
   < <(find software -type l 2>/dev/null)
 
@@ -29,12 +33,11 @@ while IFS= read -r f; do
     case "$other/" in "$folder"/*) bad "$other: nested inside workspace $folder" ;; esac
   done
   folders="$folders $folder"
-  t=templates/workspace/.delphi/setup.sh
-  [ ! -f "$t" ] || cmp -s "$t" "$folder/.delphi/setup.sh" || bad "$folder/.delphi/setup.sh: differs from $t"
+  for m in $managed; do cmp -s "$tpl/$m" "$folder/$m" || bad "$folder/$m: differs from $tpl/$m"; done
   while IFS= read -r msg; do bad "$f: $msg"; done < <(awk '
     /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     /^harness:/ { v = $0; sub(/^harness:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
-                  if (v == "") print "harness is empty"; h = 1; r = 0; next }
+                  if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
     /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
     r && /^[[:space:]]/ {
       if ($0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/) {
