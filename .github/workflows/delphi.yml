@@ -1,40 +1,64 @@
-# Delphi CI (docs/design.md §5): PRs must pass check and be in sync; main is re-synced after merges.
-# The sync commit is pushed with GITHUB_TOKEN, which does not trigger workflows, so it cannot loop.
+# Delphi CI (docs/design.md §3, §5). PRs to main: check (read-only token). Pushes to main: re-split
+# every workspace into ws/<name> (only CI writes ws/*; protect them from everyone else). PRs into
+# ws/*: mirrored into one PR to main and linked back. Jobs with a write token build delphi from main
+# and never run code from the PR head; pushes made with GITHUB_TOKEN don't trigger workflows.
 name: delphi
 on:
   pull_request:
+    types: [opened, synchronize, reopened]
   push:
     branches: [main]
 permissions:
   contents: read
 concurrency:
-  group: delphi-${{ github.ref }}
+  group: delphi-${{ github.event_name }}-${{ github.head_ref || github.ref }}
 jobs:
   check:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.base_ref == 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-      - run: cargo build --release --locked && echo "$PWD/target/release" >> "$GITHUB_PATH"
-      - run: delphi check && delphi sync --check
-  sync-main:
+          persist-credentials: false
+      - run: cargo build --release --locked && target/release/delphi check
+  split:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - run: cargo build --release --locked && echo "$PWD/target/release" >> "$GITHUB_PATH"
-      - run: |
-          delphi sync --base HEAD
-          git add -A context
-          git diff --cached --quiet && exit 0
-          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-            commit -q -m 'delphi: sync shared files' -m "Delphi-Harness: github-actions
-          Delphi-Model: none
-          Delphi-Effort: none"
-          # if main moved on meanwhile, the run for the newer push syncs it
-          git push origin HEAD:main || { git fetch -q origin main; [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; }
+        with:
+          ref: main
+          fetch-depth: 0
+      - run: cargo build --release --locked && target/release/delphi split --push
+  mirror:
+    # same-repo PRs only (fork heads are not on origin, and their tokens are read-only)
+    if: >-
+      github.event_name == 'pull_request' && startsWith(github.base_ref, 'ws/') &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - run: cargo build --release --locked
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          PR: ${{ github.event.pull_request.number }}
+          DELPHI_USER: github-actions
+          DELPHI_HARNESS: github-actions
+        run: |
+          git config --global user.name 'github-actions[bot]'
+          git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          pb=$(target/release/delphi propose "${BASE_REF#ws/}" --branch "$HEAD_REF" --yes --model none --effort none | tail -n 1)
+          case "$pb" in propose/*) ;; *) exit 0 ;; esac   # nothing to propose
+          url=$(gh pr view "$pb" --json url --jq .url)
+          gh pr comment "$PR" --edit-last --body "Mirrored to $url" 2>/dev/null || gh pr comment "$PR" --body "Mirrored to $url"

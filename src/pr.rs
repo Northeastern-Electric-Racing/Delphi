@@ -1,7 +1,7 @@
-//! The single write path to Delphi. A `Pr` is a temp worktree (`begin`: of Delphi on a new branch;
-//! or propose's worktree of a checkout), a branch and provenance. `commit` adds trailers; `finish`
-//! confirms, pushes (with a lease: sha, or "" = branch must be absent), and opens or updates the
-//! PR. The user's own Delphi checkout is never touched.
+//! The single write path to Delphi. A `Pr` is a temp worktree of Delphi on a new branch (`begin`),
+//! plus provenance. `commit` adds trailers; `finish` confirms, pushes (with a lease: sha, or "" =
+//! branch must be absent), and opens or updates the PR to main. The user's own Delphi checkout is
+//! never touched.
 
 use crate::core::{confirm, env_nonempty, git, need_yes_or_tty, ok, out_q, out_stdin, root, worktree};
 use crate::provenance::Prov;
@@ -30,15 +30,13 @@ fn gh() -> Command {
     c
 }
 
-/// The GitHub login `gh` is authenticated as.
-fn gh_user() -> Option<String> {
-    out_q(gh().args(["api", "user", "--jq", ".login"])).filter(|u| !u.is_empty())
-}
-
-/// The user name in checkout branches: the GitHub login when origin is on GitHub, else $USER.
+/// The user name in edit and propose branches: $DELPHI_USER, else the GitHub login when origin is
+/// on GitHub, else $USER.
 pub fn user() -> String {
     let on_github = out_q(git(root()).args(["remote", "get-url", "origin"])).unwrap_or_default().contains("github.com");
-    let u = on_github.then(gh_user).flatten().or_else(|| env_nonempty("USER")).unwrap_or_default();
+    let gh_user = || out_q(gh().args(["api", "user", "--jq", ".login"])).filter(|u| !u.is_empty());
+    let u = env_nonempty("DELPHI_USER").or_else(|| on_github.then(gh_user).flatten()).or_else(|| env_nonempty("USER"));
+    let u = u.unwrap_or_default();
     let u: String = u.chars().filter(|c| c.is_ascii_alphanumeric() || "._-".contains(*c)).collect();
     if u.is_empty() || u.starts_with('.') {
         "me".into()
@@ -47,10 +45,10 @@ pub fn user() -> String {
     }
 }
 
-/// A field (`number`, `author`) of the open PR from `branch`, or "".
-pub fn open_pr(branch: &str, field: &str) -> String {
-    let q = if field == "author" { ".[0].author.login // empty" } else { ".[0].number // empty" };
-    out_q(gh().args(["pr", "list", "--head", branch, "--state", "open", "--json", field, "--jq", q]))
+/// The number of the open PR from `branch`, or "".
+fn open_pr(branch: &str) -> String {
+    let q = ".[0].number // empty";
+    out_q(gh().args(["pr", "list", "--head", branch, "--state", "open", "--json", "number", "--jq", q]))
         .unwrap_or_default()
 }
 
@@ -81,19 +79,14 @@ impl Pr {
         }
         let dst = format!("HEAD:refs/heads/{b}");
         if let Some(lease) = lease {
-            let Some(me) = gh_user() else { die!("gh is not authenticated (run: gh auth login)") };
-            let author = open_pr(b, "author");
-            if !author.is_empty() && author != me {
-                die!("open PR on {b} belongs to {author}; refusing to overwrite");
-            }
             let l = format!("--force-with-lease=refs/heads/{b}:{lease}");
             if !ok(git(&self.wt).args(["push", "--quiet", &l, "origin", &dst])) {
-                die!("the propose branch changed on GitHub (someone pushed to it); review the PR, then re-run");
+                die!("{b} changed on origin meanwhile (someone pushed to it); review its PR, then re-run");
             }
         } else if !ok(git(&self.wt).args(["push", "--quiet", "origin", &dst])) {
             die!("push failed");
         }
-        let num = open_pr(b, "number");
+        let num = open_pr(b);
         if num.is_empty() {
             if !ok(gh().args(["pr", "create", "--head", b, "--base", "main", "--title", title, "--body", &body])) {
                 die!("gh pr create failed");

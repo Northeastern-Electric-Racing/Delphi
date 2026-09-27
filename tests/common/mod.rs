@@ -1,7 +1,7 @@
-//! Test sandbox: a temp dir with a bare Delphi origin (partial-clone capable), a Delphi clone with
-//! sample content (workspaces argos-dev and nero-dev sharing the linked skill run-tests and the
-//! block pr-body.md, materialized by `delphi sync`), a bare code repo, a stub `gh` on PATH (logs to
-//! gh.log, remembers PRs in gh.prs), and a checkout root. Nothing touches GitHub.
+//! Test sandbox: a temp dir with a bare Delphi origin, a Delphi clone with sample content (two
+//! self-contained workspaces, argos-dev and nero-dev, split into `ws/*` on origin), a bare code
+//! repo, a stub `gh` on PATH (logs to gh.log, remembers PRs in gh.prs), and a checkout root.
+//! Nothing touches GitHub.
 #![allow(dead_code)]
 
 use std::fs;
@@ -13,69 +13,39 @@ const BUILD: &str = r#"
 set -euo pipefail
 SB=$1 here=$2 delphi=$3
 git init -q --bare -b main "$SB/origin.git"
-git -C "$SB/origin.git" config uploadpack.allowFilter true
-git -C "$SB/origin.git" config uploadpack.allowAnySHA1InWant true
 git clone -q "$SB/origin.git" "$SB/Delphi" 2>/dev/null
 cp "$here/delphi.conf" "$SB/Delphi/"
 printf '# Delphi development\n' > "$SB/Delphi/CLAUDE.md"
 
 C="$SB/Delphi/context" S=software/application-software
-A="$C/$S/argos" AD="$C/$S/argos/workspaces/argos-dev" ND="$C/$S/nero/workspaces/nero-dev"
-RT="$C/software/harness/skills/run-tests"
-mkdir -p "$C/harness/instructions" "$C/software/harness/instructions" "$C/software/docs" "$RT/scripts" \
-         "$A/blocks" "$AD/.claude/skills/argos-notes" "$AD/.claude/skills/open-pr" "$ND"
-
+AD="$C/$S/argos/workspaces/argos-dev" ND="$C/$S/nero/workspaces/nero-dev"
+mkdir -p "$AD/.claude/skills/open-pr" "$AD/.claude/skills/run-tests/scripts" "$AD/docs" "$ND/.claude/skills/run-tests"
 printf 'name: NER\n' > "$C/scope.yml"
-printf 'name: Software\nrecommend:\n  - software/harness/skills/run-tests\n' > "$C/software/scope.yml"
+printf 'name: Software\n' > "$C/software/scope.yml"
 printf 'name: Application Software\n' > "$C/$S/scope.yml"
-printf 'name: Argos\n' > "$A/scope.yml"
+printf 'name: Argos\n' > "$C/$S/argos/scope.yml"
 printf 'name: NERO\n' > "$C/$S/nero/scope.yml"
-printf '# Workspace\n\nYou are in a Delphi workspace.\n' > "$C/harness/instructions/ws.md"
-printf '# Software conventions\n\n- Use conventional commits.\n' > "$C/software/harness/instructions/base.md"
-printf -- '---\nname: run-tests\ndescription: Run the test suites.\n---\n\nRun both suites.\n' > "$RT/SKILL.md"
-printf '#!/bin/sh\necho running tests\n' > "$RT/scripts/run.sh"
-chmod +x "$RT/scripts/run.sh"
-printf '# Guide\n\nLine one.\nLine two.\n' > "$C/software/docs/guide.md"
-printf '**PR body:** fill the template.\n' > "$A/blocks/pr-body.md"
-printf -- '---\nname: argos-notes\ndescription: Notes.\n---\n\nArgos notes.\n' > "$AD/.claude/skills/argos-notes/SKILL.md"
+printf '# Argos\n\nArgos is the telemetry stack.\n' > "$AD/CLAUDE.md"
 printf -- '---\nname: open-pr\ndescription: Open a PR.\n---\n\nOpen a draft PR.\n' > "$AD/.claude/skills/open-pr/SKILL.md"
+printf '#!/bin/sh\necho running tests\n' > "$AD/.claude/skills/run-tests/scripts/run.sh"
+chmod +x "$AD/.claude/skills/run-tests/scripts/run.sh"
+printf '# Guide\n\nLine one.\nLine two.\n' > "$AD/docs/guide.md"
 printf '# NERO\n\nNERO is the dashboard firmware.\n' > "$ND/CLAUDE.md"
+printf -- '---\nname: run-tests\ndescription: Run the test suites.\n---\n\nRun both suites.\n' > "$ND/.claude/skills/run-tests/SKILL.md"
+printf 'name: argos-dev\nharness: claude-code\nrepos:\n  argos: file://%s/argos.git\n' "$SB" > "$AD/workspace.yml"
+printf 'name: nero-dev\nharness: claude-code\n' > "$ND/workspace.yml"
 
 git init -q -b main "$SB/argos-src"
 printf '# Argos code\n' > "$SB/argos-src/README.md"
 git -C "$SB/argos-src" add -A && git -C "$SB/argos-src" commit -qm init
 git clone -q --bare "$SB/argos-src" "$SB/argos.git"
 
-cat > "$AD/workspace.yml" <<EOF
-name: argos-dev
-harness: claude-code
-instructions:
-  - harness/instructions/ws.md
-  - software/harness/instructions/base.md
-skills:
-  - software/harness/skills/run-tests
-docs:
-  - software/docs/guide.md
-blocks:
-  - $S/argos/blocks/pr-body.md -> .claude/skills/open-pr/pr-body.md
-  - $S/argos/blocks/pr-body.md -> .claude/skills/update-pr/pr-body.md
-repos:
-  argos: file://$SB/argos.git
-EOF
-cat > "$ND/workspace.yml" <<EOF
-name: nero-dev
-harness: claude-code
-skills:
-  - software/harness/skills/run-tests
-blocks:
-  - $S/argos/blocks/pr-body.md -> .claude/skills/pr/pr-body.md
-EOF
-
 cd "$SB/Delphi"
-git add -A && git commit -qm "sandbox: sources and workspaces" && git push -q origin HEAD:main 2>/dev/null
+git add -A && git commit -qm "sandbox: workspaces"
+printf 'More.\n' >> CLAUDE.md && git commit -qam "sandbox: outside the workspaces"
+git push -q origin HEAD:main 2>/dev/null
 git branch -q -u origin/main 2>/dev/null || true
-DELPHI_ROOT="$SB/Delphi" "$delphi" sync > /dev/null 2>&1
-git add -A && git commit -qm "sandbox: sync" && git push -q origin HEAD:main 2>/dev/null
+DELPHI_ROOT="$SB/Delphi" "$delphi" split --push > /dev/null
 
 mkdir -p "$SB/bin"; : > "$SB/gh.prs"
 { printf '#!/bin/sh\nSB=%q\n' "$SB"; cat <<'EOF'; } > "$SB/bin/gh"
@@ -84,7 +54,8 @@ echo "gh $*" >> "$SB/gh.log"
 n=$(awk -v b="$4" '$1 == b { print $2 }' "$SB/gh.prs")   # args: pr list|create --head <branch> …
 case "$1 $2" in
   "api user") echo sandbox-user ;;
-  "pr list") [ -z "$n" ] || { [ "$8" = author ] && echo sandbox-user || echo "$n"; } ;;
+  "pr list") echo "$n" ;;
+  "pr view") awk -v b="$3" '$1 == b { print "https://github.invalid/pr/" $2 }' "$SB/gh.prs" ;;
   "pr create") n=$(($(wc -l < "$SB/gh.prs") + 1)); echo "$4 $n" >> "$SB/gh.prs"; echo "https://github.invalid/pr/$n" ;;
 esac
 exit 0
@@ -94,8 +65,6 @@ chmod +x "$SB/bin/gh"
 
 pub const AD: &str = "context/software/application-software/argos/workspaces/argos-dev";
 pub const ND: &str = "context/software/application-software/nero/workspaces/nero-dev";
-pub const RT: &str = "context/software/harness/skills/run-tests";
-pub const PB: &str = "context/software/application-software/argos/blocks/pr-body.md";
 
 #[derive(Debug, Clone)]
 pub struct Out {
@@ -149,6 +118,7 @@ impl Sb {
             "DELPHI_WORKSPACE_ROOT",
             "DELPHI_YES",
             "DELPHI_OFFLINE",
+            "DELPHI_USER",
             "ANTHROPIC_MODEL",
             "CLAUDE_CODE_EFFORT_LEVEL",
             "GIT_DIR",
@@ -243,19 +213,38 @@ impl Sb {
         o.stdout.trim_end().to_string()
     }
 
-    /// Commit a change to origin/main from a separate full clone, as Alice.
-    pub fn upstream(&self, subject: &str, script: &str) {
+    /// A separate full clone of origin (created on first use), like CI's.
+    pub fn up(&self) -> PathBuf {
         let up = self.dir.join("up");
         if !up.exists() {
             self.git(&self.dir, &["clone", "-q", "origin.git", "up"]);
         }
+        up
+    }
+
+    /// Commit a change to origin/main from `up`, as Alice, then re-split like CI.
+    pub fn upstream(&self, subject: &str, script: &str) {
         self.sh(
-            &up,
+            &self.up(),
             &format!(
                 "git pull -q --no-rebase origin main\n{script}\ngit add -A\n\
                  git diff --cached --quiet || git -c user.name=Alice commit -qm '{subject}'\ngit push -q origin HEAD:main"
             ),
         );
+        self.ci_split();
+    }
+
+    /// CI's `delphi split --push` on the latest origin/main (in `up`).
+    pub fn ci_split(&self) -> Out {
+        let up = self.up();
+        self.sh(&up, "git pull -q --no-rebase origin main");
+        let mut c = Command::new(env!("CARGO_BIN_EXE_delphi"));
+        c.args(["split", "--push"]).current_dir(&up);
+        self.env(&mut c);
+        c.env("DELPHI_ROOT", &up);
+        let o = Self::collect(c);
+        assert_eq!(o.code, 0, "ci split failed: {o:#?}");
+        o
     }
 
     pub fn read(&self, p: &Path) -> String {

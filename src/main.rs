@@ -8,9 +8,10 @@ mod harness;
 mod manage;
 mod parse;
 mod pr;
+mod propose;
 mod provenance;
 mod setup;
-mod sync;
+mod split;
 mod workspace;
 
 use crate::core::{Fail, OFFLINE, YES};
@@ -18,18 +19,18 @@ use std::sync::atomic::Ordering;
 
 const USAGE: &str = "usage: delphi <command> [args]
 
-  create <scope> <name> --from <workspace.yml>   new workspace folder (PR)
-  list                                           workspaces on origin/main
-  checkout <workspace> [--as <checkout>]         sparse clone of the folder on your branch
-  open [<checkout>] [--shell]                    start the harness (or a shell) in the folder
-  refresh [<checkout>]                           merge origin/main (exit 2 on conflicts)
-  diff [<checkout>] [--upstream]                 your changes vs main (or main's since refresh)
-  propose [<checkout>] [--dry-run]               refresh, sync, check, push, open/update the PR
-  status                                         every local checkout
-  mv <old> <new>                                 move a source or workspace path (PR)
-  sync [--check] [--base <rev>]                  reconcile links, regenerate generated files
-  check                                          validate the repo
-  setup [dir]                                    record this Delphi checkout for use anywhere
+  create <scope> <name> [--from <dir>]             new workspace folder (PR to main)
+  list                                             workspaces on origin/main
+  checkout <workspace> [--as <checkout>]           clone ws/<workspace> on your edit branch
+  open [<checkout>] [--shell]                      start the harness (or a shell) in the checkout
+  refresh [<checkout>]                             merge origin/ws/<workspace> (exit 2 on conflicts)
+  diff [<checkout>] [--upstream]                   your changes vs ws/<workspace> (or its new ones)
+  propose [<checkout>] [--dry-run]                 your branch's changes as one PR to main
+  propose [<workspace>] --branch <b> [--dry-run]   the same for a branch on origin (CI mirror)
+  status                                           every local checkout
+  split [--check] [--push]                         ws/<name> = subtree split of each workspace folder
+  check                                            validate the repo
+  setup [dir]                                      record this Delphi checkout for use anywhere
 
 Commands that write to Delphi accept --model, --effort, --yes; checkout commands --offline.
 The Delphi repo is $DELPHI_ROOT, else the checkout containing the current directory,
@@ -45,9 +46,10 @@ fn run(args: &[String]) -> anyhow::Result<()> {
             return Ok(());
         }
         "setup" => return setup::main(rest),
-        "create" | "list" | "mv" => manage::main,
-        "checkout" | "open" | "refresh" | "diff" | "propose" | "status" => checkout::main,
-        "sync" => |_, a| sync::main(a),
+        "create" | "list" => manage::main,
+        "checkout" | "open" | "refresh" | "diff" | "status" => checkout::main,
+        "propose" => |_, a| propose::main(a),
+        "split" => |_, a| split::main(a),
         "check" => |_, a| check::main(a),
         _ => die!("unknown command '{cmd}' (see: delphi help)"),
     };

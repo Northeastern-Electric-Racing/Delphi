@@ -1,9 +1,10 @@
 # Delphi — developing the CLI
 
-Delphi stores NER's AI-harness context under `context/`. Every workspace is a materialized folder
-(`context/<scope>/workspaces/<name>/`); shared files are linked to one source and kept identical by
-`delphi sync`. A small Rust CLI checks out one workspace folder sparsely, refreshes it, and proposes
-edits back as PRs. The design spec (`docs/design.md`) is the source of truth; `docs/goals.md` lists
+Delphi stores NER's AI-harness context under `context/`. Every workspace is a self-contained folder
+(`context/<scope>/workspaces/<name>/`) on `main`; CI projects each one into a branch `ws/<name>`
+whose repo root is that folder (`delphi split`, a deterministic `git subtree split`). Anyone works on
+a branch cut from `ws/<name>`; a small Rust CLI checks it out, refreshes it, and proposes the
+branch's changes back as a PR to `main`, re-rooted under the folder. The design spec (`docs/design.md`) is the source of truth; `docs/goals.md` lists
 what any change must keep.
 
 ## Layout
@@ -11,17 +12,20 @@ what any change must keep.
 - `src/main.rs`: dispatcher. Resolves the Delphi repo, then runs the command.
 - `src/core.rs`: messages (`die!`, `warn!`, `info!`), deferred cleanup, prompts, config, `safe_path`, running git, fetch/commit/worktree helpers, `parse_args`, path helpers.
 - `src/parse.rs`: strict YAML-subset parser.
-- `src/workspace.rs`: `workspace.yml` (linked keys `blocks`/`docs`/`skills`/`settings` as `<source> [-> <dest>]` with per-key default dests; generated keys `instructions`/`mcp`) and listing workspaces at a revision.
-- `src/sync.rs`: `delphi sync`: generate skills' `SKILL.md` from `skill.yml`, reconcile linked files across workspaces against base revisions, regenerate instruction and MCP files.
+- `src/workspace.rs`: `workspace.yml` (`name`, `harness`, `repos`) and listing workspaces at a revision.
+- `src/split.rs`: `delphi split`: `ws/<name>` for every workspace with git plumbing (same commits as `git subtree split`).
 - `src/check.rs`: `delphi check`: repo validation.
-- `src/checkout.rs`: local checkouts and `checkout`, `open`, `refresh`, `diff`, `propose`, `status`.
-- `src/manage.rs`: `create`, `list`, `mv`.
+- `src/checkout.rs`: local checkouts (clone at `ws/<name>`, branch `edit/<user>/<c>`) and `checkout`, `open`, `refresh`, `diff`, `status`.
+- `src/propose.rs`: `delphi propose`: a branch's diff vs `ws/<name>`, 3-way applied under the folder on `main`, as one PR.
+- `src/manage.rs`: `create`, `list`.
 - `src/pr.rs`: the only write path to Delphi (temp worktree, commit with trailers, push, `gh`).
 - `src/provenance.rs`: harness/model/effort resolution.
 - `src/harness.rs`: harness adapters (file names + provenance + launch).
 - `src/setup.rs`: `delphi setup`.
-- `tests/`: end-to-end tests. `tests/common` builds a throwaway sandbox (temp dir, bare origin, sample
-  context, stub `gh` on PATH); `tests/cli.rs` drives the binary against it.
+- `tests/`: end-to-end tests. `tests/common` builds a throwaway sandbox (temp dir, bare origin, two
+  sample workspaces split into `ws/*`, stub `gh` on PATH); `tests/cli.rs` drives the binary against it.
+- `.github/workflows/delphi.yml`: CI: `check` on PRs to main, `split --push` on pushes to main,
+  `propose --branch` mirror of PRs into `ws/*` (tested by `tests/cli.rs`).
 - `.claude/skills/`: LLM workflows that drive the CLI (`delphi-new-workspace`, `delphi-propose`).
 
 ## Rules

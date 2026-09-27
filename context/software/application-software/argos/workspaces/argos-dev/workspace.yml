@@ -1,11 +1,4 @@
 name: argos-dev
 harness: claude-code
-instructions:                      # CLAUDE.md is generated from these parts (edit a part, not CLAUDE.md)
-  - software/application-software/argos/harness/instructions/workspace.md
-  - software/application-software/argos/harness/instructions/base.md
-  - software/application-software/argos/harness/instructions/argos.md
-skills:                            # shared with other workspaces; delphi sync keeps them equal
-  - software/application-software/argos/harness/skills/commit
-  - software/application-software/argos/harness/skills/to-tickets
 repos:
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git

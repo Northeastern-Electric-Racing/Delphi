@@ -42,7 +42,8 @@ For every workspace folder on the current commit: `ws/<name>` = `git subtree spl
 
 ## 5. Propose (branch → PR to main)
 
-`delphi propose [checkout|--branch <b>] [--dry-run]`:
+`delphi propose [checkout | [<name>] --branch <b>] [--dry-run]` (`--branch`: a branch on origin;
+the workspace is the one whose `ws/*` it shares history with, unless named):
 
 1. Base = merge-base of the branch and `origin/ws/<name>`; patch = `base..branch` (binary-safe,
    modes kept).
@@ -50,7 +51,8 @@ For every workspace folder on the current commit: `ws/<name>` = `git subtree spl
    conflict (the folder changed on `main` in the same lines) exits 1 listing files: refresh, resolve,
    re-run.
 3. `delphi check`, commit with provenance trailers (one commit; message lists the source branch),
-   push `propose/<gh-user>/<name>-<branch>` (lease), open/update one PR to `main`.
+   push `propose/<gh-user>/<name>-<branch>` (`/` etc. in the branch become `-`; `$DELPHI_USER`
+   overrides the user, e.g. `github-actions` in CI) with a lease, open/update one PR to `main`.
 
 CI mirror: on PRs targeting `ws/*`, run `delphi propose --branch <head> --yes` (bot provenance) and
 comment the `main` PR link on the `ws/*` PR. After the `main` PR merges, CI re-splits; the edit
@@ -66,7 +68,7 @@ branch's refresh is a clean merge (same change on both sides).
 | `delphi open [c] [--shell]` | warn if behind `ws/<name>`; launch the harness (or a shell) at the root |
 | `delphi refresh [c]` | fetch + merge `origin/ws/<name>` |
 | `delphi diff [c] [--upstream]` | changes vs `ws/<name>`; `--upstream`: new on `ws/<name>` since, with author + subject |
-| `delphi propose [c] [--branch b] [--dry-run]` | §5 |
+| `delphi propose [c \| [name] --branch b] [--dry-run]` | §5 |
 | `delphi status` | local checkouts: dirty, ahead (unproposed), behind |
 | `delphi split [--check] [--push]` | §3 |
 | `delphi check` | scopes have `scope.yml`; `workspace.yml` valid, name = folder, unique; adapter exists; no nested workspaces; no symlinks; no instruction-file names outside workspaces |

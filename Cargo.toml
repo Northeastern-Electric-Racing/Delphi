@@ -2,7 +2,7 @@
 name = "delphi"
 version = "0.1.0"
 edition = "2021"
-description = "Delphi CLI: check out workspace folders, keep linked files in sync, propose edits back as PRs"
+description = "Delphi CLI: split workspace folders into branches, check them out, propose edits back as PRs"
 publish = false
 
 [[bin]]

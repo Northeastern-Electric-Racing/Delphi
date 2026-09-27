@@ -293,8 +293,10 @@ pub fn out_q(c: &mut Command) -> Option<String> {
 /// Run with stdin fed from `input`; stdout captured like `out`.
 pub fn out_stdin(c: &mut Command, input: &[u8]) -> Option<String> {
     let mut ch = c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn().ok()?;
-    ch.stdin.take()?.write_all(input).ok()?;
+    let (mut w, data) = (ch.stdin.take()?, input.to_vec());
+    let t = std::thread::spawn(move || w.write_all(&data)); // a writer thread: large input and output
     let o = ch.wait_with_output().ok()?;
+    t.join().ok()?.ok()?;
     o.status.success().then(|| text(o.stdout))
 }
 
@@ -354,13 +356,14 @@ pub fn worktree(repo: &Path, opts: &[&str], start: &str, err: &str) -> Result<Pa
 pub struct Opts {
     pub as_: String,
     pub from: String,
-    pub base: String,
+    pub branch: String,
     pub model: String,
     pub effort: String,
     pub shell: bool,
     pub dry: bool,
     pub upstream: bool,
     pub check: bool,
+    pub push: bool,
 }
 
 /// Parse flags allowed by `allowed` (space-separated); returns options and positionals.
@@ -379,7 +382,7 @@ pub fn parse_args(allowed: &str, args: &[String]) -> Result<(Opts, Vec<String>)>
         };
         match a {
             "--as" => o.as_ = val()?,
-            "--base" => o.base = val()?,
+            "--branch" => o.branch = val()?,
             "--from" => o.from = val()?,
             "--model" => o.model = val()?,
             "--effort" => o.effort = val()?,
@@ -389,6 +392,7 @@ pub fn parse_args(allowed: &str, args: &[String]) -> Result<(Opts, Vec<String>)>
             "--dry-run" => o.dry = true,
             "--upstream" => o.upstream = true,
             "--check" => o.check = true,
+            "--push" => o.push = true,
             _ => pos.push(a.to_string()),
         }
     }
@@ -402,15 +406,6 @@ pub fn under<'a>(p: &'a str, base: &str) -> Option<&'a str> {
         Some("") => Some(""),
         Some(r) => r.strip_prefix('/'),
         None => None,
-    }
-}
-
-/// `d/rel`, or `d` when `rel` is empty.
-pub fn join(d: &str, rel: &str) -> String {
-    if rel.is_empty() {
-        d.to_string()
-    } else {
-        format!("{d}/{rel}")
     }
 }
 

@@ -6,15 +6,9 @@ use std::process::Command;
 
 pub struct Harness {
     pub name: &'static str,
-    /// Instruction file at the workspace root.
+    /// Instruction file at the workspace root (only allowed inside workspace folders).
     pub instructions: &'static str,
-    /// Default dest dir for `skills:` entries.
-    pub skills_dir: &'static str,
-    /// Generated from `mcp:` fragments.
-    pub mcp: &'static str,
-    /// Default dest for `settings:`.
-    pub settings: &'static str,
-    /// Added to the workspace's .git/info/exclude.
+    /// Added to a checkout's .git/info/exclude.
     pub ignore: &'static str,
     /// Harness+version, model, effort (blank if unknown).
     pub provenance: fn() -> [String; 3],
@@ -25,9 +19,6 @@ pub struct Harness {
 pub const HARNESSES: &[Harness] = &[Harness {
     name: "claude-code",
     instructions: "CLAUDE.md",
-    skills_dir: ".claude/skills",
-    mcp: ".mcp.json",
-    settings: ".claude/settings.json",
     ignore: ".claude/settings.local.json",
     provenance: claude_provenance,
     launch: claude_launch,
