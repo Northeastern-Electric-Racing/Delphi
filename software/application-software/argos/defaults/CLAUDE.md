@@ -15,12 +15,12 @@
 
 Argos is a real-time telemetry platform for Northeastern Electric Racing (NER). Angular 19 frontend (`angular-client/`) and Rust backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in `siren-base/`.
 
-The Argos repo is checked out at `repos/argos/`. Paths below are relative to a checkout of it. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
+The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths below are relative to any Argos worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
 
 ## Worktrees
 
-- `repos/argos/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there. Only fetch, fast-forward `develop`, and manage worktrees from it.
-- Every ticket gets its own worktree at `repos/worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
+- `worktrees/argos/develop/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there; only fetch and fast-forward it.
+- Every ticket gets its own worktree at `worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
 - A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
 
 ## Local Development

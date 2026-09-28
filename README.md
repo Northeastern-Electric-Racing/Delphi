@@ -40,14 +40,14 @@ histories stay joined and edits on either side meet in normal three-way merges.
 
 ```sh
 git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
-cd argos-dev && .delphi/setup.sh        # clones workspace.yml's repos into repos/ (git-ignored)
+cd argos-dev && .delphi/setup.sh        # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
 git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
 git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
 ```
 
 After your PR merges into `ws/<name>`, CI proposes it: a PR `ws/<name> → main` from
 `propose/<name>`. Merge that with a merge commit or squash, never rebase. Never push to `ws/*` or
-`main` directly (protect them). Code changes go in `repos/<name>`, through that repo's own PRs.
+`main` directly (protect them). Code changes go in a worktree, `worktrees/<repo>/<branch>` (`.delphi/new-worktree.sh`), through that repo's own PRs.
 
 **Conflicts.** If `main` and `ws/<name>` changed the same lines, CI lists the files and skips that
 workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, run
@@ -57,7 +57,7 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 
 ```yaml
 harness: claude-code
-repos:                  # cloned into repos/<name> by .delphi/setup.sh
+repos:                  # stored in repos/<name>, checked out in worktrees/<name>/ by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 ```
 
