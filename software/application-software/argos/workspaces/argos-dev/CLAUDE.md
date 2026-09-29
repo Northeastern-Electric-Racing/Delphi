@@ -45,7 +45,7 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths b
 
 ## Workflow
 
-Idea to ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` (test-first, then `/code-review` and `/commit`) → `/open-pr`. A trivial one-liner goes straight to `/implement`.
+Per ticket: `new-worktree` → implement and test in the worktree → `/commit` → `/open-pr`.
 
 ## PR Convention
 
@@ -65,7 +65,7 @@ Frontend and backend conventions live alongside their code and auto-load when ed
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions, and `docs/agents/triage-labels.md` for labels. Specs and tickets avoid file paths and code snippets; they go stale.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions.
 
 ## Domain docs
 
