@@ -45,7 +45,7 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths b
 
 ## Workflow
 
-Per ticket: `/implement` (worktree, test-first, `/commit`) → `/open-pr`.
+Per ticket: `new-worktree` → implement and test in the worktree → `/commit` → `/open-pr`.
 
 ## PR Convention
 
