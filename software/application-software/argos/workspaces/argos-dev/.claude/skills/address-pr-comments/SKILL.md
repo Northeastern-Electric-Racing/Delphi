@@ -1,30 +1,20 @@
 ---
 name: address-pr-comments
 description: Fetch review comments on an Argos PR, judge whether each (including outdated ones) still applies, and walk through fixes in the PR's worktree
-allowed-tools: Bash(git:*), Bash(gh pr:*), Bash(gh issue list:*), Bash(bash */.claude/skills/address-pr-comments/scripts/fetch-feedback.sh:*)
+allowed-tools: Bash(git:*), Bash(gh issue list:*), Bash(bash */.claude/skills/address-pr-comments/scripts/fetch-feedback.sh:*)
 user-invocable: true
 ---
 
-Walk through unresolved review feedback on a PR, propose fixes, and apply the approved ones. **Never reply to threads**; the user does that.
+Propose and apply fixes for a PR's unresolved review feedback. **Never reply to threads**; the user does.
 
-1. **Fetch.** From the workspace root:
-
-   ```bash
-   bash .claude/skills/address-pr-comments/scripts/fetch-feedback.sh argos [<pr-number>|<branch>]
-   ```
-
-   It checks out the PR head at `worktrees/argos/<head>/` (reused if present) and prints JSON: `pr`, `worktree`, unresolved `threads` (first + latest message, `bot` flag, `diffHunk` when outdated), conversation `comments`, and `reviews` with text. Work in `worktree` from here on. Add `--all` for everything unfiltered (resolved threads, every reply, empty reviews) when you need history. It uses `gh` when logged in, else (in a Claude Code remote session) the session's GitHub REST proxy. Exit 3 means neither is available: use the GitHub MCP server's `pull_request_read` (`get_review_comments`, `get_comments`, `get_reviews`) instead.
-2. **Judge.** Skip bot noise unless it needs action, and anything already fixed at HEAD. For an **outdated** thread, find the code from its `diffHunk` by searching for its content, not line numbers, then label it **addressed**, **applies**, **moved** (fix at the new spot), **obsolete**, or **unclear** (ask).
-3. **Present** before editing, grouped by file then reviewer:
+1. **Fetch** from the workspace root: `bash .claude/skills/address-pr-comments/scripts/fetch-feedback.sh argos [<pr>|<branch>]` (`--all` for unfiltered history). It checks out the PR head's worktree and prints JSON: `worktree` (work there from now on), unresolved `threads`, `comments`, `reviews`. Any non-zero exit: use the GitHub MCP server's `pull_request_read` instead.
+2. **Judge.** Skip bot noise and anything already fixed at HEAD. For an `outdated` thread, find its `diffHunk` code by content, then label it **addressed**, **applies**, **moved**, **obsolete**, or **unclear**.
+3. **Present** before editing, grouped by file, and ask to confirm, skip, or change each (offer to batch clear ones past 8):
 
    ```
-   <file>:<line> — <reviewer>
-   Comment: "<short excerpt>"
-   Status: <active | outdated> · <label>
-   Proposed fix: <plain words>
-   Snippet: <optional, ≤5 lines, for the user only; never posted>
+   <file>:<line> — <reviewer> · <active|outdated> · <label>
+   "<excerpt>" → <proposed fix>
+   <optional ≤5-line snippet, for the user only>
    ```
-
-   Ask to confirm, skip, or change each. With more than 8, offer to batch the clear ones.
-4. **Apply** in the worktree, grouping related fixes into `/commit`s. If a comment asks for a follow-up ticket, search first (`gh issue list --search "<keywords>"`) and reuse a match.
-5. **Report** fixed (file:line, one line each, commit SHAs), addressed or obsolete (why), and unclear.
+4. **Apply** in the worktree with grouped `/commit`s. For a follow-up-ticket request, reuse a match from `gh issue list --search` before filing.
+5. **Report** what was fixed (file:line, commit SHA), what was already addressed or obsolete (why), and what is unclear.

@@ -5,7 +5,8 @@
 # unresolved threads (reply chains collapsed to first + latest message, bots tagged), conversation
 # comments, and reviews with text. --all prints every thread, reply, comment, and review unfiltered.
 # Uses gh (GraphQL) when authenticated; in a Claude Code remote session without gh, uses the
-# session's GitHub REST proxy via curl + jq. Exits 3 if neither works (use the GitHub MCP server).
+# session's GitHub REST proxy via curl + jq. Exits 3 if neither is available or a fetch fails, so
+# the caller falls back to the GitHub MCP server.
 # shellcheck disable=SC2016 # $vars in single quotes are jq/GraphQL, not shell
 set -euo pipefail
 all=0
@@ -14,8 +15,9 @@ repo=${1:?usage: fetch-feedback.sh [--all] <repo> [<pr-number>|<branch>]} ref=${
 root=$(cd "$(dirname "$0")/../../../.." && pwd)
 if { command -v gh && gh auth status; } >/dev/null 2>&1; then mode=gh
 elif [ -n "${CLAUDE_CODE_REMOTE:-}" ] && command -v curl >/dev/null && command -v jq >/dev/null; then mode=rest
-else echo "fetch-feedback: no authenticated gh or remote-session proxy; use the GitHub MCP server (pull_request_read)" >&2 && exit 3
+else echo "fetch-feedback: no authenticated gh or remote-session proxy; use the GitHub MCP server" >&2 && exit 3
 fi
+trap 'echo "fetch-feedback: GitHub fetch failed ($mode); use the GitHub MCP server" >&2; exit 3' ERR
 
 url=$(git -C "$root/repos/$repo" remote get-url origin)
 slug=${url#*github.com[:/]} && slug=${slug%.git}
@@ -30,6 +32,7 @@ else
     [ -n "$ref" ] || { echo "fetch-feedback: no PR for that branch" >&2; exit 2; } ;; esac
   read -r num head cross < <(api "pulls/$ref" | jq -r --arg s "$slug" '"\(.number) \(.head.ref) \(.head.repo.full_name != $s)"')
 fi
+[ -n "${num:-}" ] || false
 wt=""
 [ "$cross" = true ] || wt=$(bash "$root/.delphi/new-worktree.sh" "$repo" "$head")
 wt=${wt//\\/\\\\} && wt=${wt//\"/\\\"}
