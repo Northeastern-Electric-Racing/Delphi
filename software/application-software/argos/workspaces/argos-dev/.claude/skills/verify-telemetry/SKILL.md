@@ -19,14 +19,7 @@ If the subscription is missing, that's the bug — add it before continuing.
 
 ### 2. Match against CAN definitions
 
-Clone the firmware definitions once into `.context/` at the workspace root (not a worktree), so every worktree shares one offline copy; `git -C .context/Odyssey-Definitions pull` refreshes it:
-
-```bash
-git clone https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git <workspace>/.context/Odyssey-Definitions
-grep -qxF /.context/ <workspace>/.git/info/exclude || echo /.context/ >> <workspace>/.git/info/exclude
-```
-
-Then open the corresponding JSON under `<workspace>/.context/Odyssey-Definitions/can-messages/`. Files: `bms.json`, `dti.json`, `vcu.json`, `charger.json`, etc.
+The CAN definitions (Odyssey-Definitions) are a workspace repo: `.delphi/setup.sh` checks them out at `<workspace>/worktrees/odyssey-definitions/main/` (`git -C` there `pull --ff-only` to refresh). Open the matching JSON under its `can-messages/`: `bms.json`, `dti.json`, `vcu.json`, `charger.json`, etc.
 
 Confirm the topic string from step 1 exactly matches a `"name"` field in the CAN definition. Check the `"unit"` and `"values"` array index too.
 
