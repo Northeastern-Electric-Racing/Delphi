@@ -1,6 +1,6 @@
 # Delphi workspace
 
-You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos live in `repos/`. Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Work here unless the task clearly belongs to another project.
+You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Work here unless the task clearly belongs to another project.
 
 # NER Software conventions
 
@@ -19,12 +19,12 @@ You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos live 
 
 Argos is a real-time telemetry platform for Northeastern Electric Racing (NER). Angular 19 frontend (`angular-client/`) and Rust backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in `siren-base/`.
 
-The Argos repo is checked out at `repos/argos/`. Paths below are relative to a checkout of it. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
+The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths below are relative to any Argos worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
 
 ## Worktrees
 
-- `repos/argos/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there. Only fetch, fast-forward `develop`, and manage worktrees from it.
-- Every ticket gets its own worktree at `repos/worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
+- `worktrees/argos/develop/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there; only fetch and fast-forward it.
+- Every ticket gets its own worktree at `worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
 - A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
 
 ## Local Development
@@ -69,4 +69,4 @@ Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh
 
 ## Domain docs
 
-The glossary and ADRs are workspace docs, not files in `repos/argos/`: `docs/CONTEXT.md` and `docs/adr/` at the workspace root. Edit them there and they're proposed back to Delphi. Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR. ADR filenames follow `repos/argos/docs/agents/domain.md` (`<NNNN>-<prefix>-<topic-slug>.md`).
+The glossary and ADRs are workspace docs, not files in the Argos repo: `docs/CONTEXT.md` and `docs/adr/` at the workspace root. Edit them there and they're proposed back to Delphi. Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR. ADR filenames follow `docs/agents/domain.md` in any Argos worktree (`<NNNN>-<prefix>-<topic-slug>.md`).
