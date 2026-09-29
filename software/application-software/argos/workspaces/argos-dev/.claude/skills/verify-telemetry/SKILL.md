@@ -1,0 +1,66 @@
+---
+name: verify-telemetry
+description: Verification checklist for changes to MQTT-displayed telemetry values in the Angular frontend. Use whenever modifying, adding, or debugging a value that flows from the car through MQTT to the UI — including display formatting, new subscriptions, missing data, or incorrect readings.
+---
+
+## Verify Telemetry Value Changes
+
+Run from the ticket's worktree (`worktrees/argos/<branch>/`, via the `new-worktree` skill); paths below are relative to it. Run through each step in order. Stop and fix if any step fails.
+
+### 1. Trace the subscription
+
+Starting from the component displaying the value, verify the full chain:
+
+- Component property (e.g. `voltage: number`) is updated via `this.storage.get(topics.someTopicFn())` subscription
+- The topic function in `angular-client/src/utils/topic.utils.ts` returns the correct MQTT topic string
+- The value is parsed correctly (`parseInt` vs `parseFloat`) for the data type
+
+If the subscription is missing, that's the bug — add it before continuing.
+
+### 2. Match against CAN definitions
+
+Clone the firmware definitions once into `.context/` at the workspace root (not a worktree), so every worktree shares one offline copy; `git -C .context/Odyssey-Definitions pull` refreshes it:
+
+```bash
+git clone https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git <workspace>/.context/Odyssey-Definitions
+grep -qxF /.context/ <workspace>/.git/info/exclude || echo /.context/ >> <workspace>/.git/info/exclude
+```
+
+Then open the corresponding JSON under `<workspace>/.context/Odyssey-Definitions/can-messages/`. Files: `bms.json`, `dti.json`, `vcu.json`, `charger.json`, etc.
+
+Confirm the topic string from step 1 exactly matches a `"name"` field in the CAN definition. Check the `"unit"` and `"values"` array index too.
+
+### 3. Check calypso simulator
+
+```bash
+docker pull ghcr.io/northeastern-electric-racing/calypso:Develop
+docker ps --filter "name=calypso"
+```
+
+If the image updated, restart the containers (`./argos.sh client-dev down && ./argos.sh client-dev up`).
+
+### 4. Verify message delivery
+
+Check scylla-server logs for the topic:
+```bash
+docker logs scylla-server 2>&1 | grep "<TOPIC_STRING>" | tail -5
+```
+
+If no logs appear, the message isn't being published — check calypso and the CAN definition.
+
+### 5. Run the app and verify visually
+
+```bash
+# Start backend + infra (if not already running)
+./argos.sh client-dev up
+
+# Start Angular dev server (or use the run-local skill)
+cd angular-client && npm ci && npm start
+```
+
+Navigate to the relevant page with Playwright, wait for data, and take a screenshot:
+```
+pictures/<branch-name>/<descriptive-name>.png   # in the worktree; gitignored
+```
+
+Confirm the value displays correctly with live data, proper formatting, and no layout issues.
