@@ -1,7 +1,7 @@
 ---
 name: address-pr-comments
 description: Fetch review comments on an Argos PR, judge whether each (including outdated ones) still applies, and walk through fixes in the PR's worktree
-allowed-tools: Bash(git:*), Bash(gh pr:*), Bash(bash */.claude/skills/address-pr-comments/scripts/fetch-feedback.sh:*)
+allowed-tools: Bash(git:*), Bash(gh pr:*), Bash(gh issue list:*), Bash(bash */.claude/skills/address-pr-comments/scripts/fetch-feedback.sh:*)
 user-invocable: true
 ---
 
@@ -13,7 +13,7 @@ Walk through unresolved review feedback on a PR, propose fixes, and apply the ap
    bash .claude/skills/address-pr-comments/scripts/fetch-feedback.sh argos [<pr-number>|<branch>]
    ```
 
-   It checks out the PR head at `worktrees/argos/<head>/` (reused if present) and prints JSON: `pr`, `worktree`, unresolved `threads` (first + latest message, `bot` flag, `diffHunk` when outdated), conversation `comments`, and `reviews` with text. Work in `worktree` from here on. Add `--all` for everything unfiltered (resolved threads, every reply, empty reviews) when you need history. Exit 3 means no authenticated `gh`: use the GitHub MCP server's `pull_request_read` (`get_review_comments`, `get_comments`, `get_reviews`) instead.
+   It checks out the PR head at `worktrees/argos/<head>/` (reused if present) and prints JSON: `pr`, `worktree`, unresolved `threads` (first + latest message, `bot` flag, `diffHunk` when outdated), conversation `comments`, and `reviews` with text. Work in `worktree` from here on. Add `--all` for everything unfiltered (resolved threads, every reply, empty reviews) when you need history. It uses `gh` when logged in, else (in a Claude Code remote session) the session's GitHub REST proxy. Exit 3 means neither is available: use the GitHub MCP server's `pull_request_read` (`get_review_comments`, `get_comments`, `get_reviews`) instead.
 2. **Judge.** Skip bot noise unless it needs action, and anything already fixed at HEAD. For an **outdated** thread, find the code from its `diffHunk` by searching for its content, not line numbers, then label it **addressed**, **applies**, **moved** (fix at the new spot), **obsolete**, or **unclear** (ask).
 3. **Present** before editing, grouped by file then reviewer:
 
