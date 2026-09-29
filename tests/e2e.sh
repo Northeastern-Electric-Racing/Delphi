@@ -207,6 +207,7 @@ o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -qx "# Firmware for fw-dev" ||
   fail "defaults workspace.yml not used"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/link-workspace/SKILL.md" || fail "template skill lost"
+o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
 grep -q "gh pr create --base main --head new-workspace/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
 (cd "$t/dev" && ! tools/new-workspace.sh x argos-dev 2>/dev/null) || fail "duplicate name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh x Bad 2>/dev/null) || fail "bad name accepted"
