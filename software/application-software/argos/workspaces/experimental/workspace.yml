@@ -1,4 +1,0 @@
-harness: claude-code
-repos:
-  argos: https://github.com/Northeastern-Electric-Racing/Argos.git
-  odyssey-definitions: https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git

@@ -1,3 +1,0 @@
-harness: claude-code
-repos:                    # cloned into repos/<name> by .delphi/setup.sh
-  # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git
