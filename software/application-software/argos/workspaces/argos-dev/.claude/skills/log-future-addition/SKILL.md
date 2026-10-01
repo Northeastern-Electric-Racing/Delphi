@@ -72,8 +72,8 @@ Triage then classifies it (category, area, difficulty) like any other needs-tria
 
 ### 5. Confirm, then file
 
-Show the drafted title, body, and labels. On consent, file it:
+Show the drafted title, body, and labels. On consent, write the body to a temp file and file it from the workspace root:
 
-`gh issue create --title "..." --body "..." --assignee @me --label needs-triage[,<others>]`
+`bash .claude/skills/log-future-addition/scripts/file-idea.sh argos "<title>" <body-file> [<label>...]`
 
-Report the new issue number and URL. Do not triage it, and do not run any further work on it.
+It adds `needs-triage`, assigns you, and prints the issue URL (via `gh`, or the GitHub REST proxy in a remote session). Any non-zero exit: file it with the GitHub MCP server's `issue_write` instead. Report the issue number and URL. Do not triage it, and do not run any further work on it.
