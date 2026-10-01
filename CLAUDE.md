@@ -1,33 +1,64 @@
-# Delphi — developing it
+# Delphi workspace
 
-Delphi stores NER's AI-harness context. Each workspace is a folder `software/**/workspaces/<name>/`
-on `main`; branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
-subtree merges: **refresh** (main → `ws/<name>`) and **propose** (`ws/<name>` → PR to main via
-`propose/<name>`). There is no CLI, just a few shell scripts run by CI. `docs/design.md` is the
-source of truth; `docs/goals.md` lists what any change must keep.
+You're in Delphi workspace `experimental` (branch `ws/experimental`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Park rough notes with the `journal` skill. Work here unless the task clearly belongs to another project.
 
-## Layout
+# NER Software conventions
 
-- `ci/sync.sh [refresh|propose] [<name>]`: refresh and/or propose each workspace (both by default).
-  Runs on pushes to main and `ws/**`.
-- `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
-- `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
-- `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), and the managed
-  files every workspace carries unchanged: `.delphi/{setup,new-worktree,link}.sh`,
-  `.github/workflows/delphi.yml`; and default `new-worktree`, `link-workspace`, and `journal` skills.
-- `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
-  folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `defaults/`.
-- `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.
-- `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
+## Branch & Commit Conventions
 
-## Rules
+- Branch from `develop` (not `main`) unless told otherwise. Branch name format: `{issue-number}-{kebab-case-title}` (e.g. `533-csv-upload-download-rules`).
+- Commit message format: `#{ticket-number} - {concise description}` (e.g. `#533 - add CSV upload endpoint`).
 
-- Keep it small: fewest lines that implement the design; a short header comment per script.
-  Prefer deleting to adapting. Runtime tools: bash, git, and `gh` (only to open or update PRs).
-- Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
-- `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
-  features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
-- Changing a managed file (`.delphi/*.sh`, the workflow): update the template, `.github/`, and every
-  workspace copy in the same PR, or `ci/check.sh` fails.
-- `bash tests/e2e.sh` and `ci/check.sh` must pass. Add a test there for every behavior change.
-- Never test against real GitHub repos or this checkout's origin; use the sandbox in `tests/e2e.sh`.
+## Safety Rules
+
+- Never modify `.env` or secret files without explicit confirmation.
+- Never delete files without explicit confirmation.
+- Explain reasoning before making architectural changes.
+
+# Argos
+
+Argos is a real-time telemetry platform for Northeastern Electric Racing (NER). Angular 19 frontend (`angular-client/`) and Rust backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in `siren-base/`.
+
+The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths below are relative to any Argos worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
+
+## Worktrees
+
+- `worktrees/argos/develop/` is a clean reference: fetch and fast-forward only.
+- Every ticket gets its own worktree, and all work for it happens there: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
+- A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
+
+## Local Development
+
+- The backend stack (Postgres, MQTT, Scylla server, Calypso simulator) runs in Docker via the compose files in `compose/`, driven by `argos.sh`.
+- Pick the compose profile by what changed:
+  - Frontend-only changes: `./argos.sh client-dev up` runs everything in Docker, including scylla-server.
+  - Changes to `scylla-server/`: `./argos.sh scylla-dev up` (everything except scylla-server) plus `cd scylla-server && cargo run` in a separate terminal, so you are not testing a stale binary.
+- Frontend client: use the `run-local` skill.
+- On Windows, run everything from WSL or Git Bash.
+
+## Testing
+
+- Frontend: `cd angular-client && ng test` (Karma/Jasmine).
+- Backend: `cd scylla-server && cargo test`.
+- Lint and format (frontend): `npx prettier --check "src/**/*.{ts,html,scss}" && npx ng lint`.
+- Build (backend): `cargo build`.
+
+## Workflow
+
+Per ticket, in its worktree: `/workflow` → `/commit` → `/open-pr`. Use `/to-tickets` to split large work.
+
+## PR Convention
+
+Open draft PRs against `develop` with `/open-pr`, and refresh them with `/update-pr`.
+
+## Screenshots
+
+Save Playwright screenshots to `pictures/<branch>/` at the repo root, with kebab-case names. The folder is git-ignored; never commit screenshots.
+
+## Issue tracker
+
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions.
+
+## Domain docs
+
+The glossary `docs/CONTEXT.md` and ADRs `docs/adr/`, if any, live at the workspace root, not in the Argos repo. Read them before exploring, use the glossary's terms, and flag conflicts with an ADR. ADR filenames follow `docs/agents/domain.md` in any Argos worktree.
