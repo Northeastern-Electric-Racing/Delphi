@@ -3,57 +3,14 @@ name: verify-telemetry
 description: Verification checklist for changes to MQTT-displayed telemetry values in the Angular frontend. Use whenever modifying, adding, or debugging a value that flows from the car through MQTT to the UI — including display formatting, new subscriptions, missing data, or incorrect readings.
 ---
 
-## Verify Telemetry Value Changes
+Run from the ticket's worktree (`worktrees/argos/<branch>/`, via `new-worktree`). Stop and fix at the first failing step.
 
-Run from the ticket's worktree (`worktrees/argos/<branch>/`, via the `new-worktree` skill); paths below are relative to it. Run through each step in order. Stop and fix if any step fails.
+1. **Trace the subscription** from the component: its property is updated by a `this.storage.get(topics.someTopicFn())` subscription, the function in `angular-client/src/utils/topic.utils.ts` returns the right topic, and the value is parsed right for its type (`parseInt` vs `parseFloat`). A missing subscription is the bug.
+2. **Check the topic end to end** from the workspace root:
 
-### 1. Trace the subscription
+   ```bash
+   bash .claude/skills/verify-telemetry/scripts/check-topic.sh <TOPIC>
+   ```
 
-Starting from the component displaying the value, verify the full chain:
-
-- Component property (e.g. `voltage: number`) is updated via `this.storage.get(topics.someTopicFn())` subscription
-- The topic function in `angular-client/src/utils/topic.utils.ts` returns the correct MQTT topic string
-- The value is parsed correctly (`parseInt` vs `parseFloat`) for the data type
-
-If the subscription is missing, that's the bug — add it before continuing.
-
-### 2. Match against CAN definitions
-
-The CAN definitions (Odyssey-Definitions) are a workspace repo: `.delphi/setup.sh` checks them out at `<workspace>/worktrees/odyssey-definitions/main/` (`git -C` there `pull --ff-only` to refresh). Open the matching JSON under its `can-messages/`: `bms.json`, `dti.json`, `vcu.json`, `charger.json`, etc.
-
-Confirm the topic string from step 1 exactly matches a `"name"` field in the CAN definition. Check the `"unit"` and `"values"` array index too.
-
-### 3. Check calypso simulator
-
-```bash
-docker pull ghcr.io/northeastern-electric-racing/calypso:Develop
-docker ps --filter "name=calypso"
-```
-
-If the image updated, restart the containers (`./argos.sh client-dev down && ./argos.sh client-dev up`).
-
-### 4. Verify message delivery
-
-Check scylla-server logs for the topic:
-```bash
-docker logs scylla-server 2>&1 | grep "<TOPIC_STRING>" | tail -5
-```
-
-If no logs appear, the message isn't being published — check calypso and the CAN definition.
-
-### 5. Run the app and verify visually
-
-```bash
-# Start backend + infra (if not already running)
-./argos.sh client-dev up
-
-# Start Angular dev server (or use the run-local skill)
-cd angular-client && npm ci && npm start
-```
-
-Navigate to the relevant page with Playwright, wait for data, and take a screenshot:
-```
-pictures/<branch-name>/<descriptive-name>.png   # in the worktree; gitignored
-```
-
-Confirm the value displays correctly with live data, proper formatting, and no layout issues.
+   It prints the CAN definition (unit, value points; exit 1 if the topic isn't defined), refreshes the Calypso image (restart with `./argos.sh client-dev down && ./argos.sh client-dev up` if it changed), and shows the topic's last scylla-server log lines. Confirm the unit and value index match the UI; no log lines means it isn't being published.
+3. **See it live:** bring the app up with `run-local`, open the page with Playwright, wait for data, and screenshot to `pictures/<branch>/<name>.png`. Check value, formatting, and layout.
