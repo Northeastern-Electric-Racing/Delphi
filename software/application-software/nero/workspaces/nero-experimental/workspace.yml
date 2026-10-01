@@ -1,0 +1,3 @@
+harness: claude-code
+repos:
+  nero: https://github.com/Northeastern-Electric-Racing/Nero-2.0.git
