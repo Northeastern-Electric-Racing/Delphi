@@ -50,7 +50,7 @@ Per ticket: `/implement` (worktree, test-first, `/commit`) → `/open-pr`.
 ## PR Convention
 
 - The `/commit` skill applies the commit message format.
-- Open PRs against `develop` as drafts. The `/open-pr` skill runs the pre-PR checks (lint, conflict check), pushes, and opens the draft; `/update-pr` refreshes the description.
+- Open PRs against `develop` as drafts. PR titles carry no ticket number; the body ends with `Closes #{ticket}`. The `/open-pr` skill runs the pre-PR checks (lint, conflict check), pushes, and opens the draft; `/update-pr` refreshes the description.
 - Keep PR descriptions tight: at most three backtick usages in the body, and never commit screenshots (drag-drop them into the PR via the GitHub web UI).
 
 ## Screenshots
