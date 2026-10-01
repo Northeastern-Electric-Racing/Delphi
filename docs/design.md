@@ -108,6 +108,9 @@ The template's `new-worktree` skill makes worktrees the default way to start a b
 detached worktree at `linked/<name>/`, updates it on re-runs unless it's on a branch, and adds
 `/linked/` to `.git/info/exclude`. The template's `link-workspace` skill explains it.
 
+The template's `journal` skill parks rough notes in `.journal/` at the workspace root (its
+`capture.sh` adds `/.journal/` to `.git/info/exclude`) and exports them through other skills.
+
 ## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
 
 Validates the name (format, not on main, no leftover `ws/<name>`), copies `templates/workspace/`
