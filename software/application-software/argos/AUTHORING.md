@@ -27,6 +27,7 @@ affect workspaces created afterwards; to change existing ones, PR each workspace
 
 - Keep the Delphi section of `CLAUDE.md` as generated; put project rules below it.
 - One skill per repeatable workflow, with a `description` that says when to use it.
-- The glossary goes in `docs/`. ADRs about a code repo live in that repo; `docs/` holds only ADRs
-  about the workspace itself. Avoid file paths and code in specs and tickets.
+- A project's glossary (`CONTEXT.md`) and ADRs (`docs/adr/`) live in its code repo; a workspace's
+  `docs/` points at them and holds only docs about the workspace itself. Avoid file paths and code
+  in specs and tickets.
 - Make new branches as worktrees (`new-worktree` skill) unless told otherwise.
