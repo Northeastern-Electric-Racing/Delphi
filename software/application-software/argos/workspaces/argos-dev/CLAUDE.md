@@ -69,4 +69,4 @@ Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh
 
 ## Domain docs
 
-The glossary and ADRs live in the Argos repo, not this workspace: `CONTEXT.md` at the repo root and `docs/adr/` in any Argos worktree. Change them through Argos PRs like any other change; ADR filenames follow `docs/agents/domain.md` (`<NNNN>-<prefix>-<topic-slug>.md`). Read `CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR.
+The glossary is a workspace doc: `docs/CONTEXT.md` at the workspace root. Edit it there and it's proposed back to Delphi. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs like any other change; filenames follow `docs/agents/domain.md` (`<NNNN>-<prefix>-<topic-slug>.md`). Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR.

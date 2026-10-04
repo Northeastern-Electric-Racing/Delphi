@@ -61,4 +61,4 @@ Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh
 
 ## Domain docs
 
-The glossary `CONTEXT.md` and ADRs `docs/adr/` live in the Argos repo, not this workspace, and change through Argos PRs; ADR filenames follow `docs/agents/domain.md`. Read both before exploring, use the glossary's terms, and flag conflicts with an ADR.
+The glossary `docs/CONTEXT.md` lives at the workspace root. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs; filenames follow `docs/agents/domain.md`. Read both before exploring, use the glossary's terms, and flag conflicts with an ADR.
