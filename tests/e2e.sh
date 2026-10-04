@@ -151,7 +151,7 @@ expect_bad() { # <label> <expected message> <setup command...>: copy the real la
 }
 expect_bad no-harness "harness is missing" sh -c "sed -i.bak 's/^harness:.*//' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>$A/workspace.yml"
-expect_bad bad-repo "bad repos entry" sh -c "printf '  ../x: y\n' >>$A/workspace.yml"
+expect_bad bad-repo "bad repos entry" sh -c "awk '{ print } /^repos:/ { print \"  ../x: y\" }' $A/workspace.yml >$A/y && mv $A/y $A/workspace.yml"
 expect_bad bad-reference "bad references-git entry" sh -c "printf 'references-git:\n  x: url ref extra\n' >>$A/workspace.yml"
 expect_bad reference-repo-clash "duplicate repo: argos" sh -c "printf 'references-git:\n  argos: https://example.com/a.git\n' >>$A/workspace.yml"
 expect_bad bad-key "unexpected line" sh -c "printf 'name: x\n' >>$A/workspace.yml"
