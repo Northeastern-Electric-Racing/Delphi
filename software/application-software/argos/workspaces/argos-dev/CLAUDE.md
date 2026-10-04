@@ -59,9 +59,7 @@ Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root
 
 ## Code Conventions
 
-Frontend and backend conventions live in each component's README ("Code conventions"); read the one for the code you're editing:
-- Angular / TypeScript: `angular-client/README.md`.
-- Rust / Axum: `scylla-server/README.md`.
+Code and ADR conventions worth stating are in the Conventions section of `docs/CONTEXT.md`; everything else follows current Angular and Rust defaults.
 
 ## Issue tracker
 
@@ -69,4 +67,4 @@ Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh
 
 ## Domain docs
 
-The glossary is a workspace doc: `docs/CONTEXT.md` at the workspace root. Edit it there and it's proposed back to Delphi. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs like any other change; filenames follow `docs/adr/README.md` (`<NNNN>-<prefix>-<topic-slug>.md`). Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR.
+The glossary is a workspace doc: `docs/CONTEXT.md` at the workspace root. Edit it there and it's proposed back to Delphi. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs like any other change; filenames follow the Conventions section of `docs/CONTEXT.md`. Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR.

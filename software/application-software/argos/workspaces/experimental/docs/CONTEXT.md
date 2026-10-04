@@ -1,6 +1,6 @@
 # Argos
 
-Argos is the real-time telemetry platform for Northeastern Electric Racing. Data flows from the car's CAN nodes, through the Siren MQTT broker, into scylla-server (which persists it and rebroadcasts it live), and out to the angular-client dashboard. This file defines the domain vocabulary shared across those components; the workflow/agent-tooling vocabulary lives in `docs/agents/glossary.md`.
+Argos is the real-time telemetry platform for Northeastern Electric Racing. Data flows from the car's CAN nodes, through the Siren MQTT broker, into scylla-server (which persists it and rebroadcasts it live), and out to the angular-client dashboard. This file defines the domain vocabulary shared across those components, plus the few code conventions worth stating.
 
 ## Language
 
@@ -71,6 +71,22 @@ _Avoid_: Migrations, Prisma (as a synonym for Charybdis).
 **Calypso**:
 The car-side encoder that subscribes to `Calypso/Bidir/Command/*` topics published by scylla-server and converts them into CAN messages for the vehicle. The local stack runs a Calypso simulator in its place.
 _Avoid_: Simulator, encoder (without naming Calypso).
+
+## Conventions
+
+Project-specific choices. Everything else follows current Angular and Rust defaults.
+
+**angular-client**
+- External `templateUrl` and `styleUrls`, never inline templates or styles.
+- Icons, never emojis: Material Icons (`mat-icon` with `svgIcon`) for app-level UI, PrimeIcons (`pi pi-*`) inside PrimeNG components. Custom SVGs go in `src/assets/icons/`, registered with `MatIconRegistry`.
+- Must pass AXE checks, WCAG AA minimum.
+
+**scylla-server**
+- Controller → Service → DB: thin controllers, business logic in services, Diesel for DB access with batch upserts.
+- Log with `tracing`; schema changes go through Diesel migrations; unit tests live in `#[cfg(test)]` modules.
+
+**ADRs** (Argos `docs/adr/`)
+- Filename `<NNNN>-<prefix>-<topic-slug>.md`. The prefix is what the decision touches: `angular-client`, `scylla-server`, `siren-base`, `charybdis`, `full-stack` (client + server), `multi-comp` (any other cross-component or repo-wide infra), or `misc` (no code component, e.g. workflow).
 
 ## Flagged ambiguities
 
