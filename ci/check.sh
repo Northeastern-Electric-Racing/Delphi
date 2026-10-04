@@ -4,7 +4,8 @@
 # digits, and '-', unique repo-wide; workspaces never nest; no symlinks under software/; each
 # workspace's .delphi/*.sh and .github/workflows/delphi.yml match templates/workspace/, and the
 # template workflow matches .github/workflows/delphi.yml; workspace.yml (and a project's
-# defaults/workspace.yml) is `harness: <adapter>` plus an optional `repos:` map of `<name>: <git-url>`.
+# defaults/workspace.yml) is `harness: <adapter>` plus an optional `repos:` map of `<name>: <git-url>`
+# and an optional `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
 cd "${1:-.}"
@@ -25,9 +26,12 @@ manifest() {
     /^harness:/ { v = $0; sub(/^harness:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
                   if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
     /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
+    /^references-git:[[:space:]]*(#.*)?$/ { r = 2; next }
+    r == 1 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/ {
+      print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
+    r == 2 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+([[:space:]]+[A-Za-z0-9._\/-]+)?[[:space:]]*(#.*)?$/ {
+      print "bad references-git entry (want `  <name>: <git-url> [<ref>]`): " $0; next }
     r && /^[[:space:]]/ {
-      if ($0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/) {
-        print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
       n = $1; sub(/:$/, "", n)
       if (n == "." || n == "..") print "bad repo name: " n
       if (seen[n]++) print "duplicate repo: " n
