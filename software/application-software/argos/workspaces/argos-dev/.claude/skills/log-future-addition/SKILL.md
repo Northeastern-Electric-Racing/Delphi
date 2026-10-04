@@ -9,7 +9,7 @@ Capture one rough, out-of-scope idea as a single un-triaged GitHub issue, so a g
 
 Use it for a **brief, quick idea**. It is NOT for fleshed-out specs or breaking down plans.
 
-Issue tracker conventions (title, labels, backticks, assignment) live in Argos's `docs/agents/issue-tracker.md` (read it in `worktrees/argos/develop/` or any Argos worktree). Do not duplicate them here — link and follow.
+Ticket conventions (title, labels, backticks) live in the `create-ticket` skill and the repo's issue templates. Do not duplicate them here — link and follow.
 
 ## When to reach for this skill
 
@@ -43,7 +43,7 @@ If a strong match turns up, surface it in the confirm step ("possible duplicate 
 
 ### 3. Draft the issue
 
-- **Title:** concise, imperative (per `issue-tracker.md`).
+- **Title:** concise, imperative (per `create-ticket`).
 - **Body:** the minimal shape below — a raw idea, not a spec.
 - **Labels:** see below.
 
@@ -59,16 +59,15 @@ The motivation, or the scrap it came from. Omit this section entirely if there i
 > *Logged as a raw idea via log-future-addition.*
 </issue-template>
 
-Keep to at most three backtick usages in the whole body (per `issue-tracker.md`).
+Keep to at most three backtick usages in the whole body (per `create-ticket`).
 
 ### 4. Choose labels
 
-- **`needs-triage`** — always. Files the idea straight into the triage queue as intake. This is the one place a triage role is applied at creation instead of during triage (see `issue-tracker.md`).
-- **Type** (`bug` / `new feature` / `feature enhancement`) — apply when the idea clearly is one; otherwise leave it for triage.
-- **Area** (`angular-client` / `scylla-server` / `DevOps`) — apply only when obvious; otherwise omit. A raw idea often is not scoped to an area yet, so area is not required.
-- **Difficulty** — never. That is decided in triage.
+- **`needs-triage`** — always. Files the idea straight into the triage queue as intake.
+- **Written by** — `by: ai-assisted` when the idea is the user's, `by: ai` when it's yours.
+- **Area** (`frontend` / `backend` / `devops`) — apply only when obvious; otherwise omit. A raw idea often is not scoped to an area yet, so area is not required.
 
-Triage then classifies it (category, area, difficulty) like any other needs-triage issue.
+Triage then turns it into an idea or spike (see `create-ticket`).
 
 ### 5. Confirm, then file
 
