@@ -29,7 +29,7 @@ manifest() {
     /^references-git:[[:space:]]*(#.*)?$/ { r = 2; next }
     r == 1 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/ {
       print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
-    r == 2 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+([[:space:]]+[A-Za-z0-9._\/-]+)?[[:space:]]*(#.*)?$/ {
+    r == 2 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+([[:space:]]+[A-Za-z0-9@._\/-]+)?[[:space:]]*(#.*)?$/ {
       print "bad references-git entry (want `  <name>: <git-url> [<ref>]`): " $0; next }
     r && /^[[:space:]]/ {
       n = $1; sub(/:$/, "", n)

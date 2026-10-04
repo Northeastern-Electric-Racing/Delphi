@@ -196,13 +196,13 @@ cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 ok "setup.sh runs in a core.autocrlf=true clone (Git Bash default), thanks to .gitattributes"
 
 # --- 8b. references-git: shallow, detached, push-disabled checkouts under references/, refreshed on re-run
-git -C "$t/lib2" tag v1 && git -C "$t/lib2" commit -q --allow-empty -m "after v1" && git -C "$t/lib2" push -q "$t/lib2.git" --all && git -C "$t/lib2" push -q "$t/lib2.git" --tags
+git -C "$t/lib2" tag lib2@v1 && git -C "$t/lib2" commit -q --allow-empty -m "after v1" && git -C "$t/lib2" push -q "$t/lib2.git" --all && git -C "$t/lib2" push -q "$t/lib2.git" --tags
 git -C "$t/lib1" commit -q --allow-empty -m "lib1 two" && git -C "$t/lib1" push -q "$t/lib1.git" --all
 w=$t/refs && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
-printf 'harness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s v1  # pinned\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
+printf 'harness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s lib2@v1  # pinned, monorepo-style tag\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed with references-git: $(cat "$t/out")"
 [ "$(git -C "$w/references/lib1" rev-parse HEAD)" = "$(git -C "$t/lib1" rev-parse HEAD)" ] || fail "lib1 reference not at default branch"
-[ "$(git -C "$w/references/lib2" rev-parse HEAD)" = "$(git -C "$t/lib2" rev-parse 'v1^{commit}')" ] || fail "lib2 reference not at its pin"
+[ "$(git -C "$w/references/lib2" rev-parse HEAD)" = "$(git -C "$t/lib2" rev-parse 'lib2@v1^{commit}')" ] || fail "lib2 reference not at its pin"
 [ "$(git -C "$w/references/lib1" rev-list --count HEAD)" = 1 ] || fail "reference is not shallow"
 ! git -C "$w/references/lib1" symbolic-ref -q HEAD >/dev/null || fail "reference is on a branch"
 ! git -C "$w/references/lib1" push -q origin HEAD:refs/heads/x 2>/dev/null || fail "push from a reference succeeded"
