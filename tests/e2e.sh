@@ -149,7 +149,7 @@ expect_bad() { # <label> <expected message> <setup command...>: copy the real la
   grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
   ok "check fails: $label ($want)"
 }
-expect_bad no-harness "harness is missing" sed -i 's/^harness:.*//' "$A/workspace.yml"
+expect_bad no-harness "harness is missing" sh -c "sed -i.bak 's/^harness:.*//' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>$A/workspace.yml"
 expect_bad bad-repo "bad repos entry" sh -c "printf '  ../x: y\n' >>$A/workspace.yml"
 expect_bad bad-key "unexpected line" sh -c "printf 'name: x\n' >>$A/workspace.yml"
