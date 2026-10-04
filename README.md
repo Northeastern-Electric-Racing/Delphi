@@ -59,7 +59,14 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 harness: claude-code
 repos:                  # stored in repos/<name>, checked out in worktrees/<name>/ by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
+references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
+  socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch
 ```
+
+`repos:` are the code you change. `references-git:` are open-source dependencies the agent reads for
+context: `setup.sh` checks each out shallow and detached at its pin (or the default branch), with
+pushes disabled, and refreshes them on every run. They get no store and no worktrees. Names are
+unique across both maps. The `-git` suffix leaves room for other kinds of references later.
 
 The workspace's name is its folder name (unique repo-wide). Every other file in the folder is the
 workspace's own, at its normal harness path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`,

@@ -1,3 +1,5 @@
 harness: claude-code
 repos:                    # cloned into repos/<name> by .delphi/setup.sh
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git
+references-git:           # read-only dependency sources, shallow-cloned into references/<name> by .delphi/setup.sh
+  # name: https://github.com/<owner>/<repo>.git v1.2.3   # optional tag or branch; default: its default branch

@@ -151,7 +151,9 @@ expect_bad() { # <label> <expected message> <setup command...>: copy the real la
 }
 expect_bad no-harness "harness is missing" sh -c "sed -i.bak 's/^harness:.*//' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>$A/workspace.yml"
-expect_bad bad-repo "bad repos entry" sh -c "printf '  ../x: y\n' >>$A/workspace.yml"
+expect_bad bad-repo "bad repos entry" sh -c "awk '{ print } /^repos:/ { print \"  ../x: y\" }' $A/workspace.yml >$A/y && mv $A/y $A/workspace.yml"
+expect_bad bad-reference "bad references-git entry" sh -c "printf 'references-git:\n  x: url ref extra\n' >>$A/workspace.yml"
+expect_bad reference-repo-clash "duplicate repo: argos" sh -c "printf 'references-git:\n  argos: https://example.com/a.git\n' >>$A/workspace.yml"
 expect_bad bad-key "unexpected line" sh -c "printf 'name: x\n' >>$A/workspace.yml"
 expect_bad duplicate "is also used by" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/"
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
@@ -192,6 +194,28 @@ git clone -q -c core.autocrlf=true -b ws/argos-dev "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh fails with core.autocrlf=true"
 ok "setup.sh runs in a core.autocrlf=true clone (Git Bash default), thanks to .gitattributes"
+
+# --- 8b. references-git: shallow, detached, push-disabled checkouts under references/, refreshed on re-run
+git -C "$t/lib2" tag lib2@v1 && git -C "$t/lib2" commit -q --allow-empty -m "after v1" && git -C "$t/lib2" push -q "$t/lib2.git" --all && git -C "$t/lib2" push -q "$t/lib2.git" --tags
+git -C "$t/lib1" commit -q --allow-empty -m "lib1 two" && git -C "$t/lib1" push -q "$t/lib1.git" --all
+w=$t/refs && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
+printf 'harness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s lib2@v1  # pinned, monorepo-style tag\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
+/bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed with references-git: $(cat "$t/out")"
+[ "$(git -C "$w/references/lib1" rev-parse HEAD)" = "$(git -C "$t/lib1" rev-parse HEAD)" ] || fail "lib1 reference not at default branch"
+[ "$(git -C "$w/references/lib2" rev-parse HEAD)" = "$(git -C "$t/lib2" rev-parse 'lib2@v1^{commit}')" ] || fail "lib2 reference not at its pin"
+[ "$(git -C "$w/references/lib1" rev-list --count HEAD)" = 1 ] || fail "reference is not shallow"
+! git -C "$w/references/lib1" symbolic-ref -q HEAD >/dev/null || fail "reference is on a branch"
+! git -C "$w/references/lib1" push -q origin HEAD:refs/heads/x 2>/dev/null || fail "push from a reference succeeded"
+[ ! -e "$w/repos/lib1" ] && [ ! -e "$w/worktrees/lib1" ] || fail "reference got a repos/ store or worktree"
+[ "$(grep -cx /references/ "$w/.git/info/exclude")" = 1 ] || fail "/references/ not excluded exactly once"
+! bash "$w/.delphi/new-worktree.sh" lib1 1-x 2>"$t/err" >/dev/null || fail "new-worktree accepted a reference"
+grep -q "references are read-only" "$t/err" || fail "new-worktree refusal unexplained: $(cat "$t/err")"
+git -C "$t/lib1" commit -q --allow-empty -m "lib1 three" && git -C "$t/lib1" push -q "$t/lib1.git" --all
+/bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh re-run failed with references-git"
+[ "$(git -C "$w/references/lib1" rev-parse HEAD)" = "$(git -C "$t/lib1" rev-parse HEAD)" ] || fail "re-run did not refresh lib1"
+[ "$(grep -cx /references/ "$w/.git/info/exclude")" = 1 ] || fail "/references/ excluded twice after re-run"
+ok "setup.sh checks out references-git: repos shallow, detached, at their pin, push disabled, refreshed on re-run"
+ok "new-worktree.sh refuses a reference repo"
 
 # --- 9. new-workspace.sh creates the folder on a branch and opens a PR
 : >"$t/gh.log"

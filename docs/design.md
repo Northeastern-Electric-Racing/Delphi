@@ -51,7 +51,8 @@ tests/e2e.sh                          sandbox test of all of the above
 ```
 
 Org folders under `software/` are plain directories. `workspace.yml` is tiny YAML: `harness:
-<adapter>` and an optional `repos:` map of `<name>: <git-url>`. The name is the folder name:
+<adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional `references-git:` map of
+`<name>: <git-url> [<ref>]` (names unique across both maps). The name is the folder name:
 lowercase letters, digits, `-`; unique repo-wide. Workspaces never nest; no symlinks under
 `software/`. Each workspace's `.delphi/*.sh` and `.github/workflows/delphi.yml` equal the
 template's, and the template's workflow equals main's. `ci/check.sh` enforces all of this and lists
@@ -97,7 +98,11 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 Reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
 `repos/<name>`, then checks out its default branch as the first worktree,
 `worktrees/<name>/<default-branch>/` (re-created if missing). Adds `/repos/` and `/worktrees/` to
-the clone's `.git/info/exclude` once. Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
+the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
+sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
+checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
+a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
+no store and no worktrees (`new-worktree.sh` refuses them). Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
 and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `worktrees/<repo>/<branch>`
