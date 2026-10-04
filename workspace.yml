@@ -2,3 +2,7 @@ harness: claude-code
 repos:
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
   odyssey-definitions: https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git
+references-git:           # read-only dependency sources; pins match scylla-server/Cargo.lock and angular-client/package-lock.json on develop
+  socketioxide: https://github.com/Totodore/socketioxide.git socketioxide-v0.18.7
+  socket.io: https://github.com/socketio/socket.io.git socket.io-client@4.8.1   # monorepo: client, server, engine.io, parser
+  zenoh: https://github.com/eclipse-zenoh/zenoh.git 1.10.1
