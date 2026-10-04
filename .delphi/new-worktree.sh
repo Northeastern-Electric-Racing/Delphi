@@ -8,6 +8,8 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 repo=${1:?usage: new-worktree.sh <repo> <branch> [<base>]} branch=${2:?usage: new-worktree.sh <repo> <branch> [<base>]}
 base=${3:-origin/HEAD} dest="$root/worktrees/$repo/$branch"
 g() { git -C "$root/repos/$repo" "$@"; }
+[ -d "$root/repos/$repo" ] ||
+  { echo "new-worktree: no repos/$repo (list it under repos: and run .delphi/setup.sh; references are read-only)" >&2 && exit 1; }
 g fetch -q origin
 if [ -d "$dest" ]; then :
 elif g rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
