@@ -65,7 +65,7 @@ Frontend and backend conventions live alongside their code and auto-load when ed
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions. When an out-of-scope but worthwhile idea comes up mid-work, offer to log it with `log-future-addition`; park rough notes with `journal`.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions. Requirements sections hold clear, broad bullets: aim for 3-5, never more than 7. When an out-of-scope but worthwhile idea comes up mid-work, offer to log it with `log-future-addition`; park rough notes with `journal`.
 
 ## Domain docs
 
