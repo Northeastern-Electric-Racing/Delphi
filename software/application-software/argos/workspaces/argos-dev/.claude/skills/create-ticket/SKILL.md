@@ -1,6 +1,6 @@
 ---
 name: create-ticket
-description: Draft and file a GitHub issue (idea, spike, epic, or dev work) on Argos or Nero from the repo's issue templates. Use whenever the user wants to create, file, write up, or log a ticket, issue, idea, spike, epic, bug, or task.
+description: Draft and file a GitHub issue (idea, spike, epic, or dev work) on Argos or Nero from the repo's issue templates, or rewrite an existing issue into them. Use whenever the user wants to create, file, write up, or log a ticket, issue, idea, spike, epic, bug, or task.
 ---
 
 # Create ticket
@@ -32,11 +32,16 @@ Use its `labels`, `type`, the markdown blocks (context for you, not part of the 
 - **Body:** one `### <field label>` section per field, in template order, matching what the web form produces. Omit empty optional fields. Fields with `render: text` (Context transfer) go in a fenced text block that starts with a short summary. Diagrams may be a mermaid block, ASCII in a text block, or an image link.
 - **Backticks:** outside the diagram and context-transfer blocks, use at most three inline backticks; reference files and identifiers in plain text.
 - **Labels:** the template's category label, plus:
-  - written-by, exactly one: `by: human` (the user dictated the text), `by: ai-assisted` (the user supplied the substance, you drafted), `by: ai` (you wrote it largely on your own);
+  - written-by, exactly one: `by: human` (the user dictated the text), `by: ai-assisted` (the user supplied the substance, you drafted), `by: ai` (you wrote it largely on your own). Rewriting an existing ticket from code and old text is `by: ai`;
   - area, one or more: `frontend`, `backend`, `devops`.
+- **By template:**
+  - Idea and spike: never prescribe a solution. An idea lists approaches as open options, and a spike says what to learn, not how to build it. Context transfer holds facts (where code lives, current behavior, constraints, links), not instructions.
+  - Epic: Approach describes the chosen approach without walking through each ticket. Requirements are outcomes for the whole epic, not one bullet per sub-issue. Link the dev work as sub-issues.
+  - Dev work: Requirements are testable outcomes. Notes can carry gotchas and pointers to code.
+- **Rewriting an existing ticket** into a new template: keep its assignees, replace old labels with the current set, set the issue type, and link it under its epic.
 - Check for duplicates with `gh issue list -R <repo> --search "<keywords>" --state open` and mention any strong match.
 
-Show the full draft (title, type, labels, parent, body) and get the user's OK before filing.
+Show the full draft (title, type, labels, parent, body) in the chat, not in a file, and get the user's OK before filing or editing.
 
 ## 4. File
 
