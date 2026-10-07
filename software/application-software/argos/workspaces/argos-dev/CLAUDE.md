@@ -63,7 +63,7 @@ Code and ADR conventions worth stating are in the Conventions section of `docs/C
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. Conventions live in Argos's `docs/agents/issue-tracker.md`; file tickets with the `create-ticket` skill, which follows the issue templates (idea, spike, epic, dev work). When an out-of-scope but worthwhile idea comes up mid-work, offer to log it with `log-future-addition`; park rough notes with `journal`.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. Conventions live in Argos's `docs/agents/issue-tracker.md`; file tickets with the `create-ticket` skill, which follows the issue templates (idea, spike, epic, dev work). When an out-of-scope but worthwhile idea comes up mid-work, offer to file it as an idea with `create-ticket`; park rough notes with `journal`.
 
 ## Domain docs
 
