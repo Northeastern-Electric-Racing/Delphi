@@ -51,10 +51,8 @@ Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root
 
 ## Code Conventions
 
-Frontend and backend conventions live alongside their code and auto-load when editing there:
-- Angular / TypeScript: see `angular-client/CLAUDE.md`.
-- Rust / Axum: see `scylla-server/CLAUDE.md`.
+Code and ADR conventions worth stating are in the Conventions section of `docs/CONTEXT.md`; everything else follows current Angular and Rust defaults.
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions, and `docs/agents/triage-labels.md` for labels. Specs and tickets avoid file paths and code snippets; they go stale.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See Argos's `docs/agents/issue-tracker.md` for ticket types, labels, and conventions. Specs and tickets avoid file paths and code snippets; they go stale.
