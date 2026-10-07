@@ -57,8 +57,8 @@ Save Playwright screenshots to `pictures/<branch>/` at the repo root, with kebab
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See Argos's `docs/agents/issue-tracker.md` for ticket types, labels, and conventions.
 
 ## Domain docs
 
-The glossary `docs/CONTEXT.md` lives at the workspace root. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs; filenames follow `docs/agents/domain.md`. Read both before exploring, use the glossary's terms, and flag conflicts with an ADR.
+The glossary `docs/CONTEXT.md` lives at the workspace root. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs; filenames follow the Conventions section of `docs/CONTEXT.md`. Read both before exploring, use the glossary's terms, and flag conflicts with an ADR.
