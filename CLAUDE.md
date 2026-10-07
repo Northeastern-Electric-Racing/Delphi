@@ -59,14 +59,12 @@ Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root
 
 ## Code Conventions
 
-Frontend and backend conventions live alongside their code and auto-load when editing there:
-- Angular / TypeScript: see `angular-client/CLAUDE.md`.
-- Rust / Axum: see `scylla-server/CLAUDE.md`.
+Code and ADR conventions worth stating are in the Conventions section of `docs/CONTEXT.md`; everything else follows current Angular and Rust defaults.
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. See `docs/agents/issue-tracker.md` for title, label, and assignment conventions. When an out-of-scope but worthwhile idea comes up mid-work, offer to log it with `log-future-addition`; park rough notes with `journal`.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. Conventions live in Argos's `docs/agents/issue-tracker.md`; file tickets with the `create-ticket` skill, which follows the issue templates (idea, spike, epic, dev work). When an out-of-scope but worthwhile idea comes up mid-work, offer to file it as an idea with `create-ticket`; park rough notes with `journal`.
 
 ## Domain docs
 
-The glossary is a workspace doc: `docs/CONTEXT.md` at the workspace root. Edit it there and it's proposed back to Delphi. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs like any other change; filenames follow `docs/agents/domain.md` (`<NNNN>-<prefix>-<topic-slug>.md`). Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR.
+The glossary is a workspace doc: `docs/CONTEXT.md` at the workspace root. Edit it there and it's proposed back to Delphi. ADRs live in the Argos repo at `docs/adr/` and land through Argos PRs like any other change; filenames follow the Conventions section of `docs/CONTEXT.md`. Read `docs/CONTEXT.md` and the relevant ADRs before exploring, use the glossary's terms, and flag any conflict with an ADR.
