@@ -17,6 +17,7 @@ Pipeline: idea → spikes → epic → dev work. If unsure, a small thing is a s
 **Draft**
 - Keep it short. Plain words; explain any project-specific term the reader may not know.
 - One `### <field label>` per field, in template order; omit empty optional fields.
+- Requirements: clear, broad bullets, aiming for 3-5 and never more than 7.
 - Idea and spike: never prescribe a solution. Ideas list open options; spikes say what to learn. Context transfer holds facts, not instructions.
 - Epic: the approach without a walkthrough of each ticket; requirements are outcomes for the whole epic, not one per sub-issue.
 - Dev work: testable requirements; Notes can carry gotchas and pointers to code.
