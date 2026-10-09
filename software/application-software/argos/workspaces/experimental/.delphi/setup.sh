@@ -5,8 +5,9 @@
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
 # run, with pushes disabled. Adds /repos/, /worktrees/ and /references/ to this clone's
-# .git/info/exclude. Safe to re-run. Keep it bash 3.2 (macOS) and Git Bash safe: no bash-4
-# features, POSIX awk only.
+# .git/info/exclude, and installs .delphi/park.sh as its post-checkout hook (unless another hook is
+# there) so switching to another workspace or main parks them. Safe to re-run. Keep it bash 3.2
+# (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -64,3 +65,9 @@ mkdir -p "$(dirname "$exclude")"
 for d in /repos/ /worktrees/ /references/; do
   grep -qxF "$d" "$exclude" 2>/dev/null || echo "$d" >>"$exclude"
 done
+hook=$(git rev-parse --git-path hooks/post-checkout)
+if [ ! -e "$hook" ] || grep -qF '.delphi/park.sh' "$hook"; then
+  mkdir -p "$(dirname "$hook")" && cp .delphi/park.sh "$hook" && chmod +x "$hook"
+else
+  echo "setup: $hook is another hook; not installing .delphi/park.sh, so checkouts won't park repos/" >&2
+fi

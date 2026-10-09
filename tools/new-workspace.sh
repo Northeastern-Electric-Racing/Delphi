@@ -2,7 +2,7 @@
 # tools/new-workspace.sh <org-path under software/> <name>: propose a new workspace as a PR to main.
 # In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
 # project's software/<org-path>/defaults/ (its CLAUDE.md appended to the template's) to
-# software/<org-path>/workspaces/<name>/, checks it, pushes branch new-workspace/<name>, and opens
+# software/<org-path>/workspaces/<name>/, sets `name:` in its workspace.yml, checks it, pushes branch new-workspace/<name>, and opens
 # the PR with gh. Your checkout is untouched. After merge, ci/sync.sh creates ws/<name>.
 set -euo pipefail
 die() { echo "new-workspace: $*" >&2 && exit 1; }
@@ -34,6 +34,8 @@ if [ -d "$defaults" ]; then
   [ ! -f "$defaults/CLAUDE.md" ] || { echo && cat "$defaults/CLAUDE.md"; } >>"$wt/$folder/CLAUDE.md"
 fi
 sed -i.bak -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/$folder/CLAUDE.md" && rm "$wt/$folder/CLAUDE.md.bak"
+y=$wt/$folder/workspace.yml
+{ echo "name: $name"; grep -v '^name:' "$y"; } >"$y.new" && mv "$y.new" "$y"
 "$wt/ci/check.sh" "$wt"
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $name at $folder"

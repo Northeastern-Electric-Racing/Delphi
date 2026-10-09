@@ -32,6 +32,7 @@ cp -R "$src/ci" "$src/tools" "$src/templates" "$src/.github" "$src/README.md" "$
 mkdir -p "$t/seed/$A" "$t/seed/$B"
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
+sed -i.bak "s/{{name}}/bms-dev/" "$t/seed/$B/workspace.yml" && rm "$t/seed/$B/workspace.yml.bak"
 FD=software/electrical/firmware/defaults # project defaults for new workspaces under electrical/firmware
 mkdir -p "$t/seed/$FD/.claude/skills/fw"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
@@ -154,7 +155,11 @@ expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>
 expect_bad bad-repo "bad repos entry" sh -c "awk '{ print } /^repos:/ { print \"  ../x: y\" }' $A/workspace.yml >$A/y && mv $A/y $A/workspace.yml"
 expect_bad bad-reference "bad references-git entry" sh -c "printf 'references-git:\n  x: url ref extra\n' >>$A/workspace.yml"
 expect_bad reference-repo-clash "duplicate repo: argos" sh -c "printf 'references-git:\n  argos: https://example.com/a.git\n' >>$A/workspace.yml"
-expect_bad bad-key "unexpected line" sh -c "printf 'name: x\n' >>$A/workspace.yml"
+expect_bad bad-key "unexpected line" sh -c "printf 'color: x\n' >>$A/workspace.yml"
+expect_bad wrong-name "want the folder name" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
+expect_bad no-name "name is missing" sh -c "sed -i.bak '/^name:/d' $A/workspace.yml && rm $A/workspace.yml.bak"
+expect_bad defaults-name "defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/defaults/workspace.yml"
+expect_bad park-drift "park.sh: differs" sh -c "echo x >>$A/.delphi/park.sh"
 expect_bad duplicate "is also used by" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/"
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
 expect_bad bad-name "name must be" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
@@ -217,6 +222,38 @@ git -C "$t/lib1" commit -q --allow-empty -m "lib1 three" && git -C "$t/lib1" pus
 ok "setup.sh checks out references-git: repos shallow, detached, at their pin, push disabled, refreshed on re-run"
 ok "new-worktree.sh refuses a reference repo"
 
+# --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/ in the
+# git dir and restores them, same paths, when the workspace comes back; same-workspace branches don't move
+w=$t/park && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
+local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch> whose workspace.yml lists <repo>
+  git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\n' \
+    "$3" "$4" "$t/$4.git" "$4" "$t/$4.git" >"$w/workspace.yml" && git -C "$w" commit -qam "$1" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
+}
+live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" branch --show-current)" = "$def" ] &&
+  ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null; }
+local_ws a1 ws/argos-dev argos-dev lib1 || fail "park: setup on argos-dev failed"
+cmp -s "$w/.delphi/park.sh" "$w/.git/hooks/post-checkout" || fail "setup.sh did not install park.sh as post-checkout"
+{ git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.git/delphi" ]; } || fail "park: same-workspace branch moved clones"
+local_ws b1 ws/bms-dev bms-dev lib2 || fail "park: setup on bms-dev failed"
+{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.git/delphi/argos-dev/worktrees/lib1/$def" ] && live lib2; } ||
+  fail "park: argos-dev not parked on bms-dev"
+{ git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ]; } ||
+  fail "park: clones visible on main: $(ls -A "$w")"
+[ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
+{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.git/delphi/bms-dev/repos/lib2" ]; } ||
+  fail "park: argos-dev not restored"
+git -C "$w/worktrees/lib1/$def" commit -q --allow-empty -m "after restore" || fail "park: restored worktree unusable"
+{ git -C "$w" checkout -q b1 && live lib2 && git -C "$w" checkout -q a1 && live lib1; } || fail "park: second round trip"
+git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q a1 2>"$t/err"
+{ grep -q "worktrees/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.git/delphi/argos-dev/worktrees" ]; } ||
+  fail "park: a folder in the way was not reported and kept: $(cat "$t/err")"
+{ rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
+ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
+ok "park.sh leaves same-workspace branches alone and reports, never overwrites, a folder in the way"
+printf '#!/bin/sh\n' >"$w/.git/hooks/post-checkout" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err"
+{ grep -q "another hook" "$t/err" && [ "$(cat "$w/.git/hooks/post-checkout")" = "#!/bin/sh" ]; } || fail "setup.sh replaced another post-checkout hook"
+ok "setup.sh keeps someone else's post-checkout hook and says so"
+
 # --- 9. new-workspace.sh creates the folder on a branch and opens a PR
 : >"$t/gh.log"
 git -C "$t/dev" branch -q new-workspace/fw-dev origin/main # left by an earlier failed run
@@ -227,8 +264,8 @@ o cat-file -e "new-workspace/fw-dev:$F/workspace.yml" || fail "no workspace.yml 
 o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "branch \`ws/fw-dev\`" || fail "CLAUDE.md not filled in"
 ! o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "{{" || fail "placeholder left"
 o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -qx "# Firmware for fw-dev" || fail "defaults CLAUDE.md not appended"
-[ "$(o rev-parse "new-workspace/fw-dev:$F/workspace.yml")" = "$(o rev-parse "main:$FD/workspace.yml")" ] ||
-  fail "defaults workspace.yml not used"
+[ "$(o show "new-workspace/fw-dev:$F/workspace.yml")" = "$(printf 'name: fw-dev\n'; o show "main:$FD/workspace.yml")" ] ||
+  fail "defaults workspace.yml not used, or name: not set"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/link-workspace/SKILL.md" || fail "template skill lost"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
