@@ -1,3 +1,4 @@
+name: {{name}}            # the folder name; checkouts park and restore repos/ by it
 harness: claude-code
 repos:                    # cloned into repos/<name> by .delphi/setup.sh
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git

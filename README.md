@@ -41,6 +41,7 @@ histories stay joined and edits on either side meet in normal three-way merges.
 ```sh
 git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
 cd argos-dev && .delphi/setup.sh        # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
+git switch main                         # switch freely: the post-checkout hook parks them in .git/delphi/
 git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
 git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
 ```
@@ -56,6 +57,7 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 ## workspace.yml
 
 ```yaml
+name: argos-dev         # the folder name
 harness: claude-code
 repos:                  # stored in repos/<name>, checked out in worktrees/<name>/ by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
@@ -68,9 +70,10 @@ context: `setup.sh` checks each out shallow and detached at its pin (or the defa
 pushes disabled, and refreshes them on every run. They get no store and no worktrees. Names are
 unique across both maps. The `-git` suffix leaves room for other kinds of references later.
 
-The workspace's name is its folder name (unique repo-wide). Every other file in the folder is the
-workspace's own, at its normal harness path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`,
-`new-worktree.sh`, `link.sh`) and `.github/workflows/delphi.yml` (copies of the template's).
+The workspace's name is its folder name (unique repo-wide), repeated in `name:` so a checkout knows
+which workspace it is. Every other file in the folder is the workspace's own, at its normal harness
+path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`, `new-worktree.sh`, `link.sh`,
+`park.sh`) and `.github/workflows/delphi.yml` (copies of the template's).
 
 ## New workspace
 

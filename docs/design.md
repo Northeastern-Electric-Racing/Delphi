@@ -42,7 +42,7 @@ in normal three-way merges. Nothing is shared or generated between workspaces: a
 ```
 software/<org>/…/<project>/           README.md  AUTHORING.md  defaults/   (optional, main only)
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
-                                      .delphi/{setup,new-worktree,link}.sh  .github/workflows/delphi.yml  .gitattributes
+                                      .delphi/{setup,new-worktree,link,park}.sh  .github/workflows/delphi.yml  .gitattributes
 ci/sync.sh  ci/check.sh               CI scripts
 tools/new-workspace.sh                new workspace as a PR
 templates/workspace/                  what new-workspace copies
@@ -50,10 +50,11 @@ templates/workspace/                  what new-workspace copies
 tests/e2e.sh                          sandbox test of all of the above
 ```
 
-Org folders under `software/` are plain directories. `workspace.yml` is tiny YAML: `harness:
-<adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional `references-git:` map of
-`<name>: <git-url> [<ref>]` (names unique across both maps). The name is the folder name:
-lowercase letters, digits, `-`; unique repo-wide. Workspaces never nest; no symlinks under
+Org folders under `software/` are plain directories. `workspace.yml` is tiny YAML: `name:` (the
+folder name, so a checkout of `ws/<name>` knows which workspace it is), `harness: <adapter>`, an
+optional `repos:` map of `<name>: <git-url>`, and an optional `references-git:` map of
+`<name>: <git-url> [<ref>]` (names unique across both maps). The name is lowercase letters, digits,
+`-`; unique repo-wide. Workspaces never nest; no symlinks under
 `software/`. Each workspace's `.delphi/*.sh` and `.github/workflows/delphi.yml` equal the
 template's, and the template's workflow equals main's. `ci/check.sh` enforces all of this and lists
 every problem. `.gitattributes` (`eol=lf`) keeps `setup.sh` runnable in Git Bash clones.
@@ -62,7 +63,7 @@ every problem. `.gitattributes` (`eol=lf`) keeps `setup.sh` runnable in Git Bash
 The folder holding a `workspaces/` directory is a project folder. It may hold shared context
 (`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`: files a new workspace
 there starts with. These live only on `main`; workspaces reach them with `link.sh main`. A
-`defaults/workspace.yml` is checked as a manifest but is not a workspace.
+`defaults/workspace.yml` is checked as a manifest (without `name:`) but is not a workspace.
 
 ## 3. Sync (`ci/sync.sh [refresh|propose] [<name>]`; no direction = both)
 
@@ -102,8 +103,18 @@ the clone's `.git/info/exclude` once. For each repo under `references-git:` (rea
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
-no store and no worktrees (`new-worktree.sh` refuses them). Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
+no store and no worktrees (`new-worktree.sh` refuses them). Installs `.delphi/park.sh` as the clone's
+`post-checkout` hook, unless another hook is there (it says so and leaves it). Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
 and Git Bash: no bash-4 features, POSIX awk only.
+
+`.delphi/park.sh` (the hook) lets one clone switch freely between workspaces and `main`. When a
+branch checkout changes the `name:` in `workspace.yml` (none on `main`), it moves the old
+workspace's `repos/`, `worktrees/` and `references/` into the checkout's git dir at
+`delphi/<name>/` and moves the new one's back. A move is a rename, so it is instant and every
+absolute path (worktree links, build caches) is the same again whenever its workspace is checked
+out; nothing is repaired or rebuilt. Branches of the same workspace move nothing. It never
+overwrites: a folder in the way is reported and the other copy stays parked. Linked Delphi
+worktrees park in their own git dir.
 
 `.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `worktrees/<repo>/<branch>`
 from that store: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.

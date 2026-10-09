@@ -1,3 +1,4 @@
+name: experimental
 harness: claude-code
 repos:
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
