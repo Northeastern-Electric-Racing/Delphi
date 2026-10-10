@@ -2,3 +2,5 @@ name: nero-experimental
 harness: claude-code
 repos:
   nero: https://github.com/Northeastern-Electric-Racing/Nero-2.0.git
+links:                    # Delphi workspaces (or main), read-only copies at linked/<name> by .delphi/setup.sh
+  # - main

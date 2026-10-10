@@ -1,7 +1,7 @@
 # Argos (project)
 
-Shared context for every Argos workspace. Workspaces read it with `bash .delphi/link.sh main`
-(the `link-workspace` skill), at `linked/main/software/application-software/argos/`.
+Shared context for every Argos workspace. Workspaces that list `main` under `links:` in
+`workspace.yml` (the default for Argos) read it at `linked/main/software/application-software/argos/`.
 
 Argos is NER's real-time telemetry platform: an Angular 19 frontend (`angular-client/`) and a Rust
 backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in

@@ -3,3 +3,5 @@ harness: claude-code
 repos:
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
   odyssey-definitions: https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git
+links:                    # Delphi workspaces (or main), read-only copies at linked/<name> by .delphi/setup.sh
+  - main
