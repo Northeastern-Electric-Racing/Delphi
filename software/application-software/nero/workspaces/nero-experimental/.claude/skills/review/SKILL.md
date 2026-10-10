@@ -10,7 +10,7 @@ description: Review changes since a fixed point (commit, branch, tag, or merge-b
    - Bugs: correctness, edge cases, error handling.
    - Standards: violated rules by file, dead code, speculative abstraction, and comments that break the comment rule. Skip what formatters and linters enforce.
    - Spec: missing or partial done criteria, anything from Non-goals, and wrong behavior. Quote the spec line.
-   - UI QA, only if QML or a page changed: build, run against mock telemetry, capture each changed page with the screenshot tool, and inspect the shots.
+   - UI QA, only if QML or a page changed: in `playwright/`, add or update a case for each changed page, run `npm test`, and inspect `test-results/<case>/`.
 5. Report one table, most severe first, and end with the finding count. Note "UI QA: skipped, no UI change" when it applies.
 
 | Severity | Axis | File:line | Problem | Fix |

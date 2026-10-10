@@ -30,12 +30,16 @@ Nero's `develop` is checked out at `worktrees/nero/develop/`. Paths below are re
 
 - Build: `build-scripts/compile-qt-linux.sh`, or the `-mac.sh` or `-windows.bat` variant. The scripts expect Qt 6.8.3 under `~/Qt/6.8.3/`.
 - Mock telemetry: `docker compose -f compose.nero-dev.yml up -d`, and `down` when done.
-- There are no unit tests. Verify by building, running against mock telemetry, and taking screenshots.
+- There are no unit tests. Verify UI changes with Playwright (below).
 - Format C++ with `git ls-files "*.cpp" "*.h" ":!deps/*" | xargs clang-format -i`; CI checks it. Format QML with the Qt install's `qmlformat -i`.
 
-## Screenshots
+## Playwright
 
-The app's dev screenshot tool is off unless its env vars are set. `NERO_SCREENSHOT=<page> NERO_SCREENSHOT_OUT=<file>` opens that top-level page, saves a PNG, and quits; an unknown page logs "unknown page". Save shots to `/tmp/nero-shots/<branch>/`, never in the repo.
+UI QA runs a dev-only WASM build in Chrome over the Docker mock. From `playwright/`:
+
+- `npm test` checks the cases in `tests/screens.spec.ts` and saves each screen to `test-results/<case>/`. `npm run update` records baselines, which are local, so run it first in a new worktree.
+- Cases inject only what the mock lacks or what they test, through `window.nero.publish`. Add one per changed page.
+- To drive it live, run `npm run view` in the background and use the `playwright-cdp` MCP.
 
 ## Workflow
 
