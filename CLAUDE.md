@@ -23,8 +23,8 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths b
 
 ## Worktrees
 
-- `worktrees/argos/develop/` mirrors `develop`: run anything there (`npm ci`, tests, the backend, `/run-local`), but keep code changes off it; only fetch and fast-forward it.
-- To change code, make a worktree on its own branch with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`. Use the ticket's branch, or a `throwaway-<title>` branch to experiment without one. If a throwaway turns into real work, file a ticket (`create-ticket`) and move the work to a ticket branch.
+- `worktrees/argos/develop/` mirrors `develop`: run anything there (`npm ci`, tests, the backend, `/run-local`), but never edit code, branch, or commit there. The only git operations there are fetch and fast-forward.
+- To change code, make a worktree on its own branch with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`. Use the ticket's branch, or a `throwaway-{kebab-case-title}` branch to experiment without one. If a throwaway turns into real work, file a ticket (`create-ticket`), make the ticket's worktree from `origin/develop`, and in it run `git merge --squash throwaway-{kebab-case-title}` then `/commit`, so the work lands as one commit in the ticket format.
 - A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
 
 ## Local Development
