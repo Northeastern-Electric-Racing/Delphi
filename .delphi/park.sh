@@ -25,3 +25,4 @@ for d in repos worktrees references linked; do
     else mv "$src" "$top/$d" || echo "delphi: could not restore $d/ from $src" >&2; fi
   fi
 done
+[ -z "$new" ] || rmdir "$park/$new" "$legacy/$new" 2>/dev/null || true # once all back, drop the empty slot

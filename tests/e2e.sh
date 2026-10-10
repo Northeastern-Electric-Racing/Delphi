@@ -262,7 +262,8 @@ local_ws b1 ws/bms-dev bms-dev lib2 || fail "park: setup on bms-dev failed"
 { git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/linked" ]; } ||
   fail "park: clones visible on main: $(ls -A "$w")"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
-{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/bms-dev/repos/lib2" ]; } ||
+{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/bms-dev/repos/lib2" ] &&
+  [ ! -e "$w/.delphi/parked/argos-dev" ]; } ||
   fail "park: argos-dev not restored"
 git -C "$w/worktrees/lib1/$def" commit -q --allow-empty -m "after restore" || fail "park: restored worktree unusable"
 { git -C "$w" checkout -q b1 && live lib2 && git -C "$w" checkout -q a1 && live lib1; } || fail "park: second round trip"
@@ -271,7 +272,7 @@ git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q 
   fail "park: a folder in the way was not reported and kept: $(cat "$t/err")"
 { rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
 git -C "$w" checkout -q main && mkdir -p "$w/.git/delphi" && mv "$w/.delphi/parked/argos-dev" "$w/.git/delphi/argos-dev"
-{ git -C "$w" checkout -q a1 && live lib1; } || fail "park: not restored from the old .git/delphi/ location"
+{ git -C "$w" checkout -q a1 && live lib1 && [ ! -e "$w/.git/delphi/argos-dev" ]; } || fail "park: not restored from the old .git/delphi/ location"
 ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
 ok "parked clones sit git-ignored in .delphi/parked/; ones parked in .git/delphi/ by older versions still come back"
 ok "park.sh leaves same-workspace branches alone and reports, never overwrites, a folder in the way"
