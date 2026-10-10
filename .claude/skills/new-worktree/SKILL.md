@@ -1,9 +1,9 @@
 ---
 name: new-worktree
-description: Create or reuse a worktree for a branch of a code repo (worktrees/<repo>/<branch>). Worktrees are the default way to make or check out any new branch; use this before starting a ticket, reviewing or fixing a PR branch, or any other branch work, unless the user says not to use worktrees.
+description: Create or reuse a worktree for a branch of a code repo (worktrees/<repo>/<branch>), for a ticket, a PR branch, or a throwaway experiment.
 ---
 
-`repos/<repo>` is a bare store (no files); every checkout of a code repo is a worktree under `worktrees/<repo>/`. `.delphi/setup.sh` makes the default branch's (`worktrees/<repo>/<default-branch>/`); never edit code, branch, or commit there (fetch and fast-forward only), though running it (installs, tests, dev servers) is fine. Make every other branch with this script, never by switching branches in an existing worktree, unless the user explicitly says not to use worktrees.
+Each code checkout is a worktree under `worktrees/<repo>/<branch>/`, made from the bare store `repos/<repo>`. `.delphi/setup.sh` makes the default branch's; run anything there, but make code changes on a branch of your own.
 
 Run from the workspace root:
 
@@ -11,8 +11,8 @@ Run from the workspace root:
 bash .delphi/new-worktree.sh <repo> <branch> [<base>]
 ```
 
-An existing branch (local or on origin, e.g. a PR's head) is checked out; anything else is created from `<base>` (default: the repo's default branch). It's safe to re-run. It prints the worktree path: `cd` there and do all work in it.
+An existing branch (local or on origin, e.g. a PR's head) is checked out; anything else is created from `<base>` (default: the repo's default branch). It's safe to re-run and prints the worktree path to work in.
 
-After the branch merges, remove it with `git -C repos/<repo> worktree remove ../../worktrees/<repo>/<branch>`.
+When you're done with a branch, remove it with `git -C repos/<repo> worktree remove ../../worktrees/<repo>/<branch>`.
 
-Argos: always pass `origin/develop` as `<base>`. New ticket branches follow `{issue-number}-{kebab-case-title}`. Run `npm ci` in the worktree's `angular-client/` before building, testing, or running the client.
+Argos: pass `origin/develop` as `<base>`. Name the branch `{issue-number}-{kebab-case-title}` for a ticket, or `throwaway-{kebab-case-title}` to try something without one. Run `npm ci` in the worktree's `angular-client/` before building, testing, or running the client.
