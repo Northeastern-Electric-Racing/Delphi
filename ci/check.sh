@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # ci/check.sh [<dir>]: validate Delphi (CI runs it on PRs to main; sync.sh on each proposal). Rules:
 # a workspace is software/**/workspaces/<name>/ with a workspace.yml; names are lowercase letters,
-# digits, and '-', unique repo-wide; workspaces never nest; no symlinks under software/; each
-# workspace's .delphi/*.sh and .github/workflows/delphi.yml match templates/workspace/, and the
-# template workflow matches .github/workflows/delphi.yml; workspace.yml is `name: <folder name>`,
+# digits, and '-', unique repo-wide; workspaces never nest; no symlinks under software/; the root
+# .delphi/ has setup.sh, new-worktree.sh, switch.sh and park.sh, and no workspace (nor the template)
+# has its own .delphi/ (sync puts main's on every ws/* branch); each workspace's
+# .github/workflows/delphi.yml matches templates/workspace/, and the template workflow matches
+# .github/workflows/delphi.yml; workspace.yml is `name: <folder name>`,
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
 # `links:` list of `- <workspace>` or `- main`, without duplicates or the workspace itself. A project's
@@ -14,11 +16,13 @@ cd "${1:-.}"
 problems=0
 bad() { echo "check: $*" >&2 && problems=$((problems + 1)); }
 tpl=templates/workspace
-managed=".delphi/setup.sh .delphi/new-worktree.sh .delphi/switch.sh .delphi/park.sh .github/workflows/delphi.yml"
+managed=".github/workflows/delphi.yml"
 
 [ -d software ] || bad "software/ is missing"
 cmp -s .github/workflows/delphi.yml $tpl/.github/workflows/delphi.yml ||
   bad "$tpl/.github/workflows/delphi.yml: differs from .github/workflows/delphi.yml"
+for s in setup new-worktree switch park; do [ -f .delphi/$s.sh ] || bad ".delphi/$s.sh is missing"; done
+[ ! -e $tpl/.delphi ] || bad "$tpl/.delphi: scripts live only in the root .delphi/"
 while IFS= read -r f; do bad "$f: symlinks are not allowed under software/"; done \
   < <(find software -type l 2>/dev/null)
 
@@ -68,6 +72,7 @@ while IFS= read -r f; do
     case "$other/" in "$folder"/*) bad "$other: nested inside workspace $folder" ;; esac
   done
   folders="$folders $folder"
+  [ ! -e "$folder/.delphi" ] || bad "$folder/.delphi: managed in the root .delphi/ on main; remove it"
   for m in $managed; do cmp -s "$tpl/$m" "$folder/$m" || bad "$folder/$m: differs from $tpl/$m"; done
   manifest "$f" "$name"
 done < <(find software -name workspace.yml -type f \( ! -path '*/defaults/workspace.yml' -o -path '*/workspaces/defaults/*' \) 2>/dev/null | sort)

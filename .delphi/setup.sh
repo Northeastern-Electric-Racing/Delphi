@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# .delphi/setup.sh: run in a checkout of ws/<name> (the workspace root). For each repo listed under
+# .delphi/setup.sh: run in a checkout of ws/<name> (the workspace root; .delphi/ comes from Delphi's
+# main, which sync keeps on every ws/* branch, so edit it only there; on main this does nothing). For each repo listed under
 # `repos:` in workspace.yml, fetches it into a bare store at repos/<name> (unless present) and checks
 # out its default branch as the first worktree, worktrees/<name>/<default-branch>. For each repo under
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
@@ -7,11 +8,12 @@
 # run, with pushes disabled. Each entry under `links:` (`- <workspace>` or `- main`) gets the same
 # kind of copy of this clone's origin (Delphi) at ws/<workspace> (or main), at linked/<name>; to edit
 # one, switch this clone to it (.delphi/switch.sh). Adds /repos/, /worktrees/, /references/ and
-# /linked/ to this clone's .git/info/exclude, and installs .delphi/park.sh as its post-checkout hook
-# (unless another hook is there) so switching to another workspace or main parks them. Safe to
+# /linked/ to this clone's .git/info/exclude, and symlinks its post-checkout hook to .delphi/park.sh,
+# which is on every branch (unless another hook is there) so switching to another workspace or main parks them. Safe to
 # re-run. Keep it bash 3.2 (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[ -f workspace.yml ] || { echo "setup: no workspace.yml here (on main?); nothing to set up" >&2 && exit 0; }
 
 list=$(awk '
   /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
@@ -81,8 +83,11 @@ for d in /repos/ /worktrees/ /references/ /linked/; do
   grep -qxF "$d" "$exclude" 2>/dev/null || echo "$d" >>"$exclude"
 done
 hook=$(git rev-parse --git-path hooks/post-checkout)
-if [ ! -e "$hook" ] || grep -qF '.delphi/park.sh' "$hook"; then
-  mkdir -p "$(dirname "$hook")" && cp .delphi/park.sh "$hook" && chmod +x "$hook"
+link=$(readlink "$hook" 2>/dev/null || true) # ours: a link to a park.sh, or an old copy of one
+if [ "${link%/.delphi/park.sh}" != "$link" ] || { [ -z "$link" ] && { [ ! -e "$hook" ] || grep -qF '.delphi/park.sh' "$hook"; }; }; then
+  target=$PWD/.delphi/park.sh # relative when the hook is in .git/hooks, so moving the clone keeps it
+  [ "$hook" != .git/hooks/post-checkout ] || target=../../.delphi/park.sh
+  mkdir -p "$(dirname "$hook")" && rm -f "$hook" && ln -s "$target" "$hook"
 else
   echo "setup: $hook is another hook; not installing .delphi/park.sh, so checkouts won't park repos/" >&2
 fi

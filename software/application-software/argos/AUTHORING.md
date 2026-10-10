@@ -10,7 +10,8 @@ full model; this is the Argos-specific short version.
 2. Edit at normal harness paths: `CLAUDE.md`, `.claude/skills/<skill>/SKILL.md`, `docs/`.
 3. Push the branch and open a PR into `ws/<name>`. After it merges, CI proposes it to `main`.
 
-Don't edit `.delphi/*.sh` or `.github/workflows/delphi.yml`: Delphi manages them.
+Don't edit `.delphi/` or `.github/workflows/delphi.yml`: Delphi manages them (`.delphi/` comes from
+main's root and sync resets it).
 
 ## Create a new Argos workspace
 

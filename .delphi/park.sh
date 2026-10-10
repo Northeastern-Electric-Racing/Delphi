@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# .delphi/park.sh <prev> <new> <branch-flag>: the post-checkout hook .delphi/setup.sh installs. When a
-# checkout moves this clone to another workspace (the `name:` in workspace.yml; none on main), it
+# .delphi/park.sh <prev> <new> <branch-flag>: the post-checkout hook; .delphi/setup.sh symlinks
+# .git/hooks/post-checkout to it. .delphi/ is on every branch, main included, so the link always
+# resolves, to the version just checked out. When a checkout moves this clone to another workspace (the `name:` in workspace.yml; none on main), it
 # parks the old workspace's repos/, worktrees/, references/ and linked/ in this checkout's git dir at
 # delphi/<name>/ and brings the new one's back. Moves are renames, so every path is the same again
 # once its workspace is checked out. Runs on bash 3.2 and Git Bash.

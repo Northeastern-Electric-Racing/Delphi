@@ -76,8 +76,9 @@ To change one, switch to it instead.
 
 The workspace's name is its folder name (unique repo-wide), repeated in `name:` so a checkout knows
 which workspace it is. Every other file in the folder is the workspace's own, at its normal harness
-path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`, `new-worktree.sh`, `switch.sh`,
-`park.sh`) and `.github/workflows/delphi.yml` (copies of the template's).
+path, except `.github/workflows/delphi.yml` (a copy of the template's). The scripts, `.delphi/*.sh`
+(`setup.sh`, `new-worktree.sh`, `switch.sh`, `park.sh`), live once at main's root: sync puts
+`.delphi/` on every `ws/*` branch, so change them only through PRs to main.
 
 ## New workspace
 

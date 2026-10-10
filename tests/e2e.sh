@@ -28,7 +28,7 @@ B=software/electrical/workspaces/bms-dev
 
 # --- sandbox: seed repo -> bare origin; "ci" is the clone CI runs in, "dev" a person's clone
 git init -q "$t/seed"
-cp -R "$src/ci" "$src/tools" "$src/templates" "$src/.github" "$src/README.md" "$t/seed/"
+cp -R "$src/ci" "$src/tools" "$src/templates" "$src/.github" "$src/.delphi" "$src/README.md" "$t/seed/"
 mkdir -p "$t/seed/$A" "$t/seed/$B"
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
@@ -56,7 +56,8 @@ sync >"$t/out"
 main=$(o rev-parse main)
 for w in "$A" "$B"; do
   n=${w##*/}
-  [ "$(o rev-parse "ws/$n^{tree}")" = "$(o rev-parse "main:$w")" ] || fail "ws/$n root != $w"
+  o diff --quiet "main:$w" "ws/$n" -- ':!.delphi' || fail "ws/$n root != $w"
+  [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n lacks main's .delphi/"
   [ "$(o rev-parse "ws/$n^")" = "$main" ] || fail "ws/$n parent is not main"
   [ "$(o log -1 --format=%s "ws/$n")" = "delphi: create ws/$n from $w" ] || fail "ws/$n message"
   o cat-file -e "ws/$n:workspace.yml" || fail "ws/$n lacks workspace.yml"
@@ -65,7 +66,7 @@ for w in "$A" "$B"; do
   [ "$(o rev-parse "ws/$n:.github/workflows/delphi.yml")" = "$(o rev-parse main:.github/workflows/delphi.yml)" ] ||
     fail "ws/$n root lacks main's workflow (pushes to ws/$n would trigger nothing)"
 done
-ok "sync creates ws/<name> rooted at its folder, parent main, no Delphi root files"
+ok "sync creates ws/<name> rooted at its folder plus main's .delphi/, parent main, no other Delphi root files"
 ok "ws/<name> root carries main's CI workflow, so GitHub runs sync on pushes to ws/**"
 [ ! -s "$t/gh.log" ] || fail "gh called on creation"
 before=$(o for-each-ref --format='%(objectname)' refs/heads)
@@ -109,8 +110,22 @@ o show ws/argos-dev:docs/CONTEXT.md | grep -qx "ws edit two" || fail "ws edit lo
 ! o cat-file -e ws/argos-dev:README.md 2>/dev/null || fail "root file leaked into ws"
 [ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose diff wrong after refresh"
 ok "main-side edit refreshes cleanly alongside ws edits; propose carries only the ws edit"
-[ "$(o rev-parse "ws/bms-dev^{tree}")" = "$(o rev-parse "main:$B")" ] || fail "bms-dev drifted"
+o diff --quiet "main:$B" ws/bms-dev -- ":!.delphi" || fail "bms-dev drifted"
 ok "unrelated main changes leave other ws branches' trees alone"
+
+# --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
+commit_on main .delphi/new-worktree.sh "# main edit"
+sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out")"
+for n in argos-dev bms-dev; do
+  [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
+done
+[ "$(o log -1 --format=%s ws/argos-dev)" = "delphi: sync .delphi/ from main" ] || fail "no sync commit on ws/argos-dev"
+ok "a main change to .delphi/ reaches every ws/* branch on refresh"
+commit_on ws/argos-dev .delphi/setup.sh "# ws edit"
+sync argos-dev >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "$t/out")"
+[ "$(o rev-parse ws/argos-dev:.delphi)" = "$(o rev-parse main:.delphi)" ] || fail "ws edit to .delphi/ not reset"
+[ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose carries .delphi/: $(o diff --name-only main propose/argos-dev)"
+ok "a ws/* edit to .delphi/ is reset by refresh and never proposed into the folder"
 
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/bms-dev CLAUDE.md "ws side"
@@ -144,7 +159,7 @@ ok "check passes on the real repo"
 expect_bad() { # <label> <expected message> <setup command...>: copy the real layout, break it, check fails
   local d=$t/chk-$1 label=$1 want=$2
   shift 2
-  rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$d/"
+  rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$d/"
   (cd "$d" && "$@")
   if "$src/ci/check.sh" "$d" 2>"$t/err" >/dev/null; then fail "check passed: $label"; fi
   grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
@@ -159,18 +174,19 @@ expect_bad bad-key "unexpected line" sh -c "printf 'color: x\n' >>$A/workspace.y
 expect_bad wrong-name "want the folder name" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad no-name "name is missing" sh -c "sed -i.bak '/^name:/d' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad defaults-name "defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/defaults/workspace.yml"
-expect_bad park-drift "park.sh: differs" sh -c "echo x >>$A/.delphi/park.sh"
+expect_bad folder-delphi "$A/.delphi: managed in the root" sh -c "mkdir $A/.delphi && cp .delphi/park.sh $A/.delphi/"
 expect_bad duplicate "is also used by" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/"
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
 expect_bad bad-name "name must be" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
-expect_bad setup-drift "setup.sh: differs" sh -c "echo x >>$A/.delphi/setup.sh"
+expect_bad root-script-missing ".delphi/switch.sh is missing" rm .delphi/switch.sh
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
 expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/defaults/workspace.yml"
-expect_bad defaults-named-workspace "defaults/.delphi/switch.sh: differs" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/defaults && echo x >>software/x/workspaces/defaults/.delphi/switch.sh"
+expect_bad defaults-named-workspace "defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/defaults/.delphi && cp -R $A/. software/x/workspaces/defaults/"
 expect_bad bad-link "bad links entry" sh -c "printf 'links:\n  main\n' >>$A/workspace.yml"
 expect_bad duplicate-link "duplicate link: main" sh -c "printf '  - main\n' >>$A/workspace.yml"
 expect_bad self-link "links itself: argos-dev" sh -c "printf '  - argos-dev\n' >>$A/workspace.yml"
+expect_bad template-delphi "templates/workspace/.delphi: scripts live only" mkdir templates/workspace/.delphi
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
 # --- 8. setup.sh fetches workspace.yml repos into repos/<repo>, checks out the default branch under worktrees/, and is idempotent
@@ -236,7 +252,7 @@ live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" bra
   ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
   [ -f "$w/linked/main/ci/sync.sh" ]; }
 local_ws a1 ws/argos-dev argos-dev lib1 || fail "park: setup on argos-dev failed"
-cmp -s "$w/.delphi/park.sh" "$w/.git/hooks/post-checkout" || fail "setup.sh did not install park.sh as post-checkout"
+[ "$(readlink "$w/.git/hooks/post-checkout")" = ../../.delphi/park.sh ] || fail "setup.sh did not link the hook to .delphi/park.sh"
 { git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.git/delphi" ]; } || fail "park: same-workspace branch moved clones"
 local_ws b1 ws/bms-dev bms-dev lib2 || fail "park: setup on bms-dev failed"
 { [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.git/delphi/argos-dev/worktrees/lib1/$def" ] &&
@@ -255,7 +271,17 @@ git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q 
 { rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
 ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
 ok "park.sh leaves same-workspace branches alone and reports, never overwrites, a folder in the way"
-printf '#!/bin/sh\n' >"$w/.git/hooks/post-checkout" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err"
+git -C "$w" checkout -q -b a3 a1 && echo 'echo "park.sh from a3" >&2' >>"$w/.delphi/park.sh" && git -C "$w" commit -qam a3
+{ git -C "$w" checkout -q b1 2>"$t/err" && ! grep -q "from a3" "$t/err" && git -C "$w" checkout -q a3 2>"$t/err" &&
+  grep -q "from a3" "$t/err" && live lib1; } || fail "hook did not run the checked-out branch's park.sh"
+{ git -C "$w" checkout -q main 2>"$t/err" && ! grep -q "from a3" "$t/err" && [ ! -e "$w/repos" ]; } ||
+  fail "hook did not run main's own park.sh"
+{ git -C "$w" checkout -q a1 && live lib1; } || fail "park: back to a1"
+ok "the hook is a link to .delphi/park.sh, so it runs the version just checked out, on main too"
+rm "$w/.git/hooks/post-checkout" && cp "$w/.delphi/park.sh" "$w/.git/hooks/post-checkout" && [ ! -L "$w/.git/hooks/post-checkout" ] && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
+[ -L "$w/.git/hooks/post-checkout" ] || fail "setup.sh did not replace an old copied hook"
+ok "setup.sh replaces an old copied park.sh hook with the link"
+rm "$w/.git/hooks/post-checkout" && printf '#!/bin/sh\n' >"$w/.git/hooks/post-checkout" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err"
 { grep -q "another hook" "$t/err" && [ "$(cat "$w/.git/hooks/post-checkout")" = "#!/bin/sh" ]; } || fail "setup.sh replaced another post-checkout hook"
 ok "setup.sh keeps someone else's post-checkout hook and says so"
 
@@ -368,7 +394,7 @@ ok "switch.sh refuses a dirty root, parks and restores workspaces, fast-forwards
 
 # --- 13. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
-  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/templates/workspace/.delphi/*.sh ||
+  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/.delphi/*.sh ||
     fail "shellcheck"
   ok "shellcheck clean"
 fi
