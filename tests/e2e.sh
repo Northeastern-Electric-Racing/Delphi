@@ -242,7 +242,7 @@ ok "setup.sh checks out references-git: repos shallow, detached, at their pin, p
 ok "new-worktree.sh refuses a reference repo"
 
 # --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/, linked/ in the
-# git dir and restores them, same paths, when the workspace comes back; same-workspace branches don't move
+# git-ignored .delphi/parked/ and restores them, same paths, when the workspace comes back; same-workspace branches don't move
 w=$t/park && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
 local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch> whose workspace.yml lists <repo>
   git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\nlinks:\n  - main\n' \
@@ -253,23 +253,27 @@ live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" bra
   [ -f "$w/linked/main/ci/sync.sh" ]; }
 local_ws a1 ws/argos-dev argos-dev lib1 || fail "park: setup on argos-dev failed"
 [ "$(readlink "$w/.git/hooks/post-checkout")" = ../../.delphi/park.sh ] || fail "setup.sh did not link the hook to .delphi/park.sh"
-{ git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.git/delphi" ]; } || fail "park: same-workspace branch moved clones"
+{ git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.delphi/parked" ]; } || fail "park: same-workspace branch moved clones"
 local_ws b1 ws/bms-dev bms-dev lib2 || fail "park: setup on bms-dev failed"
-{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.git/delphi/argos-dev/worktrees/lib1/$def" ] &&
-  [ -d "$w/.git/delphi/argos-dev/linked/main/.git" ] && live lib2; } ||
+{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/argos-dev/worktrees/lib1/$def" ] &&
+  [ -d "$w/.delphi/parked/argos-dev/linked/main/.git" ] && live lib2; } ||
   fail "park: argos-dev not parked on bms-dev"
+[ -z "$(git -C "$w" status --porcelain)" ] || fail "park: parked clones show in status: $(git -C "$w" status --porcelain)"
 { git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/linked" ]; } ||
   fail "park: clones visible on main: $(ls -A "$w")"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
-{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.git/delphi/bms-dev/repos/lib2" ]; } ||
+{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/bms-dev/repos/lib2" ]; } ||
   fail "park: argos-dev not restored"
 git -C "$w/worktrees/lib1/$def" commit -q --allow-empty -m "after restore" || fail "park: restored worktree unusable"
 { git -C "$w" checkout -q b1 && live lib2 && git -C "$w" checkout -q a1 && live lib1; } || fail "park: second round trip"
 git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q a1 2>"$t/err"
-{ grep -q "worktrees/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.git/delphi/argos-dev/worktrees" ]; } ||
+{ grep -q "worktrees/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.delphi/parked/argos-dev/worktrees" ]; } ||
   fail "park: a folder in the way was not reported and kept: $(cat "$t/err")"
 { rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
+git -C "$w" checkout -q main && mkdir -p "$w/.git/delphi" && mv "$w/.delphi/parked/argos-dev" "$w/.git/delphi/argos-dev"
+{ git -C "$w" checkout -q a1 && live lib1; } || fail "park: not restored from the old .git/delphi/ location"
 ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
+ok "parked clones sit git-ignored in .delphi/parked/; ones parked in .git/delphi/ by older versions still come back"
 ok "park.sh leaves same-workspace branches alone and reports, never overwrites, a folder in the way"
 git -C "$w" checkout -q -b a3 a1 && echo 'echo "park.sh from a3" >&2' >>"$w/.delphi/park.sh" && git -C "$w" commit -qam a3
 { git -C "$w" checkout -q b1 2>"$t/err" && ! grep -q "from a3" "$t/err" && git -C "$w" checkout -q a3 2>"$t/err" &&
@@ -381,7 +385,7 @@ echo x >>"$w/CLAUDE.md"
 git -C "$w" checkout -q CLAUDE.md
 sw bms-dev >"$t/out" 2>&1 || fail "switch to bms-dev failed: $(cat "$t/out")"
 { [ "$(git -C "$w" branch --show-current)" = ws/bms-dev ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/linked" ] &&
-  [ -d "$w/.git/delphi/argos-dev/linked/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
+  [ -d "$w/.delphi/parked/argos-dev/linked/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
 commit_on ws/argos-dev docs/CONTEXT.md "while away"
 sw argos-dev >"$t/out" 2>&1 || fail "switch back failed: $(cat "$t/out")"
 { [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ] && grep -qx "while away" "$w/docs/CONTEXT.md" &&

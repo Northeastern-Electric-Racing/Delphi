@@ -41,7 +41,7 @@ histories stay joined and edits on either side meet in normal three-way merges.
 ```sh
 git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
 cd argos-dev && .delphi/setup.sh        # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
-.delphi/switch.sh nero-experimental    # switch freely (or to main): the post-checkout hook parks them in .git/delphi/
+.delphi/switch.sh nero-experimental    # switch freely (or to main): the post-checkout hook parks them in .delphi/parked/
 git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
 git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
 ```

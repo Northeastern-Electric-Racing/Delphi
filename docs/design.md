@@ -125,8 +125,10 @@ and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/park.sh` (the hook) lets one clone switch freely between workspaces and `main`. When a
 branch checkout changes the `name:` in `workspace.yml` (none on `main`), it moves the old
-workspace's `repos/`, `worktrees/`, `references/` and `linked/` into the checkout's git dir at
-`delphi/<name>/` and moves the new one's back. A move is a rename, so it is instant and every
+workspace's `repos/`, `worktrees/`, `references/` and `linked/` to `.delphi/parked/<name>/` and
+moves the new one's back (falling back to `.git/delphi/<name>/`, where parking used to be).
+`.delphi/.gitignore` ignores `parked/`; since `.delphi/` is on every branch, so is that rule. Parked
+work is ignored, not hidden: `git clean -X` or `git stash --all` at the root would take it. A move is a rename, so it is instant and every
 absolute path (worktree links, build caches) is the same again whenever its workspace is checked
 out; nothing is repaired or rebuilt. Branches of the same workspace move nothing. It never
 overwrites: a folder in the way is reported and the other copy stays parked.
