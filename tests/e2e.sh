@@ -167,7 +167,10 @@ expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.m
 expect_bad setup-drift "setup.sh: differs" sh -c "echo x >>$A/.delphi/setup.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
 expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/defaults/workspace.yml"
-expect_bad defaults-named-workspace "defaults/.delphi/link.sh: differs" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/defaults && echo x >>software/x/workspaces/defaults/.delphi/link.sh"
+expect_bad defaults-named-workspace "defaults/.delphi/switch.sh: differs" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/defaults && echo x >>software/x/workspaces/defaults/.delphi/switch.sh"
+expect_bad bad-link "bad links entry" sh -c "printf 'links:\n  main\n' >>$A/workspace.yml"
+expect_bad duplicate-link "duplicate link: main" sh -c "printf '  - main\n' >>$A/workspace.yml"
+expect_bad self-link "links itself: argos-dev" sh -c "printf '  - argos-dev\n' >>$A/workspace.yml"
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
 # --- 8. setup.sh fetches workspace.yml repos into repos/<repo>, checks out the default branch under worktrees/, and is idempotent
@@ -222,22 +225,24 @@ git -C "$t/lib1" commit -q --allow-empty -m "lib1 three" && git -C "$t/lib1" pus
 ok "setup.sh checks out references-git: repos shallow, detached, at their pin, push disabled, refreshed on re-run"
 ok "new-worktree.sh refuses a reference repo"
 
-# --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/ in the
+# --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/, linked/ in the
 # git dir and restores them, same paths, when the workspace comes back; same-workspace branches don't move
 w=$t/park && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
 local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch> whose workspace.yml lists <repo>
-  git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\n' \
+  git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\nlinks:\n  - main\n' \
     "$3" "$4" "$t/$4.git" "$4" "$t/$4.git" >"$w/workspace.yml" && git -C "$w" commit -qam "$1" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
 }
 live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" branch --show-current)" = "$def" ] &&
-  ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null; }
+  ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
+  [ -f "$w/linked/main/ci/sync.sh" ]; }
 local_ws a1 ws/argos-dev argos-dev lib1 || fail "park: setup on argos-dev failed"
 cmp -s "$w/.delphi/park.sh" "$w/.git/hooks/post-checkout" || fail "setup.sh did not install park.sh as post-checkout"
 { git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.git/delphi" ]; } || fail "park: same-workspace branch moved clones"
 local_ws b1 ws/bms-dev bms-dev lib2 || fail "park: setup on bms-dev failed"
-{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.git/delphi/argos-dev/worktrees/lib1/$def" ] && live lib2; } ||
+{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.git/delphi/argos-dev/worktrees/lib1/$def" ] &&
+  [ -d "$w/.git/delphi/argos-dev/linked/main/.git" ] && live lib2; } ||
   fail "park: argos-dev not parked on bms-dev"
-{ git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ]; } ||
+{ git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/linked" ]; } ||
   fail "park: clones visible on main: $(ls -A "$w")"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
 { git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.git/delphi/bms-dev/repos/lib2" ]; } ||
@@ -267,7 +272,7 @@ o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -qx "# Firmware for fw-dev" ||
 [ "$(o show "new-workspace/fw-dev:$F/workspace.yml")" = "$(printf 'name: fw-dev\n'; o show "main:$FD/workspace.yml")" ] ||
   fail "defaults workspace.yml not used, or name: not set"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
-o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/link-workspace/SKILL.md" || fail "template skill lost"
+o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/switch-workspace/SKILL.md" || fail "template skill lost"
 o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
 grep -q "gh pr create --base main --head new-workspace/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
 (cd "$t/dev" && ! tools/new-workspace.sh x argos-dev 2>/dev/null) || fail "duplicate name accepted"
@@ -319,20 +324,47 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
 
-# --- 12. link.sh: other workspaces and main as detached worktrees under linked/, updated on re-run
-lk() { bash "$w/.delphi/link.sh" "$@"; }
-[ "$(lk argos-dev)" = "$w/linked/argos-dev" ] || fail "link.sh path"
+# --- 12. links: setup.sh checks out listed workspaces and main read-only under linked/, refreshed on re-run
+printf 'name: bms-dev\nharness: claude-code\nrepos:\n  code: %s\nlinks:\n  - argos-dev  # a comment\n  - main\n  - bms-dev\n  - Bad\n' \
+  "$t/code" >"$w/workspace.yml"
+bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed with links: $(cat "$t/err")"
 [ "$(git -C "$w/linked/argos-dev" rev-parse HEAD)" = "$(o rev-parse ws/argos-dev)" ] || fail "link not at ws/argos-dev"
-{ lk main >/dev/null && [ -f "$w/linked/main/ci/sync.sh" ]; } || fail "link main"
+[ -f "$w/linked/main/ci/sync.sh" ] || fail "link main"
+{ [ ! -e "$w/linked/bms-dev" ] && [ ! -e "$w/linked/Bad" ] && grep -q "skipping bad link 'Bad'" "$t/err"; } || fail "linked itself or a bad name"
+! git -C "$w/linked/argos-dev" push -q origin HEAD:refs/heads/x 2>/dev/null || fail "push from a link succeeded"
 commit_on ws/argos-dev docs/CONTEXT.md "linked update"
-{ lk argos-dev >/dev/null && grep -qx "linked update" "$w/linked/argos-dev/docs/CONTEXT.md"; } || fail "re-run did not update"
-git -C "$w/linked/argos-dev" switch -q -c mine && commit_on ws/argos-dev docs/CONTEXT.md "after switch"
-{ lk argos-dev 2>"$t/err" >/dev/null && grep -q "on a branch; not updated" "$t/err"; } || fail "branch not reported"
-[ "$(git -C "$w/linked/argos-dev" branch --show-current)" = mine ] || fail "link moved a branch"
-! lk ../x 2>/dev/null || fail "bad link name accepted"
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && grep -qx "linked update" "$w/linked/argos-dev/docs/CONTEXT.md"; } || fail "re-run did not refresh a link"
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
-ok "link.sh checks out workspaces and main under linked/, updates detached ones, leaves branches"
+ok "setup.sh checks out links: read-only under linked/, skips itself and bad names, refreshes on re-run"
+rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main
+bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err"
+{ grep -q "linked/main is an old link.sh worktree" "$t/err" && [ -f "$w/linked/main/.git" ]; } || fail "old link.sh worktree not reported: $(cat "$t/err")"
+ok "setup.sh reports an old link.sh worktree in linked/ and leaves it alone"
+
+# --- 12b. switch.sh: refuses a dirty root; switches workspaces (parking and restoring), fast-forwards, sets up; main too
+(cd "$t/dev" && git fetch -q && git checkout -q -B sw origin/ws/argos-dev &&
+  printf 'name: argos-dev\nharness: claude-code\nrepos:\n  lib1: %s\nlinks:\n  - main\n' "$t/lib1.git" >workspace.yml &&
+  git commit -qam "local repos" && git push -q origin HEAD:ws/argos-dev)
+w=$t/sw && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
+/bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1 || fail "switch: setup failed"
+sw() { /bin/bash "$w/.delphi/switch.sh" "$@"; }
+echo x >>"$w/CLAUDE.md"
+{ ! sw bms-dev 2>"$t/err" >/dev/null && grep -q "commit or set aside" "$t/err" && [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ]; } ||
+  fail "switch: dirty root not refused"
+git -C "$w" checkout -q CLAUDE.md
+sw bms-dev >"$t/out" 2>&1 || fail "switch to bms-dev failed: $(cat "$t/out")"
+{ [ "$(git -C "$w" branch --show-current)" = ws/bms-dev ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/linked" ] &&
+  [ -d "$w/.git/delphi/argos-dev/linked/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
+commit_on ws/argos-dev docs/CONTEXT.md "while away"
+sw argos-dev >"$t/out" 2>&1 || fail "switch back failed: $(cat "$t/out")"
+{ [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ] && grep -qx "while away" "$w/docs/CONTEXT.md" &&
+  [ -d "$w/worktrees/lib1/$def" ] && [ -f "$w/linked/main/ci/sync.sh" ]; } || fail "switch: argos-dev not restored and fast-forwarded"
+{ sw main >/dev/null 2>&1 && [ "$(git -C "$w" branch --show-current)" = main ] && [ ! -e "$w/repos" ] && [ -f "$w/ci/sync.sh" ]; } ||
+  fail "switch to main"
+git -C "$w" switch -q ws/argos-dev
+{ ! sw ../x 2>/dev/null && ! sw nope 2>/dev/null && [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ]; } || fail "switch accepted a bad or missing workspace"
+ok "switch.sh refuses a dirty root, parks and restores workspaces, fast-forwards, runs setup, and switches to main"
 
 # --- 13. shellcheck, if installed
 if command -v shellcheck >/dev/null; then

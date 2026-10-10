@@ -5,7 +5,8 @@
 # workspace's .delphi/*.sh and .github/workflows/delphi.yml match templates/workspace/, and the
 # template workflow matches .github/workflows/delphi.yml; workspace.yml is `name: <folder name>`,
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
-# `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both. A project's
+# `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
+# `links:` list of `- <workspace>` or `- main`, without duplicates or the workspace itself. A project's
 # defaults/workspace.yml is the same without `name:`.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
@@ -13,7 +14,7 @@ cd "${1:-.}"
 problems=0
 bad() { echo "check: $*" >&2 && problems=$((problems + 1)); }
 tpl=templates/workspace
-managed=".delphi/setup.sh .delphi/new-worktree.sh .delphi/link.sh .delphi/park.sh .github/workflows/delphi.yml"
+managed=".delphi/setup.sh .delphi/new-worktree.sh .delphi/switch.sh .delphi/park.sh .github/workflows/delphi.yml"
 
 [ -d software ] || bad "software/ is missing"
 cmp -s .github/workflows/delphi.yml $tpl/.github/workflows/delphi.yml ||
@@ -31,6 +32,14 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
                   if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
     /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
     /^references-git:[[:space:]]*(#.*)?$/ { r = 2; next }
+    /^links:[[:space:]]*(#.*)?$/ { r = 3; next }
+    r == 3 && /^[[:space:]]/ {
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[a-z0-9][a-z0-9-]*[[:space:]]*(#.*)?$/) {
+        print "bad links entry (want `  - <workspace>` or `  - main`): " $0; next }
+      v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+      if (v == want) print "links itself: " v
+      if (linked[v]++) print "duplicate link: " v
+      next }
     r == 1 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/ {
       print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
     r == 2 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+([[:space:]]+[A-Za-z0-9@._\/-]+)?[[:space:]]*(#.*)?$/ {

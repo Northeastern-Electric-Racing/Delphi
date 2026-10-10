@@ -41,7 +41,7 @@ histories stay joined and edits on either side meet in normal three-way merges.
 ```sh
 git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
 cd argos-dev && .delphi/setup.sh        # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
-git switch main                         # switch freely: the post-checkout hook parks them in .git/delphi/
+.delphi/switch.sh nero-experimental    # switch freely (or to main): the post-checkout hook parks them in .git/delphi/
 git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
 git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
 ```
@@ -63,16 +63,20 @@ repos:                  # stored in repos/<name>, checked out in worktrees/<name
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
   socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch
+links:                  # Delphi workspaces or main, read-only, shallow-cloned into linked/<name>/
+  - main
 ```
 
 `repos:` are the code you change. `references-git:` are open-source dependencies the agent reads for
 context: `setup.sh` checks each out shallow and detached at its pin (or the default branch), with
 pushes disabled, and refreshes them on every run. They get no store and no worktrees. Names are
 unique across both maps. The `-git` suffix leaves room for other kinds of references later.
+`links:` are other workspaces (or `main`) to read: the same kind of read-only copy, of Delphi itself.
+To change one, switch to it instead.
 
 The workspace's name is its folder name (unique repo-wide), repeated in `name:` so a checkout knows
 which workspace it is. Every other file in the folder is the workspace's own, at its normal harness
-path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`, `new-worktree.sh`, `link.sh`,
+path, except the ones Delphi manages: `.delphi/*.sh` (`setup.sh`, `new-worktree.sh`, `switch.sh`,
 `park.sh`) and `.github/workflows/delphi.yml` (copies of the template's).
 
 ## New workspace
@@ -83,8 +87,8 @@ PR to `main`. Once it merges, CI creates `ws/<name>`.
 
 **Project folders.** The folder above `workspaces/` (e.g. `software/application-software/argos/`)
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`.
-From any workspace, `.delphi/link.sh main` checks out `main` at `linked/main/` to read them, and
-`.delphi/link.sh <workspace>` checks out another workspace at `linked/<workspace>/`.
+A workspace that lists `main` under `links:` reads them at `linked/main/` (recommended for every
+new workspace); to change them, switch to `main`.
 
 ## CI (`.github/workflows/delphi.yml`)
 

@@ -5,8 +5,8 @@ full model; this is the Argos-specific short version.
 
 ## Change an existing workspace
 
-1. Check out `ws/<name>` (or `bash .delphi/link.sh <name>` from another workspace, then
-   `git -C linked/<name> switch -c <branch>`).
+1. Check out `ws/<name>` (from another workspace: `bash .delphi/switch.sh <name>`, the
+   `switch-workspace` skill), then `git switch -c <branch>`.
 2. Edit at normal harness paths: `CLAUDE.md`, `.claude/skills/<skill>/SKILL.md`, `docs/`.
 3. Push the branch and open a PR into `ws/<name>`. After it merges, CI proposes it to `main`.
 
@@ -20,7 +20,8 @@ a PR to `main`. Trim what the new workspace doesn't need before merging.
 
 ## Change the defaults or this folder
 
-Edit on a branch of `main` and open a PR to `main` (from a workspace: `linked/main/`). Defaults only
+Edit on a branch of `main` and open a PR to `main` (from a workspace: `bash .delphi/switch.sh main`;
+`linked/main/` is read-only). Defaults only
 affect workspaces created afterwards; to change existing ones, PR each workspace too.
 
 ## Writing good workspace context
