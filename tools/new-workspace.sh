@@ -40,4 +40,4 @@ y=$wt/$folder/workspace.yml
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $name at $folder"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
-gh pr create --base main --head "$branch" --title "New workspace: $name" --body "Adds \`$folder/\` from templates/workspace (plus \`software/$org/defaults\` if present). Fill in \`workspace.yml\` repos and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$name\`."
+gh pr create --base main --head "$branch" --title "New workspace: $name" --body "Adds \`$folder/\` from templates/workspace (plus \`software/$org/defaults\` if present). Fill in \`workspace.yml\` repos (and list \`main\` under \`links:\`, recommended, so it can read this project's shared context) and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$name\`."

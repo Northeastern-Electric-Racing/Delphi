@@ -12,9 +12,11 @@ source of truth; `docs/goals.md` lists what any change must keep.
   Runs on pushes to main and `ws/**`.
 - `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
 - `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
-- `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), and the managed
-  files every workspace carries unchanged: `.delphi/{setup,new-worktree,link,park}.sh`,
-  `.github/workflows/delphi.yml`; and default `new-worktree`, `link-workspace`, and `journal` skills.
+- `.delphi/{setup,new-worktree,switch,park}.sh`: the scripts every workspace runs. Only here: sync
+  puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
+- `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
+  `.github/workflows/delphi.yml` every workspace carries unchanged, and default `new-worktree`, `switch-workspace`, `setup-workspace`,
+  and `journal` skills.
 - `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `defaults/`.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.
@@ -27,7 +29,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
 - `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
   features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
-- Changing a managed file (`.delphi/*.sh`, the workflow): update the template, `.github/`, and every
-  workspace copy in the same PR, or `ci/check.sh` fails.
+- Changing the workflow: update the template, `.github/`, and every workspace copy in the same PR,
+  or `ci/check.sh` fails. `.delphi/*.sh` has one copy, at the root.
 - `bash tests/e2e.sh` and `ci/check.sh` must pass. Add a test there for every behavior change.
 - Never test against real GitHub repos or this checkout's origin; use the sandbox in `tests/e2e.sh`.

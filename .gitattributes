@@ -1,0 +1,2 @@
+# LF everywhere, so the scripts (ci/, tools/, tests/, .delphi/) run in Git Bash even with core.autocrlf=true
+* text=auto eol=lf

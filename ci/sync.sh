@@ -2,10 +2,13 @@
 # ci/sync.sh [refresh|propose] [<name>]: sync each workspace folder software/**/workspaces/<name>/ on
 # origin/main (or just <name>) with its branch ws/<name>, whose root is the folder. CI runs it with
 # no direction (both) on every push to main or ws/**.
-#   refresh: merge main into ws/<name> (-Xsubtree=<folder>) and push if the tree changed. A missing
-#            ws/<name> is created as one commit: tree = the folder, parent = main.
-#   propose: build propose/<name> = main + a subtree merge of ws/<name>; if that changes main and
-#            isn't already on propose/<name>, check it, force-push it, and open or update its PR.
+#   refresh: merge main into ws/<name> (-Xsubtree=<folder>), then make its .delphi/ main's root
+#            .delphi/ (a "delphi: sync" commit if that changed it), and push if the tree changed. A
+#            missing ws/<name> is created as one commit: tree = the folder plus main's .delphi/,
+#            parent = main.
+#   propose: build propose/<name> = main + a subtree merge of ws/<name> without <folder>/.delphi/
+#            (managed on main); if that changes main and isn't already on propose/<name>, check it,
+#            force-push it, and open or update its PR.
 # A conflict is reported with its files and that workspace skipped; exits 1 if any failed. ws/*
 # branches without a folder get a notice, never deleted. Merges run in a temporary worktree.
 set -euo pipefail
@@ -22,6 +25,18 @@ trap 'git worktree remove --force "$wt"' EXIT
 failed=0 names=" "
 tree() { git -C "$wt" rev-parse --quiet --verify "$1^{tree}" || true; } # empty if <rev> is missing
 
+with_delphi() { # <commit> [<folder>/]: its tree with <folder>/.delphi/ dropped, or (no folder) its
+  # .delphi/ replaced by main's. Built in a temporary index, so the worktree is untouched.
+  local i=$wt.index
+  rm -f "$i"
+  GIT_INDEX_FILE=$i git read-tree "$1"
+  GIT_INDEX_FILE=$i git rm -rqf --cached --ignore-unmatch -- "${2:-}.delphi" >/dev/null
+  [ -n "${2:-}" ] || ! git rev-parse -q --verify "$main:.delphi" >/dev/null ||
+    GIT_INDEX_FILE=$i git read-tree --prefix=.delphi/ "$main:.delphi"
+  GIT_INDEX_FILE=$i git write-tree
+  rm -f "$i"
+}
+
 conflict() { # <message>: report the conflicted files, abort the merge, skip this workspace
   echo "$1 Files:" >&2
   git -C "$wt" diff --name-only --diff-filter=U | sed 's/^/  /' >&2
@@ -33,7 +48,7 @@ refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged 
   local ws=refs/remotes/origin/ws/$1
   if [ -z "$(tree "$ws")" ]; then
     git -C "$wt" checkout --quiet --detach \
-      "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$main:$2")"
+      "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(with_delphi "$main:$2")")"
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
     echo "ws/$1: created from $2"
     return
@@ -42,7 +57,14 @@ refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged 
   # --no-ff: once ws commits are in main, a fast-forward would put main's whole tree on ws/<name>.
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$main" >/dev/null; then
     conflict "ws/$1: CONFLICT refreshing from main; merge main into ws/$1 in a PR (see README)."
-  elif [ "$(tree HEAD)" != "$(tree "$ws")" ]; then
+    return
+  fi
+  local head t
+  head=$(git -C "$wt" rev-parse HEAD) && t=$(with_delphi "$head")
+  if [ "$t" != "$(tree "$head")" ]; then
+    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$head" -m "delphi: sync .delphi/ from main" "$t")"
+  fi
+  if [ "$(tree HEAD)" != "$(tree "$ws")" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
     echo "ws/$1: refreshed"
   fi
@@ -56,6 +78,10 @@ propose() { # <name> <folder>: PR the worktree's ws/<name> into main if it chang
     conflict "ws/$1: CONFLICT proposing to main; merge main into ws/$1 in a PR (see README)."
     return
   fi
+  local t
+  t=$(with_delphi "$(git -C "$wt" rev-parse HEAD)" "$2/") # .delphi/ is managed on main, never proposed
+  [ "$t" = "$(tree HEAD)" ] ||
+    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
   case "$(tree HEAD)" in "$(tree "$main")" | "$(tree "refs/remotes/origin/propose/$1")") return ;; esac
   "$wt/ci/check.sh" "$wt" || { echo "ws/$1: check failed; not proposed" >&2 && failed=1 && return; }
   git -C "$wt" push --quiet --force origin "HEAD:refs/heads/propose/$1"
