@@ -1,7 +1,8 @@
 name: experimental
 harness: claude-code
-repos:
+# .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
+repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
   odyssey-definitions: https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git
-links:                    # Delphi workspaces (or main), read-only copies at linked/<name> by .delphi/setup.sh
+links:                    # `- <workspace>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name>
   - main
