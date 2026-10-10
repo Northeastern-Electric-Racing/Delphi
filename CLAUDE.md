@@ -6,8 +6,8 @@ You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos are c
 
 ## Branch & Commit Conventions
 
-- Branch from `develop` (not `main`) unless told otherwise. Branch name format: `{issue-number}-{kebab-case-title}` (e.g. `533-csv-upload-download-rules`).
-- Commit message format: `#{ticket-number} - {concise description}` (e.g. `#533 - add CSV upload endpoint`).
+- Branch from `develop` (not `main`) unless told otherwise. Branch name format: `{issue-number}-{kebab-case-title}` (e.g. `533-csv-upload-download-rules`), or `throwaway-{kebab-case-title}` to try something without a ticket.
+- Commit message format: `#{ticket-number} - {concise description}` (e.g. `#533 - add CSV upload endpoint`). Throwaway branches have no ticket, so any short message works.
 
 ## Safety Rules
 
@@ -23,8 +23,8 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths b
 
 ## Worktrees
 
-- `worktrees/argos/develop/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there; only fetch and fast-forward it.
-- Every ticket gets its own worktree at `worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
+- `worktrees/argos/develop/` mirrors `develop`: run anything there (`npm ci`, tests, the backend, `/run-local`), but keep code changes off it; only fetch and fast-forward it.
+- To change code, make a worktree on its own branch with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`. Use the ticket's branch, or a `throwaway-<title>` branch to experiment without one. If a throwaway turns into real work, file a ticket (`create-ticket`) and move the work to a ticket branch.
 - A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
 
 ## Local Development
