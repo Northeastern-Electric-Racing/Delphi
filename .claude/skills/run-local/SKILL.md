@@ -3,7 +3,7 @@ name: run-local
 description: Bring up the local Argos environment for running or testing — Docker backend (right profile for what changed) + Angular client on the next free port. Use whenever you need to actually run the app locally, not just start the frontend.
 ---
 
-From the ticket's worktree, run `bash <workspace>/.claude/skills/run-local/scripts/find-app.sh`. It prints `client`, `backend`, `scylla` (docker/local), and `free_client_port`.
+From the worktree you want to run (a ticket's, or `worktrees/argos/develop/` to try current `develop`; fetch and fast-forward that one first so it isn't stale), run `bash <workspace>/.claude/skills/run-local/scripts/find-app.sh`. It prints `client`, `backend`, `scylla` (docker/local), and `free_client_port`.
 
 - `backend=none`: ask the user to start it on the right profile (Local Development in CLAUDE.md).
 - `scylla=docker` while `scylla-server/` has changes: flag that the backend is stale.

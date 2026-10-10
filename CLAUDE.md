@@ -23,8 +23,8 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths b
 
 ## Worktrees
 
-- `worktrees/argos/develop/` is a clean reference to `develop`. Never edit, branch, commit, or run dev servers there; only fetch and fast-forward it.
-- Every ticket gets its own worktree at `worktrees/argos/<branch>/`, and every workflow (implement, test, run, commit, PR) runs there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
+- `worktrees/argos/develop/` tracks `develop` with no local code changes. Never edit code, branch, or commit there; only fetch and fast-forward it. Running it is fine: `npm ci`, tests, the backend stack, and `/run-local` can all run there to try out current `develop`.
+- Every ticket gets its own worktree at `worktrees/argos/<branch>/`, and all of its work (implement, test, run, commit, PR) happens there. Create or reuse one with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`.
 - A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
 
 ## Local Development

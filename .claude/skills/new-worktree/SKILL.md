@@ -3,7 +3,7 @@ name: new-worktree
 description: Create or reuse a worktree for a branch of a code repo (worktrees/<repo>/<branch>). Worktrees are the default way to make or check out any new branch; use this before starting a ticket, reviewing or fixing a PR branch, or any other branch work, unless the user says not to use worktrees.
 ---
 
-`repos/<repo>` is a bare store (no files); every checkout of a code repo is a worktree under `worktrees/<repo>/`. `.delphi/setup.sh` makes the default branch's (`worktrees/<repo>/<default-branch>/`); keep it a clean reference: fetch and fast-forward only. Make every other branch with this script, never by switching branches in an existing worktree, unless the user explicitly says not to use worktrees.
+`repos/<repo>` is a bare store (no files); every checkout of a code repo is a worktree under `worktrees/<repo>/`. `.delphi/setup.sh` makes the default branch's (`worktrees/<repo>/<default-branch>/`); never edit code, branch, or commit there (fetch and fast-forward only), though running it (installs, tests, dev servers) is fine. Make every other branch with this script, never by switching branches in an existing worktree, unless the user explicitly says not to use worktrees.
 
 Run from the workspace root:
 
