@@ -13,7 +13,7 @@ First load the project's `pr-conventions` skill (from the project's plugin) for 
 Fill the worktree's `.github/pull_request_template.md` from the diff, following each section's comment, and write it to `/tmp/<branch>-pr-body.md`:
 
 - Title: concise and imperative, no ticket number.
-- Changes: about 50 words (1–3 sentences) on what landed and the key design choice. Describe the change, not the file list: don't enumerate components, classes or files the diff already shows. Name a specific one only when its behaviour changes in a way a reviewer must know.
+- The Changes section (not the whole body): about 50 words (1–3 sentences) on what landed and the key design choice. Describe the change, not the file list: don't enumerate components, classes or files the diff already shows. Name a specific one only when its behaviour changes in a way a reviewer must know.
 - Delete the template's comments and any optional or non-applicable sections, and check off the Checklist.
 - At most three backtick uses in the body.
 - End with `Closes #{ticket}` (the branch's leading number).
