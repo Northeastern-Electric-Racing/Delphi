@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # ci/plugins.sh [--check] [<dir>]: write the generated harness files of a main checkout <dir> (default .):
 #   .claude-plugin/marketplace.json: marketplace `delphi`, one plugin per set folder
-#     software/**/plugins/claude/<set>/ outside workspaces, named after the folder holding plugins/
-#     (its last part), plus -<set> unless the set is `default`; each plugin.json's description is copied.
+#     software/**/plugins/claude/<set>/ outside workspaces, named by its place in the tree: the path of
+#     the folder holding plugins/ with `.` for `/`, plus .<set> unless the set is `default`
+#     (software/a/b/plugins/claude/testing -> software.a.b.testing); each plugin.json's description is
+#     copied, and its name must be that name.
 #   each `harness: claude-code` workspace's .claude/settings.json: the shared settings below, plus the
-#     `default` set of every folder above the workspace and each `- <folder>/<set>` under `plugins:`
-#     in its workspace.yml, enabled from the delphi marketplace. Never edit it by hand: personal
-#     settings go in .claude/settings.local.json, shared ones here or in workspace.yml.
+#     `default` set of every folder above the workspace and each set named under `plugins:` in its
+#     workspace.yml, enabled from the delphi marketplace. Never edit it by hand: personal settings go
+#     in .claude/settings.local.json, shared ones here or in workspace.yml.
 #   --check writes nothing; it lists each out-of-date file or problem and exits 1 if any.
 # ci/plugins.sh settings <folder> <workspace.yml>: print one workspace's settings.json, from <dir> = .
 #   (sync uses it for ws/* branches, reading workspace.yml from the branch).
@@ -19,8 +21,13 @@ sets() { # every set folder, sorted
 }
 
 name_of() { # <set folder>: the plugin's name in the marketplace
-  local folder=${1%/plugins/claude/*} set=${1##*/}
-  if [ "$set" = default ]; then echo "${folder##*/}"; else echo "${folder##*/}-$set"; fi
+  local folder set=${1##*/}
+  folder=$(echo "${1%/plugins/claude/*}" | tr / .)
+  if [ "$set" = default ]; then echo "$folder"; else echo "$folder.$set"; fi
+}
+
+field() { # <set folder> <key>: a top-level string field of its plugin.json, as written (quoted)
+  sed -nE 's/^[[:space:]]*"'"$2"'":[[:space:]]*("([^"\\]|\\.)*")[[:space:]]*,?[[:space:]]*$/\1/p' "$1/.claude-plugin/plugin.json" | head -n 1
 }
 
 marketplace() {
@@ -28,7 +35,7 @@ marketplace() {
   printf '{\n  "name": "delphi",\n  "owner": {\n    "name": "Northeastern Electric Racing"\n  },\n'
   printf '  "description": "Delphi%ss Claude Code plugins: context shared by the workspaces under a folder.",\n  "plugins": [' "'"
   for s in $(sets); do
-    d=$(sed -nE 's/^[[:space:]]*"description":[[:space:]]*("([^"\\]|\\.)*")[[:space:]]*,?[[:space:]]*$/\1/p' "$s/.claude-plugin/plugin.json" | head -n 1)
+    d=$(field "$s" description)
     printf '%s\n    {\n      "name": "%s",\n      "source": "./%s"' "$sep" "$(name_of "$s")" "$s"
     [ -z "$d" ] || printf ',\n      "description": %s' "$d"
     printf '\n    }'
@@ -38,15 +45,16 @@ marketplace() {
 }
 
 settings() { # <folder> <workspace.yml>
-  local folder=$1 p="" part e s list="" sep=""
+  local folder=$1 p="" part e s list="" sep="" index
   [ -f "$2" ] || { echo "plugins: no $2" >&2 && return 1; }
+  index=$(for s in $(sets); do echo "$(name_of "$s") $s"; done)
   for part in $(echo "${folder%/workspaces/*}" | tr / ' '); do
     p=${p:+$p/}$part
     [ ! -f "$p/plugins/claude/default/.claude-plugin/plugin.json" ] || list="$list $p/plugins/claude/default"
   done
   while IFS= read -r e; do
-    s=${e%/*}/plugins/claude/${e##*/}
-    [ -f "$s/.claude-plugin/plugin.json" ] || { echo "plugins: $2 lists $e, but $s/ has no plugin" >&2 && return 1; }
+    s=$(echo "$index" | awk -v n="$e" '$1 == n { print $2; exit }')
+    [ -n "$s" ] || { echo "plugins: $2 lists $e, which isn't a plugin set" >&2 && return 1; }
     case "$list " in *" $s "*) ;; *) list="$list $s" ;; esac
   done < <(awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$2")
@@ -87,6 +95,10 @@ put() { # <file> <command...>: write <command>'s output to <file> (with --check,
 
 for n in $(for s in $(sets); do name_of "$s"; done | sort | uniq -d); do
   echo "plugins: two plugin sets are both named $n; rename a folder or set" >&2 && problems=$((problems + 1))
+done
+for s in $(sets); do
+  [ "$(field "$s" name)" = "\"$(name_of "$s")\"" ] ||
+    { echo "plugins: $s/.claude-plugin/plugin.json: name must be \"$(name_of "$s")\"" >&2 && problems=$((problems + 1)); }
 done
 put .claude-plugin/marketplace.json marketplace
 for y in $(find software -path '*/workspaces/*/workspace.yml' -type f 2>/dev/null | LC_ALL=C sort); do

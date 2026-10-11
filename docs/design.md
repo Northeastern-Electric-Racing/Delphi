@@ -83,12 +83,15 @@ there starts with. These live only on `main`; workspaces read them by listing `m
 Context that the workspaces under an org or project folder share (a skill, its conventions) goes in
 a plugin set of that folder, `plugins/<harness>/<set>/` (`plugins/claude/` for Claude Code; a sister
 folder per other harness), so it has one copy instead of one per workspace. Every workspace gets the
-`default` set of each folder above it; `plugins:` in `workspace.yml` adds others (`- <folder>/<set>`).
+`default` set of each folder above it; `plugins:` in `workspace.yml` adds others by name (`- <set name>`).
 `ci/plugins.sh` generates the rest, and `ci/check.sh` fails if either file is out of date:
 
 - `.claude-plugin/marketplace.json` at main's root: marketplace `delphi`, one plugin per set, named
-  after the folder holding `plugins/` (its last part), plus `-<set>` unless the set is `default`
-  (`argos`, `argos-testing`); names must be unique.
+  by its place in the tree: the path of the folder holding `plugins/` with `.` for `/`, plus
+  `.<set>` unless the set is `default` (`software.application-software.argos`,
+  `software.application-software.argos.testing`). Names must be unique, and each `plugin.json` uses
+  its name. (Claude Code refuses `/` in plugin names; `.` works, though Claude.ai's marketplace sync
+  wants kebab-case.)
 - Each `harness: claude-code` workspace's `.claude/settings.json`: the shared settings in
   `ci/plugins.sh`, plus the `delphi` marketplace (with `autoUpdate`) and its sets under
   `enabledPlugins`. Never edit it by hand: personal settings go in `.claude/settings.local.json`

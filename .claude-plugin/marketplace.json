@@ -6,17 +6,17 @@
   "description": "Delphi's Claude Code plugins: context shared by the workspaces under a folder.",
   "plugins": [
     {
-      "name": "argos",
+      "name": "software.application-software.argos",
       "source": "./software/application-software/argos/plugins/claude/default",
       "description": "Argos specifics shared by every Argos workspace."
     },
     {
-      "name": "nero",
+      "name": "software.application-software.nero",
       "source": "./software/application-software/nero/plugins/claude/default",
       "description": "Nero specifics shared by every Nero workspace."
     },
     {
-      "name": "application-software",
+      "name": "software.application-software",
       "source": "./software/application-software/plugins/claude/default",
       "description": "Shared context for every application-software project: ticket conventions and the create-ticket skill."
     }
