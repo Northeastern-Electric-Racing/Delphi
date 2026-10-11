@@ -9,11 +9,9 @@ Follow the repo's templates in .github/ISSUE_TEMPLATE (`gh api repos/<owner>/<re
 
 ## Workflow
 
-One issue carries a feature from idea to epic; everything else is its sub-issue.
-
-1. **Idea**: what could be built and why, with open options. Every spike has one as parent; if none fits, draft it with the spike.
-2. **Spike**: a sub-issue of the idea; one approach and what to learn. Findings go in comments and draft PRs.
-3. **Epic**: once settled, rewrite the idea issue itself from the epic template, swap `idea` for `epic`, and set its issue type; don't open a new one. The approach and whole-epic outcomes, not a walkthrough of each ticket.
+1. **Idea**: what could be built and why, with open options.
+2. **Spike**: one approach and what to learn; a sub-issue of its idea, if any. Findings go in comments and draft PRs.
+3. **Epic**: a new issue once an idea is settled, linking it in "From idea"; then offer to close the idea as completed. The approach and whole-epic outcomes, not a walkthrough of each ticket.
 4. **Dev work**: a sub-issue of its epic, if any; testable requirements, Notes for gotchas and pointers to code.
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes never prescribe a solution; context transfer holds facts, not instructions.
@@ -31,4 +29,4 @@ If unsure, a small, clear change is dev work, a small unknown is a spike, and a 
 
 Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file. File or edit only what the user OKs.
 
-Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the type the template sets (epics and dev work; ideas and spikes get none), and the user as assignee (not on spikes, which stay unassigned), then POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
+Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the type the template sets (epics and dev work; ideas and spikes get none), and the user as assignee (not on spikes, which stay unassigned), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
