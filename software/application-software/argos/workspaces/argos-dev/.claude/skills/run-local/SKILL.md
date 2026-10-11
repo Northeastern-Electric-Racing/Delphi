@@ -9,6 +9,6 @@ Run the worktrees the user is asking about: a PR or ticket means its branch, and
 bash ${CLAUDE_SKILL_DIR}/scripts/run-local.sh <branch-or-worktree>...
 ```
 
-It makes any missing worktree (`new-worktree`), starts the backend if it's down (`client-dev`, or `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each target's client on the next free port. Worktree paths are relative to the root. With no arguments it only reports what's running.
+It makes any missing worktree (`new-worktree`), starts the backend if it's down (`client-dev`, or `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each target's client on the next free port. With no arguments it only reports what's running.
 
 Report each branch's client URL and the backend. A failed compile or a stale-backend warning is a finding: show it to the user. Stop a client with `kill <pid>` from its line.

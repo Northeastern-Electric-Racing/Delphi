@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # run-local.sh [<branch>|<argos-worktree>...]: bring up the local Argos stack for those worktrees and
-# print one line per piece. A worktree is a path (absolute, or relative to the workspace root, four
-# folders up from here); a branch gets its worktree via .delphi/new-worktree.sh (it must exist
-# locally or on origin). The backend (first listener on 8000-8090, step 10) is started if down:
-# ./argos.sh client-dev when no target changes scylla-server/, else scylla-dev plus `cargo run` in the
-# one worktree that does. Each target's client is then served by serve.sh on its own port. With no
-# arguments, only reports what is running.
+# print one line per piece. A worktree is its path; a branch gets its worktree via the workspace's
+# (four folders up from here) .delphi/new-worktree.sh (it must exist locally or on origin). The
+# backend (first listener on 8000-8090, step 10) is started if down: ./argos.sh client-dev when no
+# target changes scylla-server/, else scylla-dev plus `cargo run` in the one worktree that does. Each
+# target's client is then served by serve.sh on its own port. With no arguments, only reports what
+# is running.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../../../.." && pwd)
@@ -28,8 +28,7 @@ fi
 git -C "$root/repos/argos" fetch -q origin
 wts=() rust=()
 for t in "$@"; do
-  case "$t" in /*) dir=$t ;; *) dir=$root/$t ;; esac
-  if [ -d "$dir" ]; then wt=$(cd "$dir" && pwd)
+  if [ -d "$t" ]; then wt=$(cd "$t" && pwd)
   elif git -C "$root/repos/argos" rev-parse -q --verify "refs/heads/$t" >/dev/null ||
     git -C "$root/repos/argos" rev-parse -q --verify "refs/remotes/origin/$t" >/dev/null; then
     wt=$(bash "$root/.delphi/new-worktree.sh" argos "$t")
