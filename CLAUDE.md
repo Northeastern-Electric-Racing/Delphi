@@ -58,7 +58,7 @@ Code and ADR conventions worth stating are in the Conventions section of `docs/C
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `application-software` plugin; it holds the ticket conventions and follows the repo's issue templates (idea, spike, epic, dev work), with Argos's specifics in the `argos` plugin. When an out-of-scope but worthwhile idea comes up mid-work, offer to file it as an idea with `create-ticket`; park rough notes with `journal`.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `app` plugin; it holds the ticket conventions and follows the repo's issue templates (idea, spike, epic, dev work), with Argos's specifics in the `argos` plugin. When an out-of-scope but worthwhile idea comes up mid-work, offer to file it as an idea with `create-ticket`; park rough notes with `journal`.
 
 ## Domain docs
 
