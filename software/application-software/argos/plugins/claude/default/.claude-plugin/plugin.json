@@ -1,6 +1,6 @@
 {
   "name": "argos",
-  "description": "Argos specifics shared by every Argos workspace.",
+  "description": "Argos context for every Argos workspace: ticket and PR conventions, and the run-local, verify-graph, verify-telemetry, and implement skills.",
   "author": {
     "name": "Northeastern Electric Racing"
   }

@@ -1,6 +1,6 @@
 {
   "name": "nero",
-  "description": "Nero specifics shared by every Nero workspace.",
+  "description": "Nero context for every Nero workspace: ticket and PR conventions.",
   "author": {
     "name": "Northeastern Electric Racing"
   }
