@@ -1,6 +1,6 @@
 # Argos (project)
 
-Shared context for every Argos workspace. Workspaces that list `main` under `links:` in
+Shared context for every Argos workspace. Workspaces that list `main` under `workspaces:` in
 `workspace.yml` (the default for Argos) read it at `linked/main/software/application-software/argos/`.
 
 Argos is NER's real-time telemetry platform: an Angular 19 frontend (`angular-client/`) and a Rust
@@ -9,7 +9,7 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 
 | Path | What it is |
 |---|---|
-| `workspaces/<name>/` | One workspace per purpose; branch `ws/<name>` is its root |
+| `workspaces/<leaf>/` | One workspace per purpose; branch `ws/software/application-software/argos/<leaf>` is its root |
 | `workspaces/argos-dev/` | Day-to-day Argos development: tickets, specs, PRs |
 | `defaults/` | What a new Argos workspace starts with (see `AUTHORING.md`) |
 | `AUTHORING.md` | How to create and change Argos workspaces |

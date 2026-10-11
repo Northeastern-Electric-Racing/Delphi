@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# ci/sync.sh [refresh|propose] [<name>]: sync each workspace folder software/**/workspaces/<name>/ on
-# origin/main (or just <name>) with its branch ws/<name>, whose root is the folder. CI runs it with
-# no direction (both) on every push to main or ws/**.
+# ci/sync.sh [refresh|propose] [<name>]: sync each workspace folder software/**/workspaces/<leaf>/ on
+# origin/main (or just <name>) with its branch ws/<name>, whose root is the folder. A workspace's
+# <name> is its place in the tree: the folder's path without `workspaces/`
+# (software/application-software/argos/workspaces/argos-dev -> software/application-software/argos/argos-dev).
+# CI runs it with no direction (both) on every push to main or ws/**.
 #   refresh: merge main into ws/<name> (-Xsubtree=<folder>), then make its .delphi/ main's root
 #            .delphi/ (a "delphi: sync" commit if that changed it), and push if the tree changed. A
-#            missing ws/<name> is created as one commit: tree = the folder plus main's .delphi/,
-#            parent = main.
+#            missing ws/<name> starts from ws/<leaf>, the branch's name before workspaces were named
+#            by path, if that exists (so its history and unproposed edits carry over), else is created
+#            as one commit: tree = the folder plus main's .delphi/, parent = main.
 #   propose: build propose/<name> = main + a subtree merge of ws/<name> without <folder>/.delphi/
 #            (managed on main); if that changes main and isn't already on propose/<name>, check it (against main),
 #            force-push it, and open or update its PR.
@@ -15,7 +18,8 @@ set -euo pipefail
 dir=both
 case "${1:-}" in refresh | propose) dir=$1 && shift ;; esac
 only=${1:-}
-case "$only" in *[!a-z0-9-]*) echo "usage: ci/sync.sh [refresh|propose] [<name>]" >&2 && exit 2 ;; esac
+case "$only" in ws/*) only=${only#ws/} ;; esac
+case "$only" in *[!a-z0-9/-]*) echo "usage: ci/sync.sh [refresh|propose] [<name>]" >&2 && exit 2 ;; esac
 
 git fetch --quiet --prune origin
 main=$(git rev-parse origin/main)
@@ -45,15 +49,16 @@ conflict() { # <message>: report the conflicted files, abort the merge, skip thi
 }
 
 refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged in
-  local ws=refs/remotes/origin/ws/$1
-  if [ -z "$(tree "$ws")" ]; then
+  local ws=refs/remotes/origin/ws/$1 from=refs/remotes/origin/ws/$1
+  [ -n "$(tree "$ws")" ] || [ -z "$(tree "refs/remotes/origin/ws/${1##*/}")" ] || from=refs/remotes/origin/ws/${1##*/}
+  if [ -z "$(tree "$from")" ]; then
     git -C "$wt" checkout --quiet --detach \
       "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(with_delphi "$main:$2")")"
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
     echo "ws/$1: created from $2"
     return
   fi
-  git -C "$wt" checkout --quiet --detach "$ws"
+  git -C "$wt" checkout --quiet --detach "$from"
   # --no-ff: once ws commits are in main, a fast-forward would put main's whole tree on ws/<name>.
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$main" >/dev/null; then
     conflict "ws/$1: CONFLICT refreshing from main; merge main into ws/$1 in a PR (see README)."
@@ -66,7 +71,7 @@ refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged 
   fi
   if [ "$(tree HEAD)" != "$(tree "$ws")" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
-    echo "ws/$1: refreshed"
+    if [ "$from" = "$ws" ]; then echo "ws/$1: refreshed"; else echo "ws/$1: created from ws/${1##*/}, its old name"; fi
   fi
 }
 
@@ -103,7 +108,7 @@ $(git log --no-merges --invert-grep --grep='^delphi: ' --format='- %s (%an)' "$m
 
 for folder in $(git ls-tree -r --name-only "$main" -- software |
   sed -nE 's#^(software/(.+/)?workspaces/[^/]+)/workspace\.yml$#\1#p'); do
-  name=${folder##*/} ok=1
+  name=${folder%/workspaces/*}/${folder##*/} ok=1
   names="$names$name "
   [ -z "$only" ] || [ "$only" = "$name" ] || continue
   if [ "$dir" != propose ]; then
@@ -116,6 +121,8 @@ done
 
 [ -z "$only" ] || case "$names" in *" $only "*) ;; *) echo "no workspace '$only' on main" >&2 && exit 1 ;; esac
 for b in $(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ws/); do
-  case "$names" in *" ${b#ws/} "*) ;; *) echo "notice: $b has no workspace folder on main (kept)" ;; esac
+  case "$names" in *" ${b#ws/} "*) continue ;; esac
+  case "$names" in *"/${b#ws/} "*) echo "notice: $b is a workspace's old name; it's now ws/$(echo "$names" | tr ' ' '\n' | grep "/${b#ws/}\$" | head -n 1) (kept)" ;;
+  *) echo "notice: $b has no workspace folder on main (kept)" ;; esac
 done
 exit "$failed"

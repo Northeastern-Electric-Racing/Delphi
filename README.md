@@ -1,9 +1,10 @@
 # Delphi
 
 NER's AI-harness context (instructions, skills, docs, settings), organized by the org chart under
-`software/`. A **workspace** is a folder `software/**/workspaces/<name>/` with a `workspace.yml`.
-For each one, CI keeps a branch **`ws/<name>`** whose repo root *is* that folder, so people and
-agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
+`software/`. A **workspace** is a folder `software/**/workspaces/<leaf>/` with a `workspace.yml`,
+named by its place in the tree: the folder's path without `workspaces/`
+(`software/application-software/argos/argos-dev`). For each one, CI keeps a branch **`ws/<name>`**
+whose repo root *is* that folder, so people and agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
 
 ## How it works
 
@@ -39,11 +40,11 @@ histories stay joined and edits on either side meet in normal three-way merges.
 ## Using a workspace
 
 ```sh
-git clone -b ws/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git argos-dev
-cd argos-dev && .delphi/setup.sh        # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
-.delphi/switch.sh nero-experimental    # switch freely (or to main): the post-checkout hook parks them in .delphi/parked/
-git switch -c my-change                 # edit, commit, push, open a PR into ws/argos-dev
-git fetch origin && git merge origin/ws/argos-dev   # update your branch any time
+git clone -b ws/software/application-software/argos/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git delphi
+cd delphi && .delphi/setup.sh           # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
+.delphi/switch.sh nero-experimental    # switch freely (or to main; the full name works too): the hook parks them in .delphi/parked/
+git switch -c my-change                 # edit, commit, push, open a PR into ws/software/application-software/argos/argos-dev
+git fetch origin && git merge origin/ws/software/application-software/argos/argos-dev   # update your branch any time
 ```
 
 After your PR merges into `ws/<name>`, CI proposes it: a PR `ws/<name> → main` from
@@ -57,13 +58,13 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 ## workspace.yml
 
 ```yaml
-name: argos-dev         # the folder name
+name: software/application-software/argos/argos-dev   # its place in the tree
 harness: claude-code
 repos:                  # stored in repos/<name>, checked out in worktrees/<name>/ by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
   socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch
-links:                  # Delphi workspaces or main, read-only, shallow-cloned into linked/<name>/
+workspaces:             # Delphi workspaces (ws/<name>) or main, read-only, shallow-cloned into linked/<branch>/
   - main
 ```
 
@@ -71,11 +72,12 @@ links:                  # Delphi workspaces or main, read-only, shallow-cloned i
 context: `setup.sh` checks each out shallow and detached at its pin (or the default branch), with
 pushes disabled, and refreshes them on every run. They get no store and no worktrees. Names are
 unique across both maps. The `-git` suffix leaves room for other kinds of references later.
-`links:` are other workspaces (or `main`) to read: the same kind of read-only copy, of Delphi itself.
+`workspaces:` are other workspaces (`- ws/<name>`) or `main` to read: the same kind of read-only copy, of Delphi itself.
 To change one, switch to it instead.
 
-The workspace's name is its folder name (unique repo-wide), repeated in `name:` so a checkout knows
-which workspace it is. Every other file in the folder is the workspace's own, at its normal harness
+The workspace's name is its place in the tree, repeated in `name:` so a checkout knows which
+workspace it is. Workspaces in different places may end in the same name; but since git can't hold
+both `ws/a` and `ws/a/b`, no workspace may be named like a project folder beside it. Every other file in the folder is the workspace's own, at its normal harness
 path, except `.github/workflows/delphi.yml` (a copy of the template's). The scripts, `.delphi/*.sh`
 (`setup.sh`, `new-worktree.sh`, `switch.sh`, `park.sh`, `version.sh`), live once at main's root: sync puts
 `.delphi/` on every `ws/*` branch, so change them only through PRs to main.
@@ -92,11 +94,11 @@ a version needs cleanup in people's clones, it ships `.delphi/migrations/<versio
 
 `tools/new-workspace.sh <org-path under software/> <name>` copies `templates/workspace/` into
 `software/<org-path>/workspaces/<name>/`, adds the project's `defaults/` if it has one, and opens a
-PR to `main`. Once it merges, CI creates `ws/<name>`.
+PR to `main`. Once it merges, CI creates `ws/software/<org-path>/<name>`.
 
 **Project folders.** The folder above `workspaces/` (e.g. `software/application-software/argos/`)
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`.
-A workspace that lists `main` under `links:` reads them at `linked/main/` (recommended for every
+A workspace that lists `main` under `workspaces:` reads them at `linked/main/` (recommended for every
 new workspace); to change them, switch to `main`.
 
 ## CI (`.github/workflows/delphi.yml`)

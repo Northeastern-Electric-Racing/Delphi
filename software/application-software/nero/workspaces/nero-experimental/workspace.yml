@@ -1,7 +1,7 @@
-name: nero-experimental
+name: software/application-software/nero/nero-experimental
 harness: claude-code
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   nero: https://github.com/Northeastern-Electric-Racing/Nero-2.0.git
-links:                    # `- <workspace>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name>
+workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
   # - main
