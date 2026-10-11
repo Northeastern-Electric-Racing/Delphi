@@ -1,0 +1,20 @@
+# .delphi/manifest.yml: the files that make up a Delphi version, identical on main and on every ws/*
+# branch (sync puts main's .delphi/ on each). Change any of them, this file included, and you make a
+# new version: bump `version` below, then add the line `bash .delphi/version.sh` prints, plus what
+# changed, to .delphi/versions (ci/check.sh fails until you do, and says so). MAJOR.MINOR.PATCH:
+#   PATCH  fixes and wording
+#   MINOR  something new that existing clones need nothing for
+#   MAJOR  clones need cleanup (MINOR while 0.x): add .delphi/migrations/<version>-<slug>.sh, which
+#          setup.sh runs once per workspace in each clone (rules in Delphi's CLAUDE.md)
+version: 0.1.1
+files:                        # repo-relative paths; a trailing / means everything under it
+  - .delphi/manifest.yml
+  - .delphi/.gitattributes
+  - .delphi/.gitignore
+  - .delphi/version.sh
+  - .delphi/setup.sh
+  - .delphi/new-worktree.sh
+  - .delphi/switch.sh
+  - .delphi/park.sh
+  - .delphi/migrations/
+  - .github/workflows/delphi.yml

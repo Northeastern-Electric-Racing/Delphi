@@ -1,0 +1,6 @@
+# .delphi/versions: one line per Delphi version, oldest first: `<version> <hash> <what changed>`, the
+# hash being that of the files .delphi/manifest.yml lists. Only add lines; `bash .delphi/version.sh`
+# prints the first two fields for the files as they are now.
+0.0.1 1fc1890f7d00 versions and migrations; linked/ are read-only copies, not link.sh worktrees (migration)
+0.1.0 6522fea335e8 workspaces named by their place in the tree (ws/software/.../<name>); links: is workspaces: (- ws/<name> | - main) (migration)
+0.1.1 4829c508fd00 the post-checkout hook is a script running each worktree's own .delphi/park.sh, not a link to one checkout's
