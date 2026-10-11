@@ -12,4 +12,4 @@ The shared rules are in the `open-pr` skill; this adds only what is Argos's.
 - Checks: `bash ${CLAUDE_SKILL_DIR}/scripts/lint.sh worktrees/argos/<branch>` (frontend prettier and ng lint, only if angular-client/ changed).
 - Labels: one written-by (`by: human` if the user wrote it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it) and at least one area label (`frontend`, `backend`, `devops`); no category label.
 - Screenshots: `pictures/<branch>/` at the worktree root (git-ignored).
-- UI QA: get the branch running with `run-local <branch>`, then drive it with Playwright, using the `playwright-cdp` server if `curl -s localhost:9222/json/version` responds, otherwise `playwright`.
+- UI QA: get the branch running with `run-local worktrees/argos/<branch>`, then drive it with Playwright, using the `playwright-cdp` server if `curl -s localhost:9222/json/version` responds, otherwise `playwright`.
