@@ -13,4 +13,4 @@ The shared rules are in the `create-ticket` skill; this adds only what is Argos'
 - Pull requests get a written-by label and at least one area label, but no category label.
 - Vocabulary: use the workspace glossary's terms (`docs/CONTEXT.md`), and check the code for current names, which may have moved past it (e.g. Zenoh key expressions, not MQTT topics).
 - Title example: "Add pagination to the run list".
-- Diagrams (required on epics, optional on dev work): Mermaid where it fits. Show the change across the parts it touches (car, Siren, scylla-server, angular-client), before and after.
+- Diagrams: Mermaid where it fits. Show the change across the parts it touches (car, Siren, scylla-server, angular-client), before and after.

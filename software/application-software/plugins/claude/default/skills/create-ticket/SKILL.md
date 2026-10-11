@@ -28,6 +28,7 @@ If unsure, a small, clear change is dev work, a small unknown is a spike, and a 
 - Title: concise and imperative, no prefixes.
 - Short and plain; explain project-specific terms. One `### <field label>` per field in template order; omit empty optional fields.
 - Requirements: clear, broad checkboxes, each an outcome rather than an implementation step; 3-5, never more than 7. If it needs more, split the ticket.
+- Diagrams: required on epics, optional on dev work. The project's `ticket-conventions` says what they show.
 - Backticks: at most three inline uses per body; name files and identifiers in plain text. Diagram and context-transfer blocks don't count.
 - No prescriptions on ideas and spikes: say what to explore and why, never how to build it. Context transfer (optional on spikes, epics, and dev work) starts with a short summary, then raw facts, not instructions or a proposed solution.
 - Labels: the template's category (`idea`, `spike`, `epic`, `dev work`), one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it, including rewrites), and at least one of the project's area labels.
