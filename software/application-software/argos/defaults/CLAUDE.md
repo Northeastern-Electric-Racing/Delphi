@@ -55,4 +55,4 @@ Code and ADR conventions worth stating are in the Conventions section of `docs/C
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `application-software` plugin (enabled in `.claude/settings.json`); it holds the ticket types, labels, and conventions, with Argos's specifics in the `argos` plugin. Specs and tickets avoid file paths and code snippets; they go stale.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `application-software` plugin (Delphi enables it); it holds the ticket types, labels, and conventions, with Argos's specifics in the `argos` plugin. Specs and tickets avoid file paths and code snippets; they go stale.

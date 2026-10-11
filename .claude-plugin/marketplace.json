@@ -3,22 +3,22 @@
   "owner": {
     "name": "Northeastern Electric Racing"
   },
-  "description": "Delphi's Claude Code plugins: context shared across the workspaces under an org or project folder.",
+  "description": "Delphi's Claude Code plugins: context shared by the workspaces under a folder.",
   "plugins": [
     {
-      "name": "application-software",
-      "source": "./software/application-software/plugins/claude",
-      "description": "Shared context for every application-software project: ticket conventions and the create-ticket skill."
-    },
-    {
       "name": "argos",
-      "source": "./software/application-software/argos/plugins/claude",
+      "source": "./software/application-software/argos/plugins/claude/default",
       "description": "Argos specifics shared by every Argos workspace."
     },
     {
       "name": "nero",
-      "source": "./software/application-software/nero/plugins/claude",
+      "source": "./software/application-software/nero/plugins/claude/default",
       "description": "Nero specifics shared by every Nero workspace."
+    },
+    {
+      "name": "application-software",
+      "source": "./software/application-software/plugins/claude/default",
+      "description": "Shared context for every application-software project: ticket conventions and the create-ticket skill."
     }
   ]
 }

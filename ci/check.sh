@@ -13,12 +13,13 @@
 # outside .delphi/ (the workflow) is the same in templates/workspace/ and every workspace; workspace.yml is `name: <its name>`,
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
-# `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself. A project's
-# defaults/workspace.yml is the same without `name:`. .claude-plugin/marketplace.json lists every
-# software/**/plugins/claude/ outside a workspace as a `./<path>` source, and each source has a
-# .claude-plugin/plugin.json.
+# `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself, and an
+# optional `plugins:` list of `- <folder path>/<set>` without duplicates. A project's
+# defaults/workspace.yml is the same without `name:`. The files ci/plugins.sh generates
+# (.claude-plugin/marketplace.json, each workspace's .claude/settings.json) are up to date.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
+here=$(cd "$(dirname "$0")" && pwd)
 cd "${1:-.}"
 base=${2:-}
 problems=0
@@ -78,11 +79,7 @@ fi
 [ ! -e $tpl/.delphi ] || bad "$tpl/.delphi: scripts live only in the root .delphi/"
 while IFS= read -r f; do bad "$f: symlinks are not allowed under software/"; done \
   < <(find software -type l 2>/dev/null)
-mk=.claude-plugin/marketplace.json
-srcs=$([ ! -f $mk ] || sed -nE 's#^[[:space:]]*"source":[[:space:]]*"\./([^"]+)".*#\1#p' $mk)
-for s in $srcs; do [ -f "$s/.claude-plugin/plugin.json" ] || bad "$mk: source ./$s has no .claude-plugin/plugin.json"; done
-while IFS= read -r p; do echo "$srcs" | grep -qxF "$p" || bad "$p: plugin not listed in $mk"; done \
-  < <(find software -path '*/workspaces/*' -prune -o -type d -path '*/plugins/claude' -print 2>/dev/null)
+while IFS= read -r msg; do bad "${msg#plugins: }"; done < <(bash "$here/plugins.sh" --check . 2>&1 >/dev/null || true)
 
 manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), `name:` is not allowed
   while IFS= read -r msg; do bad "$1: $msg"; done < <(awk -v want="${2:-}" '
@@ -96,6 +93,13 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
     /^references-git:[[:space:]]*(#.*)?$/ { r = 2; next }
     /^links:/ { print "links: is now workspaces: (entries `  - ws/<name>` or `  - main`)"; r = 3; next }
     /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
+    /^plugins:[[:space:]]*(#.*)?$/ { r = 4; next }
+    r == 4 && /^[[:space:]]/ {
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+software(\/[a-z0-9][a-z0-9-]*)+[[:space:]]*(#.*)?$/) {
+        print "bad plugins entry (want `  - <folder path>/<set>`): " $0; next }
+      v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+      if (sets[v]++) print "duplicate plugin set: " v
+      next }
     r == 3 && /^[[:space:]]/ {
       if ($0 !~ /^[[:space:]]+-[[:space:]]+(main|ws\/[a-z0-9][a-z0-9\/-]*)[[:space:]]*(#.*)?$/ || $0 ~ /\/\/|\/[[:space:]]*(#.*)?$/) {
         print "bad workspaces entry (want `  - ws/<name>` or `  - main`): " $0; next }

@@ -13,6 +13,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
   Runs on pushes to main and `ws/**`.
 - `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
 - `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
+- `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
+  (`software/**/plugins/<harness>/<set>/`) and each workspace's `.claude/settings.json` (never edit
+  it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
 - `.delphi/{setup,new-worktree,switch,park}.sh`: the scripts every workspace runs. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
 - `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
