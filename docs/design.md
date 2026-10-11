@@ -124,10 +124,11 @@ no store and no worktrees (`new-worktree.sh` refuses them). Each entry under `wo
 or `- main`; the workspace itself is skipped) gets the same kind of copy of that branch of the clone's
 own origin, at `linked/<branch>/`, also refreshed every run; `/linked/` is excluded too.
 Links are separate clones, not worktrees of the Delphi clone, so two workspaces can both link `main`
-and each copy parks with its workspace. Symlinks the clone's `post-checkout` hook to `.delphi/park.sh`
-(relative, `../../.delphi/park.sh`, when the hook is in `.git/hooks`), unless another hook is there
-(it says so and leaves it). `.delphi/` is on every branch, so the link always resolves and runs the
-`park.sh` just checked out: never a stale copy. Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
+and each copy parks with its workspace. Writes the clone's `post-checkout` hook, a 3-line script that
+runs `.delphi/park.sh` from the worktree that checked out (replacing an older link to or copy of a
+`park.sh`), unless another hook is there (it says so and leaves it). `.delphi/` is on every branch, so
+the hook always runs the `park.sh` just checked out, never a stale copy, and each worktree of the clone
+its own: the worktrees share one hook, so a link would run one checkout's `park.sh` for all of them. Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
 and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/park.sh` (the hook) lets one clone switch freely between workspaces and `main`. When a

@@ -116,9 +116,9 @@ ok "unrelated main changes leave other ws branches' trees alone"
 
 # --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
 (cd "$t/dev" && git fetch -q && git checkout -q -B release origin/main && echo "# main edit" >>.delphi/new-worktree.sh &&
-  sed -i.bak 's/^version: .*/version: 0.1.1/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
-  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.1.1" &&
-  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.1.1 failed"
+  sed -i.bak 's/^version: .*/version: 0.1.2/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
+  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.1.2" &&
+  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.1.2 failed"
 sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out")"
 for n in "$AN" "$BN"; do
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
@@ -187,15 +187,15 @@ expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.m
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
-expect_bad not-bumped "changed since 0.1.0: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
-expect_bad bumped-no-line "add \`0.1.1 " sed -i.bak 's/^version: .*/version: 0.1.1/' .delphi/manifest.yml
+expect_bad not-bumped "changed since 0.1.1: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
+expect_bad bumped-no-line "add \`0.1.2 " sed -i.bak 's/^version: .*/version: 0.1.2/' .delphi/manifest.yml
 release() { # <version> [<migration slug>]: bump to <version> (with an empty migration) and add its line, as a release would
   [ -z "${2:-}" ] || printf '#!/usr/bin/env bash\nset -euo pipefail\n' >".delphi/migrations/$1-$2.sh"
   sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
     echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
 }
-expect_bad migration-patch "0.1.1 has a migration, so it must bump MINOR" release 0.1.1 x
-expect_bad version-down "0.0.9 is not above 0.1.0" release 0.0.9
+expect_bad migration-patch "0.1.2 has a migration, so it must bump MINOR" release 0.1.2 x
+expect_bad version-down "0.0.9 is not above 0.1.1" release 0.0.9
 expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
 expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
 expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.2.0-x.sh"
@@ -281,7 +281,8 @@ live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" bra
   ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
   [ -f "$w/linked/main/ci/sync.sh" ]; }
 local_ws a1 "ws/$AN" "$AN" lib1 || fail "park: setup on argos-dev failed"
-[ "$(readlink "$w/.git/hooks/post-checkout")" = ../../.delphi/park.sh ] || fail "setup.sh did not link the hook to .delphi/park.sh"
+ours() { [ ! -L "$w/.git/hooks/post-checkout" ] && grep -qx '\[ ! -f .delphi/park.sh \] || exec bash .delphi/park.sh "$@"' "$w/.git/hooks/post-checkout"; }
+ours || fail "setup.sh did not write the hook that runs .delphi/park.sh"
 { git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.delphi/parked" ]; } || fail "park: same-workspace branch moved clones"
 local_ws b1 "ws/$BN" "$BN" lib2 || fail "park: setup on bms-dev failed"
 { [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/$AN/worktrees/lib1/$def" ] &&
@@ -309,10 +310,15 @@ git -C "$w" checkout -q -b a3 a1 && echo 'echo "park.sh from a3" >&2' >>"$w/.del
 { git -C "$w" checkout -q main 2>"$t/err" && ! grep -q "from a3" "$t/err" && [ ! -e "$w/repos" ]; } ||
   fail "hook did not run main's own park.sh"
 { git -C "$w" checkout -q a1 && live lib1; } || fail "park: back to a1"
-ok "the hook is a link to .delphi/park.sh, so it runs the version just checked out, on main too"
-rm "$w/.git/hooks/post-checkout" && cp "$w/.delphi/park.sh" "$w/.git/hooks/post-checkout" && [ ! -L "$w/.git/hooks/post-checkout" ] && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
-[ -L "$w/.git/hooks/post-checkout" ] || fail "setup.sh did not replace an old copied hook"
-ok "setup.sh replaces an old copied park.sh hook with the link"
+ok "the hook runs .delphi/park.sh as just checked out, on main too"
+rm "$w/.git/hooks/post-checkout" && cp "$w/.delphi/park.sh" "$w/.git/hooks/post-checkout" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
+ours || fail "setup.sh did not replace an old copied hook"
+rm "$w/.git/hooks/post-checkout" && ln -s "$t/elsewhere/.delphi/park.sh" "$w/.git/hooks/post-checkout" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
+ours || fail "setup.sh did not replace an old link to another checkout's park.sh"
+ok "setup.sh replaces an old copied or linked park.sh hook with its script"
+{ git -C "$w" worktree add -q "$t/park-wt" b1 && git -C "$t/park-wt" checkout -q a3 2>"$t/err" && grep -q "from a3" "$t/err" &&
+  git -C "$w" worktree remove --force "$t/park-wt"; } || fail "a worktree of the clone did not run its own park.sh"
+ok "each worktree of the clone runs the park.sh it just checked out, not the main checkout's"
 rm "$w/.git/hooks/post-checkout" && printf '#!/bin/sh\n' >"$w/.git/hooks/post-checkout" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err"
 { grep -q "another hook" "$t/err" && [ "$(cat "$w/.git/hooks/post-checkout")" = "#!/bin/sh" ]; } || fail "setup.sh replaced another post-checkout hook"
 ok "setup.sh keeps someone else's post-checkout hook and says so"
@@ -396,7 +402,7 @@ commit_on ws/$AN docs/CONTEXT.md "linked update"
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
 ok "setup.sh checks out workspaces: read-only at linked/<branch>, skips itself and bad entries, refreshes on re-run"
-[ "$(git -C "$w" config delphi.$BN.version)" = 0.1.1 ] || fail "setup.sh did not record the version"
+[ "$(git -C "$w" config delphi.$BN.version)" = 0.1.2 ] || fail "setup.sh did not record the version"
 old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
 old_link && echo x >>"$w/linked/main/README.md"
 { ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has uncommitted changes" "$t/err" &&
@@ -414,10 +420,10 @@ ok "a recorded version's migrations don't run again; setup.sh never writes into 
 git -C "$w" config --unset delphi.$BN.version
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
   [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
-  [ "$(git -C "$w" config delphi.$BN.version)" = 0.1.1 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
+  [ "$(git -C "$w" config delphi.$BN.version)" = 0.1.2 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
 ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a read-only copy) and records the version"
 echo "# local" >>"$w/.delphi/switch.sh"
-{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.1.1 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.1.2 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
 ok "setup.sh warns when .delphi/ isn't the version it says"
 
@@ -470,7 +476,7 @@ mkdir -p "$w/.delphi/parked/argos-dev/linked/vcu-dev" "$w/.git/delphi/hv-dev/rep
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed running 0.1.0: $(cat "$t/out")"
 { [ -d "$w/.delphi/parked/$AN/linked/ws/$CN" ] && [ -d "$w/.delphi/parked/$DN/repos/r" ] && [ ! -e "$w/.git/delphi" ] &&
   [ -d "$w/linked/ws/$AN" ] && [ ! -e "$w/linked/argos-dev" ] && ! git -C "$w" config delphi.argos-dev.version >/dev/null &&
-  [ "$(git -C "$w" config "delphi.$CN.version")" = 0.1.1 ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
+  [ "$(git -C "$w" config "delphi.$CN.version")" = 0.1.2 ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "setup.sh re-ran 0.1.0"
 { git -C "$w" config --unset "delphi.$CN.version" && /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "0.1.0 is not safe to re-run"
 ok "0.1.0 moves parked slots (.delphi/parked/<leaf>, .git/delphi/<leaf>), old copies in linked/ and old version records to path names, once"
