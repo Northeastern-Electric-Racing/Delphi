@@ -143,10 +143,21 @@ for p in app argos; do
 done
 ! o show "ws/$BN:.claude/settings.json" | grep -q enabledPlugins || fail "bms-dev enables plugins with none above it"
 ok "each workspace's settings.json enables the default set of every folder above it"
+for p in app argos; do
+  o show "ws/$AN:workspace.yml" | grep -Eq "^  - $p +# default, from " || fail "argos-dev's workspace.yml doesn't list the $p default"
+done
+commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - app   # by hand')"
+(cd "$t/dev" && git fetch -q && git checkout -q -B drop origin/ws/$AN && sed -i.bak '/^  - argos .*# default, from /d' workspace.yml &&
+  rm workspace.yml.bak && git commit -qam "drop the argos default" && git push -q origin HEAD:ws/$AN)
+sync "$AN" >"$t/out" 2>&1 || fail "sync after dropping a default failed: $(cat "$t/out")"
+o show "ws/$AN:workspace.yml" | grep -Eq "^  - argos +# default, from " || fail "dropped default not listed again"
+[ "$(o show "ws/$AN:workspace.yml" | grep -c '^  - app ')" = 1 ] || fail "hand-listed default not folded into the generated line"
+[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate plugins: defaults and .claude/settings.json" ] || fail "no generate commit for the yml"
+ok "refresh lists every default set first under plugins: on ws/*, restoring a removed one and folding in a hand-listed one"
 commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - argos.testing')"
 sync "$AN" >"$t/out" 2>&1 || fail "sync after listing a plugin set failed: $(cat "$t/out")"
 o show "ws/$AN:.claude/settings.json" | grep -q '"argos.testing@delphi": true' || fail "listed set not enabled"
-[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate .claude/settings.json from workspace.yml" ] || fail "no generate commit"
+[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate plugins: defaults and .claude/settings.json" ] || fail "no generate commit"
 o show "propose/$AN:$A/.claude/settings.json" | grep -q argos.testing || fail "proposal lacks the generated settings"
 ok "a set listed under plugins: on ws/* is enabled by refresh's generated settings.json and proposed with it"
 commit_on ws/$AN .claude/settings.json "hand edit"
@@ -220,6 +231,7 @@ expect_bad marketplace-stale ".claude-plugin/marketplace.json is generated" sh -
 expect_bad scope-clash "two folders both have scope argos" sh -c "mkdir -p software/x/argos/plugins/claude/default/.claude-plugin && echo '{}' >software/x/argos/plugins/claude/default/.claude-plugin/plugin.json"
 expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "echo A_pp >software/application-software/plugins/scope"
 expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sed -i.bak 's/"name": ".*"/"name": "x"/' software/application-software/argos/plugins/claude/default/.claude-plugin/plugin.json
+expect_bad plugins-defaults "workspace.yml doesn't list the default set" sed -i.bak '/^  - app .*# default, from /d' $A/workspace.yml
 expect_bad plugins-unknown "lists argos.nope, which isn't a plugin set" sh -c "printf 'plugins:\n  - argos.nope\n' >>$A/workspace.yml"
 expect_bad plugins-entry "bad plugins entry" sh -c "printf 'plugins:\n  - a.b.c\n' >>$A/workspace.yml"
 expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  - a.b\n  - a.b\n' >>$A/workspace.yml"

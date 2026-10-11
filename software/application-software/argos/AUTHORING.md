@@ -12,7 +12,7 @@ full model; this is the Argos-specific short version.
 
 Don't edit `.delphi/`, `.github/workflows/delphi.yml`, or `.claude/settings.json`: Delphi manages
 them (`.delphi/` comes from main's root and sync resets it; `settings.json` is generated from
-`workspace.yml`, so list extra plugin sets under its `plugins:`). Personal settings go in
+`workspace.yml`'s `plugins:`, where CI lists the `app` and `argos` defaults; add other sets below them). Personal settings go in
 `.claude/settings.local.json`.
 
 ## Create a new Argos workspace

@@ -16,7 +16,7 @@
 # `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself, and an
 # optional `plugins:` list of `- <scope>[.<set>]` without duplicates. A project's
 # defaults/workspace.yml is the same without `name:`. The files ci/plugins.sh generates
-# (.claude-plugin/marketplace.json, each workspace's .claude/settings.json) are up to date.
+# (.claude-plugin/marketplace.json, each workspace's plugins: defaults and .claude/settings.json) are up to date.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)

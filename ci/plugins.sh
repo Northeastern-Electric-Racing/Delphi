@@ -6,13 +6,15 @@
 #     (software/application-software/plugins/scope says `app`: app, app.testing); scopes are
 #     lowercase letters, digits and '-', and unique. Each plugin.json's description is copied, and its
 #     name must be that name.
+#   each `harness: claude-code` workspace's workspace.yml `plugins:`: the `default` set of every
+#     folder above the workspace, listed first (`# default, from <folder>/`; a removed line comes
+#     back), then the sets listed by hand.
 #   each `harness: claude-code` workspace's .claude/settings.json: the shared settings below, plus the
-#     `default` set of every folder above the workspace and each set named under `plugins:` in its
-#     workspace.yml, enabled from the delphi marketplace. Never edit it by hand: personal settings go
-#     in .claude/settings.local.json, shared ones here or in workspace.yml.
+#     sets under `plugins:`, enabled from the delphi marketplace. Never edit it by hand: personal
+#     settings go in .claude/settings.local.json, shared ones here or in workspace.yml.
 #   --check writes nothing; it lists each out-of-date file or problem and exits 1 if any.
-# ci/plugins.sh settings <folder> <workspace.yml>: print one workspace's settings.json, from <dir> = .
-#   (sync uses it for ws/* branches, reading workspace.yml from the branch).
+# ci/plugins.sh yml|settings <folder> <workspace.yml>: print one workspace's workspace.yml or
+#   settings.json, from <dir> = . (sync uses them for ws/* branches, reading workspace.yml from the branch).
 set -euo pipefail
 repo=Northeastern-Electric-Racing/Delphi
 
@@ -49,14 +51,37 @@ marketplace() {
   printf '\n  ]\n}\n'
 }
 
+defaults() { # <workspace folder>: the default set of every folder above it, top first
+  local p="" part
+  for part in $(echo "${1%/workspaces/*}" | tr / ' '); do
+    p=${p:+$p/}$part
+    [ ! -f "$p/plugins/claude/default/.claude-plugin/plugin.json" ] || echo "$p/plugins/claude/default"
+  done
+}
+
+yml() { # <folder> <workspace.yml>: the yml with its defaults first under plugins: (added after harness: if missing)
+  local s gen="" names=""
+  [ -f "$2" ] || { echo "plugins: no $2" >&2 && return 1; }
+  for s in $(defaults "$1"); do
+    gen="$gen$(printf '  - %-14s # default, from %s/' "$(name_of "$s")" "${s%/plugins/claude/default}")\\n"
+    names="$names $(name_of "$s")"
+  done
+  awk -v gen="$gen" -v names="$names" -v has="$(grep -c '^plugins:' "$2" || true)" '
+    BEGIN { n = split(names, a, " "); for (i = 1; i <= n; i++) d[a[i]] = 1 }
+    /^plugins:/ { print; if (!done++) printf "%s", gen; s = 1; next }
+    /^[^[:space:]#]/ { s = 0 }
+    s && /^[[:space:]]+-/ { v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+      if ((v in d) || $0 ~ /# default, from /) next }
+    { print }
+    /^harness:/ && !has && gen != "" && !done++ {
+      printf "plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists the `default` set of every folder above first and generates .claude/settings.json\n%s", gen }' "$2"
+}
+
 settings() { # <folder> <workspace.yml>
-  local folder=$1 p="" part e s list="" sep="" index
+  local e s list="" sep="" index
   [ -f "$2" ] || { echo "plugins: no $2" >&2 && return 1; }
   index=$(for s in $(sets); do echo "$(name_of "$s") $s"; done)
-  for part in $(echo "${folder%/workspaces/*}" | tr / ' '); do
-    p=${p:+$p/}$part
-    [ ! -f "$p/plugins/claude/default/.claude-plugin/plugin.json" ] || list="$list $p/plugins/claude/default"
-  done
+  list=" $(defaults "$1" | tr '\n' ' ')"
   while IFS= read -r e; do
     s=$(echo "$index" | awk -v n="$e" '$1 == n { print $2; exit }')
     [ -n "$s" ] || { echo "plugins: $2 lists $e, which isn't a plugin set" >&2 && return 1; }
@@ -64,7 +89,7 @@ settings() { # <folder> <workspace.yml>
   done < <(awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$2")
   printf '{\n  "attribution": {\n    "sessionUrl": false\n  }'
-  if [ -n "$list" ]; then
+  if [ -n "${list// /}" ]; then
     printf ',\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n'
     printf '        "repo": "%s"\n      },\n      "autoUpdate": true\n    }\n  },\n  "enabledPlugins": {' "$repo"
     for s in $list; do printf '%s\n    "%s@delphi": true' "$sep" "$(name_of "$s")" && sep=,; done
@@ -73,11 +98,11 @@ settings() { # <folder> <workspace.yml>
   printf '\n}\n'
 }
 
-if [ "${1:-}" = settings ]; then
-  [ $# -eq 3 ] || { echo "usage: ci/plugins.sh settings <folder> <workspace.yml>" >&2 && exit 2; }
-  settings "$2" "$3"
-  exit
-fi
+case "${1:-}" in yml | settings)
+  [ $# -eq 3 ] || { echo "usage: ci/plugins.sh yml|settings <folder> <workspace.yml>" >&2 && exit 2; }
+  "$1" "$2" "$3"
+  exit ;;
+esac
 check=0
 [ "${1:-}" != --check ] || { check=1 && shift; }
 cd "${1:-.}"
@@ -85,13 +110,13 @@ problems=0
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 
-put() { # <file> <command...>: write <command>'s output to <file> (with --check, report if it differs)
-  local f=$1
-  shift
+put() { # <file> <what's stale> <command...>: write <command>'s output to <file> (with --check, report if it differs)
+  local f=$1 what=$2
+  shift 2
   "$@" >"$tmp" || { problems=$((problems + 1)) && return; }
   cmp -s "$tmp" "$f" && return
   if [ "$check" = 1 ]; then
-    echo "plugins: $f is generated and out of date; run ci/plugins.sh instead of editing it" >&2
+    echo "plugins: $f $what; run ci/plugins.sh" >&2
     problems=$((problems + 1))
   else
     mkdir -p "$(dirname "$f")" && cp "$tmp" "$f" && echo "plugins: wrote $f"
@@ -112,11 +137,12 @@ for s in $(sets); do
   [ "$(field "$s" name)" = "\"$(name_of "$s")\"" ] ||
     { echo "plugins: $s/.claude-plugin/plugin.json: name must be \"$(name_of "$s")\"" >&2 && problems=$((problems + 1)); }
 done
-put .claude-plugin/marketplace.json marketplace
+put .claude-plugin/marketplace.json "is generated and out of date (don't edit it)" marketplace
 for y in $(find software -path '*/workspaces/*/workspace.yml' -type f 2>/dev/null | LC_ALL=C sort); do
   folder=${y%/workspace.yml}
   case "$(dirname "$folder")" in */workspaces) ;; *) continue ;; esac
   [ "$(awk '/^harness:/ { print $2; exit }' "$y")" = claude-code ] || continue
-  put "$folder/.claude/settings.json" settings "$folder" "$y"
+  put "$y" "doesn't list the default set of every folder above first under plugins:" yml "$folder" "$y"
+  put "$folder/.claude/settings.json" "is generated and out of date (don't edit it)" settings "$folder" "$y"
 done
 [ "$problems" = 0 ] || exit 1

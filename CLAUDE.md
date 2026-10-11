@@ -15,7 +15,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its name or
-  its `plugins/scope`) and each workspace's `.claude/settings.json` (never edit
+  its `plugins/scope`), each workspace's `workspace.yml` `plugins:` defaults (the
+  `default` set of every folder above), and its `.claude/settings.json` (never edit
   it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
 - `.delphi/{setup,new-worktree,switch,park}.sh`: the scripts every workspace runs. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.

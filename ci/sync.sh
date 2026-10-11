@@ -5,9 +5,10 @@
 # (software/application-software/argos/workspaces/argos-dev -> software/application-software/argos/argos-dev).
 # CI runs it with no direction (both) on every push to main or ws/**.
 #   refresh: merge main into ws/<name> (-Xsubtree=<folder>), then make its .delphi/ main's root
-#            .delphi/ (a "delphi: sync" commit if that changed it), regenerate its
-#            .claude/settings.json from its workspace.yml and main's plugin sets (ci/plugins.sh; a
-#            "delphi: generate" commit if that changed it), and push if the tree changed. A
+#            .delphi/ (a "delphi: sync" commit if that changed it), list main's default plugin sets
+#            above it under its workspace.yml's plugins: and regenerate its .claude/settings.json from
+#            that (ci/plugins.sh; a "delphi: generate" commit if that changed either), and push if the
+#            tree changed. A
 #            missing ws/<name> starts from ws/<leaf>, the branch's name before workspaces were named
 #            by path, if that exists (so its history and unproposed edits carry over), else is created
 #            as one commit: tree = the folder plus main's .delphi/, parent = main.
@@ -30,7 +31,7 @@ wt=$(mktemp -d)
 mw=$(mktemp -d) # main, for ci/plugins.sh to read the plugin sets from
 git worktree add --quiet --detach "$wt" "$main"
 git worktree add --quiet --detach "$mw" "$main"
-trap 'git worktree remove --force "$wt"; git worktree remove --force "$mw"; rm -f "$wt.settings" "$wt.err"' EXIT
+trap 'git worktree remove --force "$wt"; git worktree remove --force "$mw"; rm -f "$wt.yml" "$wt.settings" "$wt.err"' EXIT
 failed=0 names=" "
 tree() { git -C "$wt" rev-parse --quiet --verify "$1^{tree}" || true; } # empty if <rev> is missing
 
@@ -75,15 +76,16 @@ refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged 
     git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$head" -m "delphi: sync .delphi/ from main" "$t")"
   fi
   if [ "$(awk '/^harness:/ { print $2; exit }' "$wt/workspace.yml")" = claude-code ]; then
-    if ! (cd "$mw" && bash "$here/plugins.sh" settings "$2" "$wt/workspace.yml") >"$wt.settings" 2>"$wt.err"; then
+    if ! (cd "$mw" && bash "$here/plugins.sh" yml "$2" "$wt/workspace.yml" >"$wt.yml" &&
+      bash "$here/plugins.sh" settings "$2" "$wt.yml" >"$wt.settings") 2>"$wt.err"; then
       echo "ws/$1: $(cat "$wt.err"); not refreshed" >&2
       failed=1 ok=0
       return
     fi
-    if ! cmp -s "$wt.settings" "$wt/.claude/settings.json"; then
-      mkdir -p "$wt/.claude" && cp "$wt.settings" "$wt/.claude/settings.json"
-      git -C "$wt" add .claude/settings.json
-      git -C "$wt" commit --quiet -m "delphi: generate .claude/settings.json from workspace.yml"
+    cp "$wt.yml" "$wt/workspace.yml" && mkdir -p "$wt/.claude" && cp "$wt.settings" "$wt/.claude/settings.json"
+    if [ -n "$(git -C "$wt" status --porcelain -- workspace.yml .claude/settings.json)" ]; then
+      git -C "$wt" add workspace.yml .claude/settings.json
+      git -C "$wt" commit --quiet -m "delphi: generate plugins: defaults and .claude/settings.json"
     fi
   fi
   if [ "$(tree HEAD)" != "$(tree "$ws")" ]; then

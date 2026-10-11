@@ -84,8 +84,10 @@ there starts with. These live only on `main`; workspaces read them by listing `m
 Context that the workspaces under an org or project folder share (a skill, its conventions) goes in
 a plugin set of that folder, `plugins/<harness>/<set>/` (`plugins/claude/` for Claude Code; a sister
 folder per other harness), so it has one copy instead of one per workspace. Every workspace gets the
-`default` set of each folder above it; `plugins:` in `workspace.yml` adds others by name (`- <scope>.<set>`).
-`ci/plugins.sh` generates the rest, and `ci/check.sh` fails if either file is out of date:
+`default` set of each folder above it, which `ci/plugins.sh` lists first under `plugins:` in its
+`workspace.yml` (`- argos   # default, from software/application-software/argos/`; a removed line
+comes back); other sets are listed there by hand (`- <scope>.<set>`). `ci/plugins.sh` generates the
+rest, and `ci/check.sh` fails if the list or either file is out of date:
 
 - `.claude-plugin/marketplace.json` at main's root: marketplace `delphi`, one plugin per set, named
   `<scope>` for a folder's `default` set and `<scope>.<set>` for the others (`argos`,
@@ -94,8 +96,8 @@ folder per other harness), so it has one copy instead of one per workspace. Ever
   letters, digits and `-`, unique across the tree, and each `plugin.json` uses its name. (Claude
   Code refuses `/` in plugin names; `.` works, though Claude.ai's marketplace sync wants kebab-case.)
 - Each `harness: claude-code` workspace's `.claude/settings.json`: the shared settings in
-  `ci/plugins.sh`, plus the `delphi` marketplace (with `autoUpdate`) and its sets under
-  `enabledPlugins`. Never edit it by hand: personal settings go in `.claude/settings.local.json`
+  `ci/plugins.sh`, plus the `delphi` marketplace (with `autoUpdate`) and the sets under `plugins:`
+  in `enabledPlugins`. Never edit it by hand: personal settings go in `.claude/settings.local.json`
   (git-ignored by Claude Code), shared ones in `workspace.yml` or the generator. Sync regenerates it
   on every `ws/*` branch (section 3); a PR to `main` that changes a set or a `workspace.yml` runs
   `ci/plugins.sh` itself.
@@ -118,10 +120,11 @@ For every workspace on `origin/main` (or just `<name>`):
    from main's, commit main's over it ("delphi: sync .delphi/ from main", built in a temporary
    index), and push if the tree changed. (`--no-ff` matters: once ws commits are in main, a
    fast-forward would put main's whole tree on the ws branch.) A `.delphi/` edit made on `ws/<name>`
-   is undone here. Then, for a `claude-code` workspace, regenerate `.claude/settings.json` from the
-   branch's `workspace.yml` and main's plugin sets (`ci/plugins.sh settings`) and commit it if it
-   changed ("delphi: generate .claude/settings.json from workspace.yml"), so a set added under
-   `plugins:` is enabled and a hand edit is undone. A set that main doesn't have is reported and that
+   is undone here. Then, for a `claude-code` workspace, list main's default sets above it under the
+   branch's `workspace.yml` `plugins:` and regenerate `.claude/settings.json` from that
+   (`ci/plugins.sh yml`, `settings`), and commit them if they changed ("delphi: generate plugins:
+   defaults and .claude/settings.json"), so a new default set or one added under `plugins:` is
+   enabled and a hand edit is undone. A set that main doesn't have is reported and that
    workspace is skipped.
 2. **Propose** (`ws/<name>` → PR to main). Build `propose/<name>` = `origin/main` +
    `git merge --no-ff -Xsubtree=<folder> ws/<name>`, with `<folder>/.delphi/` dropped from the result
