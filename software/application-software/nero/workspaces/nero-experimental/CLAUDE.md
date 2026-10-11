@@ -47,4 +47,4 @@ Open draft PRs against `develop` with `/open-pr`, and refresh them with `/update
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Nero-2.0` via the `gh` CLI.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Nero-2.0` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `application-software` plugin, with Nero's specifics in the `nero` plugin.

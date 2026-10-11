@@ -13,7 +13,8 @@ merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits 
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
 only on main. Otherwise nothing is shared or generated between workspaces: a project's `defaults/` is
-copied once at creation, and `workspaces:` only checks out other branches to read.
+copied once at creation, `workspaces:` only checks out other branches to read, and context shared by
+the workspaces under a folder ships as harness plugins (section 2) that each workspace enables.
 
 ```
    ┌───────────────────────────────┐
@@ -45,6 +46,8 @@ copied once at creation, and `workspaces:` only checks out other branches to rea
 
 ```
 software/<org>/…/<project>/           README.md  AUTHORING.md  defaults/   (optional, main only)
+software/<org>/…/plugins/<harness>/   a plugin for the workspaces under that folder (optional, main only)
+.claude-plugin/marketplace.json       lists every Claude Code plugin under software/
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
 .delphi/                              {setup,new-worktree,switch,park,version}.sh  manifest.yml  versions
@@ -74,6 +77,15 @@ The folder holding a `workspaces/` directory is a project folder. It may hold sh
 (`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`: files a new workspace
 there starts with. These live only on `main`; workspaces read them by listing `main` under `workspaces:`. A
 `defaults/workspace.yml` is checked as a manifest (without `name:`) but is not a workspace.
+
+Context that every workspace under an org or project folder needs (a skill, its conventions) goes in
+that folder's `plugins/<harness>/` (`plugins/claude/` for Claude Code; a sister folder per other
+harness), so it has one copy instead of one per workspace. Claude Code plugins are listed in main's
+root `.claude-plugin/marketplace.json` (marketplace `delphi`, each plugin named after its folder);
+a workspace enables the ones it needs in `.claude/settings.json` (`extraKnownMarketplaces` with
+`autoUpdate`, plus `enabledPlugins`). Claude installs a plugin from `main` by copying only its
+folder, so it can't use files outside it; at run time its skills read the workspace as usual. With
+no `version`, each commit to `main` that touches a plugin is an update.
 
 ## 3. Sync (`ci/sync.sh [refresh|propose] [<name>]`; no direction = both)
 

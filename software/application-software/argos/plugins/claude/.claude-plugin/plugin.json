@@ -1,0 +1,7 @@
+{
+  "name": "argos",
+  "description": "Argos specifics shared by every Argos workspace.",
+  "author": {
+    "name": "Northeastern Electric Racing"
+  }
+}
