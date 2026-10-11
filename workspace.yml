@@ -1,5 +1,9 @@
 name: software/application-software/nero/nero-experimental
 harness: claude-code
+plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists the `default` set of every folder above first and generates .claude/settings.json
+  - app            # default, from software/application-software/
+  - nero           # default, from software/application-software/nero/
+  # - argos.testing   # the set at software/application-software/argos/plugins/<harness>/testing/
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   nero: https://github.com/Northeastern-Electric-Racing/Nero-2.0.git
