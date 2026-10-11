@@ -8,8 +8,9 @@
 # run, with pushes disabled. Each entry under `workspaces:` (`- ws/<name>` or `- main`, a workspace
 # being named by its place in the tree) gets the same kind of copy of that branch of this clone's
 # origin (Delphi), at linked/<branch>; to edit one, switch this clone to it (.delphi/switch.sh). Adds /repos/, /worktrees/, /references/ and
-# /linked/ to this clone's .git/info/exclude, and symlinks its post-checkout hook to .delphi/park.sh,
-# which is on every branch (unless another hook is there) so switching to another workspace or main parks them. First
+# /linked/ to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
+# every branch) as just checked out in the worktree that checked out (unless another hook is there), so switching
+# to another workspace or main parks them. First
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
 # is `git config delphi.<name>.version`, 0.0.0 if unset), stopping at one that fails, and warns if
 # .delphi/ isn't exactly the version it says (.delphi/version.sh). Safe to re-run. Keep it bash 3.2
@@ -105,11 +106,15 @@ for d in /repos/ /worktrees/ /references/ /linked/; do
   grep -qxF "$d" "$exclude" 2>/dev/null || echo "$d" >>"$exclude"
 done
 hook=$(git rev-parse --git-path hooks/post-checkout)
-link=$(readlink "$hook" 2>/dev/null || true) # ours: a link to a park.sh, or an old copy of one
+link=$(readlink "$hook" 2>/dev/null || true) # ours: this script, or an old link to (or copy of) a park.sh
 if [ "${link%/.delphi/park.sh}" != "$link" ] || { [ -z "$link" ] && { [ ! -e "$hook" ] || grep -qF '.delphi/park.sh' "$hook"; }; }; then
-  target=$PWD/.delphi/park.sh # relative when the hook is in .git/hooks, so moving the clone keeps it
-  [ "$hook" != .git/hooks/post-checkout ] || target=../../.delphi/park.sh
-  mkdir -p "$(dirname "$hook")" && rm -f "$hook" && ln -s "$target" "$hook"
+  # A script, not a link: the clone's worktrees share one hook, and a link would run one checkout's park.sh for all
+  mkdir -p "$(dirname "$hook")" && rm -f "$hook" && cat >"$hook" <<'EOF3' && chmod +x "$hook"
+#!/bin/sh
+# Delphi's post-checkout hook, written by .delphi/setup.sh: runs .delphi/park.sh as just checked out,
+# in the worktree that checked out (git runs hooks at its root), so each runs its own branch's.
+[ ! -f .delphi/park.sh ] || exec bash .delphi/park.sh "$@"
+EOF3
 else
   echo "setup: $hook is another hook; not installing .delphi/park.sh, so checkouts won't park repos/" >&2
 fi
