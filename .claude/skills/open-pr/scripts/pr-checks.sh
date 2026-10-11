@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# pr-checks.sh [<base>]: pre-PR checks for open-pr, run from the branch's worktree. Prints one
+# pr-checks.sh <worktree> [<base>]: pre-PR checks for open-pr on that worktree. Prints one
 # PASS/FAIL/SKIP line per check: clean tree, commit subjects match "#<ticket> - ...", frontend
 # prettier + ng lint (only if angular-client/ changed), and no merge conflicts with <base>
 # (default origin/develop, fetched first). Exits 1 if any check fails.
 set -euo pipefail
-base=${1:-origin/develop} fail=0
+cd "${1:?usage: pr-checks.sh <worktree> [<base>]}"
+base=${2:-origin/develop} fail=0
 res() { echo "$1 $2"; [ "$1" != FAIL ] || fail=1; }
 git fetch -q origin "${base#origin/}" 2>/dev/null || true
 

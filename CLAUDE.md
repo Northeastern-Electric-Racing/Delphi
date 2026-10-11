@@ -2,6 +2,8 @@
 
 You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Delphi workspaces (or `main`) under `links:` in `workspace.yml` are read-only copies at `linked/<name>/` for reading their context; change what's checked out with the `setup-workspace` skill. To work in another workspace, switch this clone to it (`switch-workspace` skill). Park rough notes with the `journal` skill. Work here unless the task clearly belongs to another project.
 
+Always work from the workspace root (this clone's top, where `workspace.yml` is); the layout exists so one session can reach every worktree from there. Name worktrees by path: `git -C worktrees/argos/<branch> …` runs git there without moving, and a one-off subshell like `(cd worktrees/argos/<branch>/angular-client && npx ng lint)` runs anything else. If you `cd` into a worktree to look closely at something, `cd` back to the root as soon as you're done. Skills and their scripts take branches or worktree paths from the root.
+
 # NER Software conventions
 
 ## Branch & Commit Conventions
@@ -19,29 +21,22 @@ You're in Delphi workspace `argos-dev` (branch `ws/argos-dev`); code repos are c
 
 Argos is a real-time telemetry platform for Northeastern Electric Racing (NER). Angular 19 frontend (`angular-client/`) and Rust backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker config in `siren-base/`.
 
-The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths below are relative to any Argos worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
+The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Repo paths below (`angular-client/`, `scylla-server/`, `compose/`) are inside an Argos worktree. The ticket number is the branch's leading number (`533-csv-upload` → `#533`).
 
 ## Worktrees
 
 - `worktrees/argos/develop/` mirrors `develop`: run anything there (`npm ci`, tests, the backend, `/run-local`), but never edit code, branch, or commit there. The only git operations there are fetch and fast-forward.
-- To change code, make a worktree on its own branch with the `new-worktree` skill, based on `origin/develop`: `bash .delphi/new-worktree.sh argos <branch> origin/develop`. Use the ticket's branch, or a `throwaway-{kebab-case-title}` branch to experiment without one. If a throwaway turns into real work, file a ticket (`create-ticket`), make the ticket's worktree from `origin/develop`, and in it run `git merge --squash throwaway-{kebab-case-title}` then `/commit`, so the work lands as one commit in the ticket format.
-- A new worktree has no `node_modules`: run `npm ci` in its `angular-client/` before testing or running the client.
+- To change code, make a worktree on its own branch with the `new-worktree` skill, based on `origin/develop`. Use the ticket's branch, or a `throwaway-{kebab-case-title}` branch to experiment without one. If a throwaway turns into real work, file a ticket (`create-ticket`), make the ticket's worktree from `origin/develop`, run `git -C worktrees/argos/<ticket-branch> merge --squash throwaway-{kebab-case-title}`, then `/commit`, so the work lands as one commit in the ticket format.
+- A new worktree has no `node_modules`; `run-local` and `/implement` install them.
 
 ## Local Development
 
-- The backend stack (Postgres, MQTT, Scylla server, Calypso simulator) runs in Docker via the compose files in `compose/`, driven by `argos.sh`.
-- Pick the compose profile by what changed:
-  - Frontend-only changes: `./argos.sh client-dev up` runs everything in Docker, including scylla-server.
-  - Changes to `scylla-server/`: `./argos.sh scylla-dev up` (everything except scylla-server) plus `cd scylla-server && cargo run` in a separate terminal, so you are not testing a stale binary.
-- Frontend client: prefer the `run-local` skill (starts it on the next free port and checks the backend). Direct: `cd angular-client && npm run start` (default port 4200); first compile takes ~10-60s.
+- Run the app with the `run-local` skill, passing the branches or worktrees you're looking at (a PR's or ticket's, not `develop` unless asked). It starts the backend if it's down, on the right compose profile (`client-dev` runs everything in Docker; `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each worktree's client on its own port.
 - The shell workflow (`argos.sh`, the `run-local`/`verify-*` skills, and helpers like `lsof`/`pkill`) assumes a Unix shell. On Windows, run everything from WSL or Git Bash, not `cmd`/PowerShell.
 
 ## Testing
 
-- Frontend: `cd angular-client && ng test` (Karma/Jasmine).
-- Backend: `cd scylla-server && cargo test`.
-- Lint and format (frontend): `npx prettier --check "src/**/*.{ts,html,scss}" && npx ng lint`.
-- Build (backend): `cargo build`.
+The checks (frontend tests, lint and format; backend build and tests) and how to run them from the root are in `/implement`; `/open-pr` reruns lint and format before a PR.
 
 ## Workflow
 
