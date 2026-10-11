@@ -14,6 +14,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
 - `.delphi/{setup,new-worktree,switch,park}.sh`: the scripts every workspace runs. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
+- `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
+  version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
+  cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
   `.github/workflows/delphi.yml` every workspace carries unchanged, and default `new-worktree`, `switch-workspace`, `setup-workspace`,
   and `journal` skills.
@@ -31,5 +34,11 @@ source of truth; `docs/goals.md` lists what any change must keep.
   features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
 - Changing the workflow: update the template, `.github/`, and every workspace copy in the same PR,
   or `ci/check.sh` fails. `.delphi/*.sh` has one copy, at the root.
+- Changing any file `.delphi/manifest.yml` lists makes a new version: bump `version:` (PATCH for a
+  fix, MINOR for something new, MAJOR when clones need cleanup, MINOR while 0.x), then append
+  `<what bash .delphi/version.sh prints> <what changed>` to `.delphi/versions`. Only add lines there.
+- When people's clones need cleanup, ship a migration rather than instructions: safe to re-run, a no-op
+  on a fresh clone, run from the workspace root, deletes only what nothing is lost from and otherwise
+  exits 1 saying what to do. Never edit a released one.
 - `bash tests/e2e.sh` and `ci/check.sh` must pass. Add a test there for every behavior change.
 - Never test against real GitHub repos or this checkout's origin; use the sandbox in `tests/e2e.sh`.

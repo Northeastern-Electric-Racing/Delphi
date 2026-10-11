@@ -7,7 +7,7 @@
 #            missing ws/<name> is created as one commit: tree = the folder plus main's .delphi/,
 #            parent = main.
 #   propose: build propose/<name> = main + a subtree merge of ws/<name> without <folder>/.delphi/
-#            (managed on main); if that changes main and isn't already on propose/<name>, check it,
+#            (managed on main); if that changes main and isn't already on propose/<name>, check it (against main),
 #            force-push it, and open or update its PR.
 # A conflict is reported with its files and that workspace skipped; exits 1 if any failed. ws/*
 # branches without a folder get a notice, never deleted. Merges run in a temporary worktree.
@@ -83,7 +83,7 @@ propose() { # <name> <folder>: PR the worktree's ws/<name> into main if it chang
   [ "$t" = "$(tree HEAD)" ] ||
     git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
   case "$(tree HEAD)" in "$(tree "$main")" | "$(tree "refs/remotes/origin/propose/$1")") return ;; esac
-  "$wt/ci/check.sh" "$wt" || { echo "ws/$1: check failed; not proposed" >&2 && failed=1 && return; }
+  "$wt/ci/check.sh" "$wt" "$main" || { echo "ws/$1: check failed; not proposed" >&2 && failed=1 && return; }
   git -C "$wt" push --quiet --force origin "HEAD:refs/heads/propose/$1"
   body="Proposes \`ws/$1\` into \`$2/\` (opened by ci/sync.sh; see README).
 

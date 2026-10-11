@@ -114,13 +114,16 @@ o diff --quiet "main:$B" ws/bms-dev -- ":!.delphi" || fail "bms-dev drifted"
 ok "unrelated main changes leave other ws branches' trees alone"
 
 # --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
-commit_on main .delphi/new-worktree.sh "# main edit"
+(cd "$t/dev" && git fetch -q && git checkout -q -B release origin/main && echo "# main edit" >>.delphi/new-worktree.sh &&
+  sed -i.bak 's/^version: .*/version: 0.0.2/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
+  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.0.2" &&
+  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.0.2 failed"
 sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out")"
 for n in argos-dev bms-dev; do
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
 done
 [ "$(o log -1 --format=%s ws/argos-dev)" = "delphi: sync .delphi/ from main" ] || fail "no sync commit on ws/argos-dev"
-ok "a main change to .delphi/ reaches every ws/* branch on refresh"
+ok "a main change to .delphi/, released as a new version, reaches every ws/* branch on refresh"
 commit_on ws/argos-dev .delphi/setup.sh "# ws edit"
 sync argos-dev >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "$t/out")"
 [ "$(o rev-parse ws/argos-dev:.delphi)" = "$(o rev-parse main:.delphi)" ] || fail "ws edit to .delphi/ not reset"
@@ -156,12 +159,12 @@ ok "removed workspace: notice printed, branch kept"
 # --- 7. check.sh: real layout passes; each bad layout fails
 "$src/ci/check.sh" "$src" >/dev/null || fail "check fails on the real repo"
 ok "check passes on the real repo"
-expect_bad() { # <label> <expected message> <setup command...>: copy the real layout, break it, check fails
+expect_bad() { # <label> <expected message> <setup command...>: copy the real layout, commit it, break it, check fails against that commit
   local d=$t/chk-$1 label=$1 want=$2
   shift 2
   rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$d/"
-  (cd "$d" && "$@")
-  if "$src/ci/check.sh" "$d" 2>"$t/err" >/dev/null; then fail "check passed: $label"; fi
+  (cd "$d" && git init -q && git add -A && git commit -qm base && "$@" && git add -A)
+  if "$src/ci/check.sh" "$d" HEAD 2>"$t/err" >/dev/null; then fail "check passed: $label"; fi
   grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
   ok "check fails: $label ($want)"
 }
@@ -179,7 +182,23 @@ expect_bad duplicate "is also used by" sh -c "mkdir -p software/x/workspaces && 
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
 expect_bad bad-name "name must be" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
-expect_bad root-script-missing ".delphi/switch.sh is missing" rm .delphi/switch.sh
+expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
+expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
+expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
+expect_bad not-bumped "changed since 0.0.1: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
+expect_bad bumped-no-line "add \`0.0.2 " sed -i.bak 's/^version: .*/version: 0.0.2/' .delphi/manifest.yml
+release() { # <version> [<migration slug>]: bump to <version> (with an empty migration) and add its line, as a release would
+  [ -z "${2:-}" ] || printf '#!/usr/bin/env bash\nset -euo pipefail\n' >".delphi/migrations/$1-$2.sh"
+  sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
+    echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
+}
+expect_bad migration-patch "0.0.2 has a migration, so it must bump MINOR" release 0.0.2 x
+expect_bad version-down "0.0.0 is not above 0.0.1" release 0.0.0
+expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
+expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
+expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.1.0-x.sh"
+expect_bad history-rewritten "only add lines" sed -i.bak 's/linked/LINKED/' .delphi/versions
+expect_bad released-migration-changed "add a new version's migration instead" sh -c "echo '# x' >>.delphi/migrations/0.0.1-linked-worktrees-to-clones.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
 expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/defaults/workspace.yml"
 expect_bad defaults-named-workspace "defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/defaults/.delphi && cp -R $A/. software/x/workspaces/defaults/"
@@ -195,7 +214,7 @@ for r in lib1 lib2; do
 done
 def=$(git -C "$t/lib1" branch --show-current)
 git clone -q -b ws/argos-dev "$t/origin.git" "$t/ws"
-printf 'harness: claude-code\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
+printf 'name: argos-dev\nharness: claude-code\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
   "$t/lib1.git" "$t/lib2.git" >"$t/ws/workspace.yml"
 /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed"
 /bin/bash "$t/ws/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh re-run failed"
@@ -216,14 +235,15 @@ w=$t/legacy && git clone -q -b ws/argos-dev "$t/origin.git" "$w" && cp "$t/ws/wo
 ok "setup.sh warns and carries on when repos/<repo> is an older plain clone"
 git clone -q -c core.autocrlf=true -b ws/argos-dev "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
-/bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh fails with core.autocrlf=true"
+/bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh fails with core.autocrlf=true"
+! grep -q "as released" "$t/err" || fail "core.autocrlf=true changed .delphi/'s version hash"
 ok "setup.sh runs in a core.autocrlf=true clone (Git Bash default), thanks to .gitattributes"
 
 # --- 8b. references-git: shallow, detached, push-disabled checkouts under references/, refreshed on re-run
 git -C "$t/lib2" tag lib2@v1 && git -C "$t/lib2" commit -q --allow-empty -m "after v1" && git -C "$t/lib2" push -q "$t/lib2.git" --all && git -C "$t/lib2" push -q "$t/lib2.git" --tags
 git -C "$t/lib1" commit -q --allow-empty -m "lib1 two" && git -C "$t/lib1" push -q "$t/lib1.git" --all
 w=$t/refs && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
-printf 'harness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s lib2@v1  # pinned, monorepo-style tag\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
+printf 'name: argos-dev\nharness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s lib2@v1  # pinned, monorepo-style tag\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed with references-git: $(cat "$t/out")"
 [ "$(git -C "$w/references/lib1" rev-parse HEAD)" = "$(git -C "$t/lib1" rev-parse HEAD)" ] || fail "lib1 reference not at default branch"
 [ "$(git -C "$w/references/lib2" rev-parse HEAD)" = "$(git -C "$t/lib2" rev-parse 'lib2@v1^{commit}')" ] || fail "lib2 reference not at its pin"
@@ -341,7 +361,7 @@ git init -q "$t/code" && git -C "$t/code" commit -q --allow-empty -m one && git 
   git -C "$t/code" branch develop && git -C "$t/code" commit -q --allow-empty -m two
 def=$(git -C "$t/code" branch --show-current)
 w=$t/nw && git clone -q -b ws/bms-dev "$t/origin.git" "$w"
-printf 'harness: claude-code\nrepos:\n  code: %s\n' "$t/code" >"$w/workspace.yml"
+printf 'name: argos-dev\nharness: claude-code\nrepos:\n  code: %s\n' "$t/code" >"$w/workspace.yml"
 bash "$w/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed for new-worktree test"
 nw() { bash "$w/.delphi/new-worktree.sh" "$@"; }
 [ "$(nw code 1-new)" = "$w/worktrees/code/1-new" ] || fail "new-worktree path"
@@ -368,10 +388,30 @@ commit_on ws/argos-dev docs/CONTEXT.md "linked update"
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
 ok "setup.sh checks out links: read-only under linked/, skips itself and bad names, refreshes on re-run"
-rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main
-bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err"
-{ grep -q "linked/main is an old link.sh worktree" "$t/err" && [ -f "$w/linked/main/.git" ]; } || fail "old link.sh worktree not reported: $(cat "$t/err")"
-ok "setup.sh reports an old link.sh worktree in linked/ and leaves it alone"
+[ "$(git -C "$w" config delphi.bms-dev.version)" = 0.0.2 ] || fail "setup.sh did not record the version"
+old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.bms-dev.version; }
+old_link && echo x >>"$w/linked/main/README.md"
+{ ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has uncommitted changes" "$t/err" &&
+  grep -qx x <(tail -n 1 "$w/linked/main/README.md") && ! git -C "$w" config delphi.bms-dev.version >/dev/null; } ||
+  fail "a failing migration did not stop setup.sh with nothing lost: $(cat "$t/err")"
+git -C "$w/linked/main" checkout -q README.md && git -C "$w/linked/main" commit -q --allow-empty -m "detached work"
+{ ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has commits on no branch" "$t/err" &&
+  [ "$(git -C "$w/linked/main" log -1 --format=%s)" = "detached work" ]; } || fail "0.0.1 deleted commits on no branch: $(cat "$t/err")"
+git -C "$w/linked/main" checkout -q --detach origin/main
+ok "a migration that can't finish safely stops setup.sh, keeps what it would lose, and records nothing"
+git -C "$w/linked/main" checkout -q README.md && git -C "$w" config delphi.bms-dev.version 0.0.1
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && [ -f "$w/linked/main/.git" ] && grep -q "linked/main is a worktree" "$t/err"; } ||
+  fail "a migration ran again, or setup.sh wrote into a worktree: $(cat "$t/err")"
+ok "a recorded version's migrations don't run again; setup.sh never writes into a worktree in linked/"
+git -C "$w" config --unset delphi.bms-dev.version
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating bms-dev to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
+  [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
+  [ "$(git -C "$w" config delphi.bms-dev.version)" = 0.0.2 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
+ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a read-only copy) and records the version"
+echo "# local" >>"$w/.delphi/switch.sh"
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.0.2 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
+git -C "$w" checkout -q .delphi/switch.sh
+ok "setup.sh warns when .delphi/ isn't the version it says"
 
 # --- 12b. switch.sh: refuses a dirty root; switches workspaces (parking and restoring), fast-forwards, sets up; main too
 (cd "$t/dev" && git fetch -q && git checkout -q -B sw origin/ws/argos-dev &&
@@ -399,7 +439,7 @@ ok "switch.sh refuses a dirty root, parks and restores workspaces, fast-forwards
 
 # --- 13. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
-  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/.delphi/*.sh ||
+  shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/.delphi/*.sh "$src"/.delphi/migrations/*.sh ||
     fail "shellcheck"
   ok "shellcheck clean"
 fi

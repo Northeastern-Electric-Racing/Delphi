@@ -45,7 +45,8 @@ copied once at creation, and `links:` only checks out other branches to read.
 software/<org>/…/<project>/           README.md  AUTHORING.md  defaults/   (optional, main only)
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
-.delphi/                              {setup,new-worktree,switch,park}.sh  .gitattributes: on every ws/* root
+.delphi/                              {setup,new-worktree,switch,park,version}.sh  manifest.yml  versions
+                                      migrations/  .gitattributes  .gitignore: on every ws/* root
 ci/sync.sh  ci/check.sh               CI scripts
 tools/new-workspace.sh                new workspace as a PR
 templates/workspace/                  what new-workspace copies
@@ -59,9 +60,9 @@ optional `repos:` map of `<name>: <git-url>`, and an optional `references-git:` 
 `<name>: <git-url> [<ref>]` (names unique across both maps), and an optional `links:` list of
 `- <workspace>` or `- main` (no duplicates, not itself). The name is lowercase letters, digits,
 `-`; unique repo-wide. Workspaces never nest; no symlinks under
-`software/`. The root `.delphi/` has the four scripts, and no workspace folder (nor the template)
-has a `.delphi/` of its own. Each workspace's `.github/workflows/delphi.yml` equals the template's,
-and the template's equals main's. `ci/check.sh` enforces all of this and lists every problem.
+`software/`. The root `.delphi/` holds the scripts and the version files (section 5b), and no
+workspace folder (nor the template) has a `.delphi/` of its own. Each manifest file outside
+`.delphi/` (the workflow) is the same at main's root, in the template, and in every workspace. `ci/check.sh` enforces all of this and lists every problem.
 `.gitattributes` (`eol=lf`, in `.delphi/` and each workspace) keeps the scripts runnable in Git Bash
 clones.
 `.github/CODEOWNERS` assigns reviewers per org folder.
@@ -106,7 +107,7 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 
 ## 5. `.delphi/setup.sh` (on every branch; does nothing on main, which has no `workspace.yml`)
 
-Reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
+First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
 `repos/<name>`, then checks out its default branch as the first worktree,
 `worktrees/<name>/<default-branch>/` (re-created if missing). Adds `/repos/` and `/worktrees/` to
 the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
@@ -146,6 +147,30 @@ references, links) and re-running setup.
 The template's `journal` skill parks rough notes in `.journal/` at the workspace root (its
 `capture.sh` adds `/.journal/` to `.git/info/exclude`) and exports them through other skills.
 
+## 5b. Versions and migrations
+
+Delphi's own files, the ones identical on main and every `ws/*` branch, are listed in
+`.delphi/manifest.yml` (`files:`, itself included), under a `version:` that is MAJOR.MINOR.PATCH:
+PATCH for fixes and wording, MINOR for something new that existing clones need nothing for, MAJOR
+(MINOR while 0.x) when clones need cleanup. `.delphi/version.sh` prints `<version> <hash>`, the hash
+covering the listed files' paths and contents as git stores them (line endings don't change it).
+`.delphi/versions` has one line per version, `<version> <hash> <what changed>`, oldest first, and is
+the one file in `.delphi/` outside the hash. `ci/check.sh` requires: the manifest lists itself and
+every file in `.delphi/` but `versions`; the last line of `versions` is the current
+`<version> <hash>` (so any change to a listed file, the manifest included, needs a new version);
+versions rise; and, against main in CI, `versions` only gains lines and released migrations stay as
+they are.
+
+A version whose clones need cleanup ships `.delphi/migrations/<version>-<slug>.sh` and bumps MAJOR
+(MINOR while 0.x; `check.sh` enforces it). `setup.sh` runs, oldest first, each migration above the
+workspace's recorded version, `git config delphi.<name>.version` in the clone (`0.0.0` if unset),
+from the workspace root, recording each as it succeeds and then the current version; it stops at
+one that fails, so the next run retries it. Records are per workspace because the state migrations
+fix sits in each workspace's own checkouts, parked ones included: a parked workspace migrates when
+it's switched back to (`switch.sh` runs setup). Migrations must be safe to re-run, do nothing on a
+fresh clone, and delete only what nothing is lost from, stopping with what to do otherwise. `setup.sh`
+also warns when `.delphi/` isn't exactly the version it says (edited in the clone).
+
 ## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
 
 Validates the name (format, not on main, no leftover `ws/<name>`), copies `templates/workspace/`
@@ -156,7 +181,7 @@ creates `ws/<name>` once it merges.
 
 ## 7. CI (`.github/workflows/delphi.yml`)
 
-- `check`: PRs to main, read-only token, runs `ci/check.sh`.
+- `check`: PRs to main, read-only token, full history, runs `ci/check.sh . origin/main`.
 - `sync`: pushes to main or `ws/**`; checks out main (scripts never come from a ws branch) with full
   history, sets the bot identity, runs `ci/sync.sh` (contents + pull-requests write; one run at a
   time).

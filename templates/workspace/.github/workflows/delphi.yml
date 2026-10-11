@@ -1,8 +1,8 @@
 # Delphi CI (docs/design.md). This file is at main's root and, identically, at the root of every
 # ws/<name> (GitHub runs a push's workflow from the pushed commit, so ws pushes need their own copy).
-# PRs to main: ci/check.sh. Pushes to main or ws/**: ci/sync.sh (refresh + propose), always run from
-# main. Pushes and PRs made with GITHUB_TOKEN trigger no workflows: no loops, and CI-opened PRs
-# don't run `check` (sync.sh runs it itself).
+# PRs to main: ci/check.sh, against main (so released versions stay as they are). Pushes to main or
+# ws/**: ci/sync.sh (refresh + propose), always run from main. Pushes and PRs made with GITHUB_TOKEN
+# trigger no workflows: no loops, and CI-opened PRs don't run `check` (sync.sh runs it itself).
 name: delphi
 on:
   pull_request:
@@ -18,8 +18,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - run: ci/check.sh
+      - run: ci/check.sh . origin/main
   sync:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
