@@ -77,8 +77,16 @@ To change one, switch to it instead.
 The workspace's name is its folder name (unique repo-wide), repeated in `name:` so a checkout knows
 which workspace it is. Every other file in the folder is the workspace's own, at its normal harness
 path, except `.github/workflows/delphi.yml` (a copy of the template's). The scripts, `.delphi/*.sh`
-(`setup.sh`, `new-worktree.sh`, `switch.sh`, `park.sh`), live once at main's root: sync puts
+(`setup.sh`, `new-worktree.sh`, `switch.sh`, `park.sh`, `version.sh`), live once at main's root: sync puts
 `.delphi/` on every `ws/*` branch, so change them only through PRs to main.
+
+## Versions
+
+`.delphi/manifest.yml` lists Delphi's own files under a `version:` (MAJOR.MINOR.PATCH), and
+`.delphi/versions` records each version's hash of them; `bash .delphi/version.sh` prints this
+checkout's. Changing any listed file is a new version, and `ci/check.sh` says what line to add. When
+a version needs cleanup in people's clones, it ships `.delphi/migrations/<version>-<slug>.sh`, which
+`setup.sh` runs once per workspace (`git config delphi.<name>.version` records how far each is).
 
 ## New workspace
 

@@ -14,4 +14,5 @@ bash .delphi/setup.sh
 - Links are for reading: never edit, branch, or push them. To change a linked workspace or main, switch to it (`switch-workspace` skill).
 - `linked/main/` holds this workspace's project folder (shared context, `AUTHORING.md`, `defaults/`), the folder above `workspaces/<this-name>/`: `git -C linked/main ls-files '*/workspaces/<this-name>/workspace.yml'`. List workspaces: `git branch -r --list 'origin/ws/*'`.
 - `workspace.yml` is shared: change it on a branch and open a PR into `ws/<this-name>`. For a one-off look, add the entry, run setup, then `git restore workspace.yml`.
-- Setup never deletes. A removed entry's `linked/<name>/`, `references/<name>/`, or repo store and worktrees stay until you delete them (ask first).
+- Setup never deletes what you'd lose. A removed entry's `linked/<name>/`, `references/<name>/`, or repo store and worktrees stay until you delete them (ask first).
+- When Delphi releases a version that needs cleanup in clones, setup runs its migration first (`.delphi/migrations/`), once per workspace. A migration removes only what nothing is lost from, and otherwise stops setup with what to do: tell the user, do it with their go-ahead, and re-run.
