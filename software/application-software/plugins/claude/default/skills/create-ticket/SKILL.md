@@ -22,17 +22,27 @@ idea → spikes → epic → dev work
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes explore work, so they get no issue type; bug, feature, and task are issue types, never labels.
 
+## Writing
+
+How every ticket reads, on any project:
+
+- Short and plain. Write for someone new to the project: explain project-specific terms, and use the project's vocabulary (its `ticket-conventions` says where it lives; check the code for current names).
+- Outcomes, not implementation: say what changes and why, not how to build it. A rationale gives the reasoning, not a history of the problem.
+- No prescriptions on ideas and spikes. Ideas name open options to weigh, not a plan or a recommended pick; spikes state what to learn and leave the how to whoever picks it up.
+- Facts, not instructions: Notes and context transfer hold facts (where code lives, current behavior, constraints, links), not steps or a proposed solution. Context transfer (optional on spikes, epics, and dev work) starts with a short summary, then the raw context.
+- Unknowns stay open questions in Notes; don't guess.
+- Title: concise and imperative, no prefixes.
+- Requirements: clear, broad checkboxes, each a testable outcome rather than an implementation step; 3-5, never more than 7. If it needs more, split the ticket.
+- Backticks: at most three inline uses per body; name files and identifiers in plain text. Diagram and context-transfer blocks don't count.
+- Size: keep ideas short; one small enough to just try is a spike.
+
 ## Draft
 
-- Check the code first: the work may be done or already tracked. Leave unknowns as open questions in Notes.
-- Title: concise and imperative, no prefixes.
-- Short and plain; explain project-specific terms. One `### <field label>` per field in template order; omit empty optional fields.
-- Requirements: clear, broad checkboxes, each an outcome rather than an implementation step; 3-5, never more than 7. If it needs more, split the ticket.
+- Check the code first: the work may be done or already tracked.
+- One `### <field label>` per field in template order, following each field's description; omit empty optional fields.
 - Diagrams: required on epics, optional on dev work. The project's `ticket-conventions` says what they show.
-- Backticks: at most three inline uses per body; name files and identifiers in plain text. Diagram and context-transfer blocks don't count.
-- No prescriptions on ideas and spikes: say what to explore and why, never how to build it. Context transfer (optional on spikes, epics, and dev work) starts with a short summary, then raw facts, not instructions or a proposed solution.
 - Labels: the template's category (`idea`, `spike`, `epic`, `dev work`), one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it, including rewrites), and at least one of the project's area labels.
-- Rewriting an old ticket: keep its intent and assignees; update vocabulary (check the code), labels, issue type, and parent.
+- Rewriting an old ticket: keep its intent and assignees; bring it up to these rules and update vocabulary, labels, issue type, and parent.
 - Folding one ticket into another: add it as a requirement on the target, then close it as not planned. Every close gets a one-line comment saying why.
 
 ## File
