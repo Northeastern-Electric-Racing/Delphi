@@ -1,12 +1,14 @@
 ---
 name: run-local
-description: Bring up the local Argos environment for running or testing — Docker backend (right profile for what changed) + Angular client on the next free port. Use whenever you need to actually run the app locally, not just start the frontend.
+description: Bring up the local Argos environment for running or testing — Docker backend (right profile for what changed) + an Angular client per worktree, each on its own free port. Use whenever you need to actually run the app locally, for a PR, a ticket's branch, or develop.
 ---
 
-From the worktree you want to run (a ticket's or throwaway's, or `worktrees/argos/develop/` to try current `develop`; fetch and fast-forward that one first so it isn't stale), run `bash <workspace>/.claude/skills/run-local/scripts/find-app.sh`. It prints `client`, `backend`, `scylla` (docker/local), and `free_client_port`.
+Run the worktrees the user is asking about: a PR or ticket means its branch, and `develop` only when they want current `develop` (fast-forward `worktrees/argos/develop/` first). From the workspace root:
 
-- `backend=none`: ask the user to start it on the right profile (Local Development in CLAUDE.md).
-- `scylla=docker` while `scylla-server/` has changes: flag that the backend is stale.
-- `client=none`: start `npx ng serve --port <free_client_port>` in `angular-client/` in the background and wait for "Compiled successfully".
+```
+bash .claude/skills/run-local/scripts/run-local.sh <branch-or-worktree>...
+```
 
-Report the client URL and whether the backend is up.
+It makes any missing worktree (`new-worktree`), starts the backend if it's down (`client-dev`, or `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each target's client on the next free port. With no arguments it only reports what's running.
+
+Report each branch's client URL and the backend. A failed compile or a stale-backend warning is a finding: show it to the user. Stop a client with `kill <pid>` from its line.

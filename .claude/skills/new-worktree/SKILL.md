@@ -11,8 +11,8 @@ Run from the workspace root:
 bash .delphi/new-worktree.sh <repo> <branch> [<base>]
 ```
 
-An existing branch (local or on origin, e.g. a PR's head) is checked out; anything else is created from `<base>` (default: the repo's default branch). It's safe to re-run and prints the worktree path to work in.
+An existing branch (local or on origin, e.g. a PR's head) is checked out; anything else is created from `<base>` (default: the repo's default branch). It's safe to re-run and prints the worktree's path. Stay at the workspace root and reach into the worktree by that path.
 
 When you're done with a branch, remove it with `git -C repos/<repo> worktree remove ../../worktrees/<repo>/<branch>`.
 
-Argos: pass `origin/develop` as `<base>`. Name the branch `{issue-number}-{kebab-case-title}` for a ticket, or `throwaway-{kebab-case-title}` to try something without one. Run `npm ci` in the worktree's `angular-client/` before building, testing, or running the client.
+Argos: pass `origin/develop` as `<base>`. Name the branch `{issue-number}-{kebab-case-title}` for a ticket, or `throwaway-{kebab-case-title}` to try something without one. Before building or testing the client, run `(cd worktrees/argos/<branch>/angular-client && npm ci)`; `run-local` does it for you.
