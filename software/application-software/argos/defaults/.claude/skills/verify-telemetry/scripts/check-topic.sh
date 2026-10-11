@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# check-topic.sh <topic>: check one MQTT topic end to end for verify-telemetry. Prints its CAN
-# definition (file, message id, unit, value points) from the workspace's (four folders up from here)
-# worktrees/odyssey-definitions/main, whether the Calypso simulator image is current and running,
+# check-topic.sh <workspace-root> <topic>: check one MQTT topic end to end for verify-telemetry. Prints
+# its CAN definition (file, message id, unit, value points) from worktrees/odyssey-definitions/main,
+# whether the Calypso simulator image is current and running,
 # and the topic's last scylla-server log lines. Exits 1 if the topic isn't defined. Needs jq; the
 # docker checks are skipped without docker.
 set -euo pipefail
-topic=${1:?usage: check-topic.sh <topic>}
-root=$(cd "$(dirname "$0")/../../../.." && pwd)
-defs=$root/worktrees/odyssey-definitions/main/can-messages
+usage="usage: check-topic.sh <workspace-root> <topic>"
+root=${1:?$usage} topic=${2:?$usage}
+[ -f "$root/.delphi/paths.sh" ] || { echo "check-topic: '$root' is not a Delphi workspace root" >&2 && exit 2; }
+# shellcheck source=/dev/null
+. "$root/.delphi/paths.sh"
+defs=$DELPHI_WORKTREES/odyssey-definitions/main/can-messages
 [ -d "$defs" ] || { echo "no CAN definitions at $defs; add odyssey-definitions under repos: and run .delphi/setup.sh" >&2; exit 2; }
 
 echo "== CAN definition"

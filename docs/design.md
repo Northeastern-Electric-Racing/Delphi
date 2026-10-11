@@ -182,6 +182,13 @@ overwrites: a folder in the way is reported and the other copy stays parked.
 from that store: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
 The template's `new-worktree` skill makes worktrees the default way to start a branch.
 
+`.delphi/paths.sh` is the layout in one place: sourced as `. <root>/.delphi/paths.sh`, it sets
+`DELPHI_ROOT` and `DELPHI_REPOS`, `DELPHI_WORKTREES`, `DELPHI_REFERENCES`, `DELPHI_LINKED`.
+`new-worktree.sh` uses it, and so does every skill script, plugin or workspace: each takes the root as
+its first argument, which its SKILL.md fills with `${CLAUDE_PROJECT_DIR}` (Claude Code substitutes the
+folder the session started in), then names (repo, branch), never a searched-for path. The model types
+only the names.
+
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
 to origin, and runs the new workspace's `setup.sh`. The template's `switch-workspace` skill makes it

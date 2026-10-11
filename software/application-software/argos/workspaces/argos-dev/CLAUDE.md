@@ -31,7 +31,7 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Repo pa
 
 ## Local Development
 
-- Run the app with the `run-local` skill, passing the worktrees you're looking at (a PR's or ticket's, made with `new-worktree`; not `develop` unless asked). It starts the backend if it's down, on the right compose profile (`client-dev` runs everything in Docker; `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each worktree's client on its own port.
+- Run the app with the `run-local` skill, passing the branches you're looking at (a PR's or ticket's, with a worktree from `new-worktree`; not `develop` unless asked). It starts the backend if it's down, on the right compose profile (`client-dev` runs everything in Docker; `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each worktree's client on its own port.
 - The shell workflow (`argos.sh`, the `run-local`/`verify-*` skills, and helpers like `lsof`/`pkill`) assumes a Unix shell. On Windows, run everything from WSL or Git Bash, not `cmd`/PowerShell.
 
 ## Testing

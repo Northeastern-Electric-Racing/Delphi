@@ -1,12 +1,16 @@
 #!/usr/bin/env bash
-# run-local.sh [<argos-worktree>...]: bring up the local Argos stack for those worktrees and print
-# one line per piece. Each argument must be the top of an Argos worktree (it has argos.sh and
-# angular-client/). The backend (first listener on 8000-8090, step 10) is started if down:
+# run-local.sh <workspace-root> [<branch>...]: bring up the local Argos stack for those branches'
+# worktrees (worktrees/argos/<branch>, made beforehand with new-worktree) and print one line per
+# piece. The backend (first listener on 8000-8090, step 10) is started if down:
 # ./argos.sh client-dev when no target changes scylla-server/, else scylla-dev plus `cargo run` in the
-# one worktree that does. Each target's client is then served by serve.sh on its own port. With no
-# arguments, only reports what is running.
+# one worktree that does. Each target's client is then served by serve.sh on its own port. With only
+# the root, reports what is running.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+root=${1:?usage: run-local.sh <workspace-root> [<branch>...]} && shift
+[ -f "$root/.delphi/paths.sh" ] || { echo "run-local: '$root' is not a Delphi workspace root" >&2 && exit 2; }
+# shellcheck source=/dev/null
+. "$root/.delphi/paths.sh"
 state=${TMPDIR:-/tmp}; state=${state%/}/argos-run-local
 up() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null || (exec 3<>"/dev/tcp/::1/$1") 2>/dev/null; } # ng serve binds ::1
 backend() { for p in $(seq 8000 10 8090); do up "$p" && echo "http://localhost:$p" && return; done; echo none; }
@@ -24,10 +28,10 @@ if [ $# = 0 ]; then
 fi
 
 wts=() rust=()
-for t in "$@"; do
-  wt=$(cd "$t" 2>/dev/null && pwd -P) &&
-    [ "$(git -C "$wt" rev-parse --show-toplevel 2>/dev/null)" = "$wt" ] && [ -f "$wt/argos.sh" ] && [ -d "$wt/angular-client" ] ||
-    { echo "run-local: '$t' is not the top of an Argos worktree (make it with new-worktree)" >&2 && exit 1; }
+for b in "$@"; do
+  wt=$DELPHI_WORKTREES/argos/$b
+  [ -f "$wt/argos.sh" ] && [ -d "$wt/angular-client" ] ||
+    { echo "run-local: no Argos worktree for '$b' at $wt (make it with new-worktree)" >&2 && exit 1; }
   wts+=("$wt")
 done
 git -C "${wts[0]}" fetch -q origin # the worktrees share one store
