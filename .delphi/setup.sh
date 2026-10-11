@@ -5,9 +5,9 @@
 # out its default branch as the first worktree, worktrees/<name>/<default-branch>. For each repo under
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
-# run, with pushes disabled. Each entry under `links:` (`- <workspace>` or `- main`) gets the same
-# kind of copy of this clone's origin (Delphi) at ws/<workspace> (or main), at linked/<name>; to edit
-# one, switch this clone to it (.delphi/switch.sh). Adds /repos/, /worktrees/, /references/ and
+# run, with pushes disabled. Each entry under `workspaces:` (`- ws/<name>` or `- main`, a workspace
+# being named by its place in the tree) gets the same kind of copy of that branch of this clone's
+# origin (Delphi), at linked/<branch>; to edit one, switch this clone to it (.delphi/switch.sh). Adds /repos/, /worktrees/, /references/ and
 # /linked/ to this clone's .git/info/exclude, and symlinks its post-checkout hook to .delphi/park.sh,
 # which is on every branch (unless another hook is there) so switching to another workspace or main parks them. First
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
@@ -18,7 +18,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f workspace.yml ] || { echo "setup: no workspace.yml here (on main?); nothing to set up" >&2 && exit 0; }
 self=$(awk '/^name:/ { print $2; exit }' workspace.yml)
-case "$self" in "" | -* | *[!a-z0-9-]*) echo "setup: workspace.yml needs a valid name:" >&2 && exit 1 ;; esac
+case "$self" in "" | [-/]* | */ | *//* | *[!a-z0-9/-]*) echo "setup: workspace.yml needs a valid name:" >&2 && exit 1 ;; esac
 
 older() { # <a> <b>: a is a lower MAJOR.MINOR.PATCH than b
   [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$1" ]
@@ -44,7 +44,7 @@ list=$(awk '
   /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
   /^repos:/ { s = "repo"; next }
   /^references-git:/ { s = "ref"; next }
-  /^links:/ { s = "link"; next }
+  /^workspaces:/ { s = "link"; next }
   /^[^[:space:]]/ { s = "" }
   s == "link" { sub(/^[[:space:]]*-[[:space:]]*/, ""); sub(/[[:space:]]*#.*$/, ""); print s, $0; next }
   s { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+#.*$/, ""); n = index($0, ":")
@@ -64,17 +64,16 @@ readonly_copy() { # <dir> <url> [<ref>]: shallow, detached, push-disabled checko
   fi
 }
 
-link() { # <workspace>|main: a read-only copy of Delphi's ws/<workspace> (or main) at linked/<name>
-  case "$1" in -* | *[!a-z0-9-]*) echo "setup: skipping bad link '$1'" >&2 && return ;; "$self") return ;; esac
-  local ref=ws/$1
-  [ "$1" != main ] || ref=main
-  readonly_copy "linked/$1" "$(git remote get-url origin)" "$ref"
+link() { # ws/<name>|main: a read-only copy of that branch of Delphi at linked/<branch>
+  case "$1" in main | ws/[a-z0-9]*) ;; *) echo "setup: skipping bad workspaces: entry '$1'" >&2 && return ;; esac
+  case "$1" in "ws/$self") return ;; */ | *//* | *[!a-z0-9/-]*) echo "setup: skipping bad workspaces: entry '$1'" >&2 && return ;; esac
+  readonly_copy "linked/$1" "$(git remote get-url origin)" "$1"
 }
 
 while read -r kind name url ref; do
   [ -n "$name" ] || continue
-  case "$name" in . | .. | *[!A-Za-z0-9._-]*) echo "setup: skipping unsafe repo name '$name'" >&2 && continue ;; esac
   if [ "$kind" = link ]; then link "$name"; continue; fi
+  case "$name" in . | .. | *[!A-Za-z0-9._-]*) echo "setup: skipping unsafe repo name '$name'" >&2 && continue ;; esac
   if [ "$kind" = ref ]; then readonly_copy "references/$name" "$url" ${ref:+"$ref"} && continue; fi
   store=repos/$name
   if [ -e "$store" ]; then
