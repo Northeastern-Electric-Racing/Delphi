@@ -4,7 +4,7 @@ description: Playwright MCP verification of the graph page — modes, controls, 
 user-invocable: true
 ---
 
-Run from the ticket's worktree. Get the app with `run-local` (its `find-app.sh` gives the client URL as `BASE_URL`); historical runs with data must exist. Screenshots go to `pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
+Get the ticket's branch running with `run-local <branch>`; that branch's client URL is `BASE_URL`. Historical runs with data must exist. Screenshots go to `pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
 
 Per check: `browser_navigate` → `browser_snapshot` (assert) → `browser_click` or `browser_run_code` → `browser_take_screenshot`. Two clicks need `browser_run_code` with a body from `helpers.js`: **selectRun** ("Select this Run" sits under a PrimeNG overlay) and **selectTopic** (a tree click on a leaf navigates away). Run the groups in order; stop and fix at the first failure.
 
