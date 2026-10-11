@@ -9,11 +9,36 @@
 # kind of copy of this clone's origin (Delphi) at ws/<workspace> (or main), at linked/<name>; to edit
 # one, switch this clone to it (.delphi/switch.sh). Adds /repos/, /worktrees/, /references/ and
 # /linked/ to this clone's .git/info/exclude, and symlinks its post-checkout hook to .delphi/park.sh,
-# which is on every branch (unless another hook is there) so switching to another workspace or main parks them. Safe to
-# re-run. Keep it bash 3.2 (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
+# which is on every branch (unless another hook is there) so switching to another workspace or main parks them. First
+# it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
+# is `git config delphi.<name>.version`, 0.0.0 if unset), stopping at one that fails, and warns if
+# .delphi/ isn't exactly the version it says (.delphi/version.sh). Safe to re-run. Keep it bash 3.2
+# (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f workspace.yml ] || { echo "setup: no workspace.yml here (on main?); nothing to set up" >&2 && exit 0; }
+self=$(awk '/^name:/ { print $2; exit }' workspace.yml)
+case "$self" in "" | -* | *[!a-z0-9-]*) echo "setup: workspace.yml needs a valid name:" >&2 && exit 1 ;; esac
+
+older() { # <a> <b>: a is a lower MAJOR.MINOR.PATCH than b
+  [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$1" ]
+}
+here=$(bash .delphi/version.sh) released=$(grep -v '^#' .delphi/versions | grep . | tail -n 1 | cut -d' ' -f1,2 || true)
+[ "$here" = "$released" ] ||
+  echo "setup: .delphi/ is not Delphi ${released%% *} as released (edited here? change it only through main)" >&2
+have=$(git config "delphi.$self.version" || echo 0.0.0)
+pending=$(for f in .delphi/migrations/*.sh; do [ ! -e "$f" ] || echo "${f##*/}"; done | sort -t. -k1,1n -k2,2n -k3,3n)
+while IFS= read -r f; do
+  v=${f%%-*}
+  [ -n "$f" ] || continue
+  older "$have" "$v" || continue
+  echo "setup: migrating $self to $v (.delphi/migrations/$f)"
+  bash ".delphi/migrations/$f" </dev/null || { echo "setup: migration $f failed; do what it says, then re-run" >&2 && exit 1; }
+  git config "delphi.$self.version" "$v" && have=$v
+done <<EOF1
+$pending
+EOF1
+! older "$have" "${here%% *}" || git config "delphi.$self.version" "${here%% *}"
 
 list=$(awk '
   /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
@@ -27,6 +52,7 @@ list=$(awk '
 
 readonly_copy() { # <dir> <url> [<ref>]: shallow, detached, push-disabled checkout at <dir>
   local dir=$1
+  [ ! -f "$dir/.git" ] || { echo "setup: $dir is a worktree, not a read-only copy; skipping it" >&2 && return; }
   [ -d "$dir/.git" ] || { git init -q "$dir" && git -C "$dir" remote add origin "$2"; }
   git -C "$dir" remote set-url origin "$2"
   git -C "$dir" remote set-url --push origin DISABLED-read-only-copy
@@ -38,11 +64,8 @@ readonly_copy() { # <dir> <url> [<ref>]: shallow, detached, push-disabled checko
   fi
 }
 
-self=$(awk '/^name:/ { print $2; exit }' workspace.yml)
 link() { # <workspace>|main: a read-only copy of Delphi's ws/<workspace> (or main) at linked/<name>
   case "$1" in -* | *[!a-z0-9-]*) echo "setup: skipping bad link '$1'" >&2 && return ;; "$self") return ;; esac
-  [ ! -f "linked/$1/.git" ] ||
-    { echo "setup: linked/$1 is an old link.sh worktree; run git worktree remove linked/$1, then re-run" >&2 && return; }
   local ref=ws/$1
   [ "$1" != main ] || ref=main
   readonly_copy "linked/$1" "$(git remote get-url origin)" "$ref"
