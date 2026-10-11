@@ -21,4 +21,6 @@ if docker pull -q ghcr.io/northeastern-electric-racing/calypso:Develop >/dev/nul
   echo "image pulled (restart the stack if it changed)"; else echo "pull failed"; fi
 docker ps --filter name=calypso --format '{{.Names}} {{.Status}}' 2>/dev/null | grep . || echo "calypso not running"
 echo "== scylla-server log"
-docker logs scylla-server 2>&1 | grep -F "$topic" | tail -5 | grep . || echo "no log lines for $topic (not published?)"
+c=$(docker ps --filter name=scylla-server --format '{{.Names}}' 2>/dev/null | head -1) # compose names it <project>-scylla-server-1
+if [ -z "$c" ]; then echo "scylla-server not running in docker (local cargo run? check its log)"
+else docker logs "$c" 2>&1 | grep -F "$topic" | tail -5 | grep . || echo "no log lines for $topic (not published?)"; fi
