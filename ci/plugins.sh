@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # ci/plugins.sh [--check] [<dir>]: write the generated harness files of a main checkout <dir> (default .):
 #   .claude-plugin/marketplace.json: marketplace `delphi`, one plugin per set folder
-#     software/**/plugins/claude/<set>/ outside workspaces, named by its place in the tree: the path of
-#     the folder holding plugins/ with `.` for `/`, plus .<set> unless the set is `default`
-#     (software/a/b/plugins/claude/testing -> software.a.b.testing); each plugin.json's description is
-#     copied, and its name must be that name.
+#     software/**/plugins/claude/<set>/ outside workspaces, named <scope>, or <scope>.<set> unless the
+#     set is `default`. A folder's scope is the one line in its plugins/scope, else its own name
+#     (software/application-software/plugins/scope says `app`: app, app.testing); scopes are
+#     lowercase letters, digits and '-', and unique. Each plugin.json's description is copied, and its
+#     name must be that name.
 #   each `harness: claude-code` workspace's .claude/settings.json: the shared settings below, plus the
 #     `default` set of every folder above the workspace and each set named under `plugins:` in its
 #     workspace.yml, enabled from the delphi marketplace. Never edit it by hand: personal settings go
@@ -20,10 +21,14 @@ sets() { # every set folder, sorted
     sed -nE 's#^(software(/[a-z0-9-]+)*/plugins/claude/[a-z0-9-]+)/\.claude-plugin/plugin\.json$#\1#p' | LC_ALL=C sort
 }
 
+scope_of() { # <folder holding plugins/>: its scope
+  if [ -f "$1/plugins/scope" ]; then tr -d '[:space:]' <"$1/plugins/scope" && echo; else echo "${1##*/}"; fi
+}
+
 name_of() { # <set folder>: the plugin's name in the marketplace
-  local folder set=${1##*/}
-  folder=$(echo "${1%/plugins/claude/*}" | tr / .)
-  if [ "$set" = default ]; then echo "$folder"; else echo "$folder.$set"; fi
+  local scope set=${1##*/}
+  scope=$(scope_of "${1%/plugins/claude/*}")
+  if [ "$set" = default ]; then echo "$scope"; else echo "$scope.$set"; fi
 }
 
 field() { # <set folder> <key>: a top-level string field of its plugin.json, as written (quoted)
@@ -93,8 +98,15 @@ put() { # <file> <command...>: write <command>'s output to <file> (with --check,
   fi
 }
 
-for n in $(for s in $(sets); do name_of "$s"; done | sort | uniq -d); do
-  echo "plugins: two plugin sets are both named $n; rename a folder or set" >&2 && problems=$((problems + 1))
+folders=$(for s in $(sets); do echo "${s%/plugins/claude/*}"; done | uniq)
+for f in $folders; do
+  case "$(scope_of "$f")" in "" | -* | *[!a-z0-9-]*)
+    echo "plugins: $f: scope '$(scope_of "$f")' must be lowercase letters, digits and '-' (set it in $f/plugins/scope)" >&2
+    problems=$((problems + 1)) ;;
+  esac
+done
+for n in $(for f in $folders; do scope_of "$f"; done | sort | uniq -d); do
+  echo "plugins: two folders both have scope $n; give one a plugins/scope file with another" >&2 && problems=$((problems + 1))
 done
 for s in $(sets); do
   [ "$(field "$s" name)" = "\"$(name_of "$s")\"" ] ||

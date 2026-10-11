@@ -12,7 +12,7 @@
     }
   },
   "enabledPlugins": {
-    "software.application-software@delphi": true,
-    "software.application-software.nero@delphi": true
+    "app@delphi": true,
+    "nero@delphi": true
   }
 }

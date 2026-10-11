@@ -43,7 +43,7 @@ for p in software/application-software/plugins software/application-software/arg
   mkdir -p "$t/seed/$p" && cp -R "$src/$p/." "$t/seed/$p/"
 done
 TS=software/application-software/argos/plugins/claude/testing # an extra set a workspace can list under plugins:
-mkdir -p "$t/seed/$TS/.claude-plugin" && printf '{\n  "name": "software.application-software.argos.testing"\n}\n' >"$t/seed/$TS/.claude-plugin/plugin.json"
+mkdir -p "$t/seed/$TS/.claude-plugin" && printf '{\n  "name": "argos.testing"\n}\n' >"$t/seed/$TS/.claude-plugin/plugin.json"
 (cd "$t/seed" && bash ci/plugins.sh >/dev/null) # the marketplace and each workspace's .claude/settings.json
 git -C "$t/seed" add -A && git -C "$t/seed" commit -qm init
 git clone -q --bare "$t/seed" "$t/origin.git"
@@ -138,14 +138,14 @@ sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "
 ok "a ws/* edit to .delphi/ is reset by refresh and never proposed into the folder"
 
 # --- 4c. .claude/settings.json is generated: refresh writes it from the ws branch's workspace.yml
-for p in software.application-software software.application-software.argos; do
+for p in app argos; do
   o show "ws/$AN:.claude/settings.json" | grep -q "\"$p@delphi\": true" || fail "argos-dev lacks the $p default set"
 done
 ! o show "ws/$BN:.claude/settings.json" | grep -q enabledPlugins || fail "bms-dev enables plugins with none above it"
 ok "each workspace's settings.json enables the default set of every folder above it"
-commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - software.application-software.argos.testing')"
+commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - argos.testing')"
 sync "$AN" >"$t/out" 2>&1 || fail "sync after listing a plugin set failed: $(cat "$t/out")"
-o show "ws/$AN:.claude/settings.json" | grep -q '"software.application-software.argos.testing@delphi": true' || fail "listed set not enabled"
+o show "ws/$AN:.claude/settings.json" | grep -q '"argos.testing@delphi": true' || fail "listed set not enabled"
 [ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate .claude/settings.json from workspace.yml" ] || fail "no generate commit"
 o show "propose/$AN:$A/.claude/settings.json" | grep -q argos.testing || fail "proposal lacks the generated settings"
 ok "a set listed under plugins: on ws/* is enabled by refresh's generated settings.json and proposed with it"
@@ -153,10 +153,10 @@ commit_on ws/$AN .claude/settings.json "hand edit"
 sync "$AN" >"$t/out" 2>&1 || fail "sync after a settings.json hand edit failed: $(cat "$t/out")"
 ! o show "ws/$AN:.claude/settings.json" | grep -qx "hand edit" || fail "hand edit to settings.json kept"
 ok "a hand edit to .claude/settings.json on ws/* is reset by refresh"
-commit_on ws/$AN workspace.yml "  - software.application-software.argos.nope"
+commit_on ws/$AN workspace.yml "  - argos.nope"
 ws=$(o rev-parse ws/$AN)
 if sync "$AN" >"$t/out" 2>"$t/err"; then fail "sync with an unknown plugin set exited 0"; fi
-grep -q "ws/$AN: plugins: .* lists software.application-software.argos.nope, which isn't a plugin set" "$t/err" || fail "unknown set not reported: $(cat "$t/err")"
+grep -q "ws/$AN: plugins: .* lists argos.nope, which isn't a plugin set" "$t/err" || fail "unknown set not reported: $(cat "$t/err")"
 (cd "$t/dev" && git fetch -q && git checkout -q -B fix origin/ws/$AN && sed -i.bak '/nope/d' workspace.yml && rm workspace.yml.bak &&
   git commit -qam "drop unknown set" && git push -q origin HEAD:ws/$AN)
 sync "$AN" >/dev/null 2>&1 || fail "sync after dropping the unknown set failed"
@@ -217,11 +217,12 @@ expect_bad bad-name "must be lowercase letters, digits, '-' and '/'" sh -c "mkdi
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
 expect_bad settings-hand-edit "$A/.claude/settings.json is generated" sh -c "echo x >>$A/.claude/settings.json"
 expect_bad marketplace-stale ".claude-plugin/marketplace.json is generated" sh -c "mkdir -p software/x/plugins/claude/default/.claude-plugin && echo '{}' >software/x/plugins/claude/default/.claude-plugin/plugin.json"
-expect_bad plugin-name-clash "both named software.application-software.argos.x" sh -c "for p in argos/plugins/claude/x argos/x/plugins/claude/default; do mkdir -p software/application-software/\$p/.claude-plugin && echo '{}' >software/application-software/\$p/.claude-plugin/plugin.json; done"
-expect_bad plugin-json-name "plugin.json: name must be \"software.application-software.argos\"" sed -i.bak 's/"name": ".*"/"name": "argos"/' software/application-software/argos/plugins/claude/default/.claude-plugin/plugin.json
-expect_bad plugins-unknown "lists software.application-software.argos.nope, which isn't a plugin set" sh -c "printf 'plugins:\n  - software.application-software.argos.nope\n' >>$A/workspace.yml"
-expect_bad plugins-entry "bad plugins entry" sh -c "printf 'plugins:\n  - argos\n' >>$A/workspace.yml"
-expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  - software.a.b\n  - software.a.b\n' >>$A/workspace.yml"
+expect_bad scope-clash "two folders both have scope argos" sh -c "mkdir -p software/x/argos/plugins/claude/default/.claude-plugin && echo '{}' >software/x/argos/plugins/claude/default/.claude-plugin/plugin.json"
+expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "echo A_pp >software/application-software/plugins/scope"
+expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sed -i.bak 's/"name": ".*"/"name": "x"/' software/application-software/argos/plugins/claude/default/.claude-plugin/plugin.json
+expect_bad plugins-unknown "lists argos.nope, which isn't a plugin set" sh -c "printf 'plugins:\n  - argos.nope\n' >>$A/workspace.yml"
+expect_bad plugins-entry "bad plugins entry" sh -c "printf 'plugins:\n  - a.b.c\n' >>$A/workspace.yml"
+expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  - a.b\n  - a.b\n' >>$A/workspace.yml"
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
@@ -262,7 +263,7 @@ for r in lib1 lib2; do
 done
 def=$(git -C "$t/lib1" branch --show-current)
 git clone -q -b ws/$AN "$t/origin.git" "$t/ws"
-printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nplugins:\n  - software.x.y\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
+printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nplugins:\n  - x.y\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
   "$t/lib1.git" "$t/lib2.git" >"$t/ws/workspace.yml"
 /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed"
 /bin/bash "$t/ws/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh re-run failed"

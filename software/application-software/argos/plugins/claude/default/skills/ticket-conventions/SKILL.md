@@ -1,12 +1,12 @@
 ---
 name: ticket-conventions
-description: Argos specifics for tickets and PRs (repo, area labels, vocabulary, diagrams). Load before drafting or filing an Argos issue or labeling an Argos PR, alongside software.application-software:create-ticket.
+description: Argos specifics for tickets and PRs (repo, area labels, vocabulary, diagrams). Load before drafting or filing an Argos issue or labeling an Argos PR, alongside app:create-ticket.
 user-invocable: false
 ---
 
 # Argos ticket conventions
 
-The shared rules are in `software.application-software:create-ticket`; this adds only what is Argos's.
+The shared rules are in `app:create-ticket`; this adds only what is Argos's.
 
 - Repo: Northeastern-Electric-Racing/Argos (base branch `develop`).
 - Area labels: `frontend`, `backend`, `devops` (any combination).

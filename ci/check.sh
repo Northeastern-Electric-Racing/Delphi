@@ -14,7 +14,7 @@
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
 # `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself, and an
-# optional `plugins:` list of `- <set name>` (software.<path>[.<set>]) without duplicates. A project's
+# optional `plugins:` list of `- <scope>[.<set>]` without duplicates. A project's
 # defaults/workspace.yml is the same without `name:`. The files ci/plugins.sh generates
 # (.claude-plugin/marketplace.json, each workspace's .claude/settings.json) are up to date.
 # Lists every problem; exits 1 if any.
@@ -95,8 +95,8 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
     /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
     /^plugins:[[:space:]]*(#.*)?$/ { r = 4; next }
     r == 4 && /^[[:space:]]/ {
-      if ($0 !~ /^[[:space:]]+-[[:space:]]+software(\.[a-z0-9][a-z0-9-]*)+[[:space:]]*(#.*)?$/) {
-        print "bad plugins entry (want `  - <set name>`, e.g. software.a.b.testing): " $0; next }
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)?[[:space:]]*(#.*)?$/) {
+        print "bad plugins entry (want `  - <scope>[.<set>]`, e.g. argos.testing): " $0; next }
       v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
       if (sets[v]++) print "duplicate plugin set: " v
       next }

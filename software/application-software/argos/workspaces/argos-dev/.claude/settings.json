@@ -12,7 +12,7 @@
     }
   },
   "enabledPlugins": {
-    "software.application-software@delphi": true,
-    "software.application-software.argos@delphi": true
+    "app@delphi": true,
+    "argos@delphi": true
   }
 }
