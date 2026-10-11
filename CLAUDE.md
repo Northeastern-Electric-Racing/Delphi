@@ -40,6 +40,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - Skill scripts (plugins and workspaces) take the workspace root as their first argument, which the
   SKILL.md fills with `${CLAUDE_PROJECT_DIR}`, then branch or repo names; they source
   `<root>/.delphi/paths.sh` for every folder. Never search for the root or default to the cwd's branch.
+  `${CLAUDE_PROJECT_DIR}` appears only as that first argument, so another harness replaces one token.
 - `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
   features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
 - Changing the workflow: update the template, `.github/`, and every workspace copy in the same PR,
