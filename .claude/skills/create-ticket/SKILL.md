@@ -22,9 +22,9 @@ Pipeline: idea → spikes → epic → dev work. If unsure, a small thing is a s
 - Epic: the approach without a walkthrough of each ticket; requirements are outcomes for the whole epic, not one per sub-issue.
 - Dev work: testable requirements; Notes can carry gotchas and pointers to code.
 - Labels: the template's category, one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it, including rewrites of old tickets), and area labels.
-- Rewriting an old ticket: keep assignees, swap in current labels, set the issue type, link it under its epic.
+- Rewriting an old ticket: keep assignees, swap in current labels, set the issue type (epics and dev work only), link it under its epic.
 - Folding one ticket into another: add it as a requirement on the target, then close it as not planned with a comment pointing there. Closing any ticket gets a one-line comment saying why.
 
-Check for open duplicates, then show the full draft (title, type, labels, parent, body) in the chat, never only in a file. Get the user's OK before filing or editing, and file only what they asked for.
+Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, never only in a file. Get the user's OK before filing or editing, and file only what they asked for.
 
-**File** with the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, type, labels and the user as assignee. For a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL. When an epic comes from an idea, offer to close the idea as completed.
+**File** with the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the type the template sets (epics and dev work; ideas and spikes get none), and the user as assignee (not on spikes, which stay unassigned). For a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL. When an epic comes from an idea, offer to close the idea as completed.
