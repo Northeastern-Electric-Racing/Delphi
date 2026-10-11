@@ -187,9 +187,10 @@ The template's `new-worktree` skill makes worktrees the default way to start a b
 `new-worktree.sh` uses it, and so does every skill script, plugin or workspace: each takes the root as
 its first argument, which its SKILL.md fills with `${CLAUDE_PROJECT_DIR}` (Claude Code substitutes the
 folder the session started in), then names (repo, branch), never a searched-for path. The model types
-only the names. `${CLAUDE_PROJECT_DIR}` is the one harness-specific token, and only ever as that first
-argument: the scripts just take a path. Another harness swaps that token for its own way of naming the
-session's root, or for a variable its setup sets (such as `$DELPHI_ROOT`).
+only the names. The scripts just take paths; the harness-specific part is two tokens in the SKILL.md
+call, `bash ${CLAUDE_SKILL_DIR}/scripts/<script>.sh ${CLAUDE_PROJECT_DIR} …` (the skill's folder and
+the session's root). Another harness swaps those for its own, or for variables its setup sets (such
+as `$DELPHI_ROOT`).
 
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
