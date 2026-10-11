@@ -12,7 +12,7 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 | `workspaces/<leaf>/` | One workspace per purpose; branch `ws/software/application-software/argos/<leaf>` is its root |
 | `workspaces/argos-dev/` | Day-to-day Argos development: tickets, specs, PRs |
 | `defaults/` | What a new Argos workspace starts with (see `AUTHORING.md`) |
-| `plugins/claude/` | The `argos` Claude Code plugin: Argos context every workspace enables (e.g. ticket conventions) |
+| `plugins/claude/<set>/` | Claude Code plugin sets: `default` (the `argos` plugin, e.g. ticket conventions) is enabled in every Argos workspace; others only where listed under `plugins:` |
 | `AUTHORING.md` | How to create and change Argos workspaces |
 
 Shared facts that every Argos workspace needs belong here, in `defaults/`, or in the `argos` plugin. Facts that one

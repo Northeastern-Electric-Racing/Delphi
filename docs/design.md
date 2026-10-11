@@ -14,7 +14,8 @@ in normal three-way merges. The one thing shared is main's root `.delphi/` (the 
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
 only on main. Otherwise nothing is shared or generated between workspaces: a project's `defaults/` is
 copied once at creation, `workspaces:` only checks out other branches to read, and context shared by
-the workspaces under a folder ships as harness plugins (section 2) that each workspace enables.
+the workspaces under a folder ships as harness plugins (section 2). The one generated workspace file
+is `.claude/settings.json`, which enables those plugins.
 
 ```
    ┌───────────────────────────────┐
@@ -46,13 +47,15 @@ the workspaces under a folder ships as harness plugins (section 2) that each wor
 
 ```
 software/<org>/…/<project>/           README.md  AUTHORING.md  defaults/   (optional, main only)
-software/<org>/…/plugins/<harness>/   a plugin for the workspaces under that folder (optional, main only)
-.claude-plugin/marketplace.json       lists every Claude Code plugin under software/
+software/<org>/…/plugins/<harness>/<set>/   a plugin set for the workspaces under that folder (optional, main only)
+software/<org>/…/plugins/scope        the folder's short name in plugin names (optional; default: its name)
+.claude-plugin/marketplace.json       every Claude Code plugin set under software/ (generated)
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
 .delphi/                              {setup,new-worktree,switch,park,version}.sh  manifest.yml  versions
                                       migrations/  .gitattributes  .gitignore: on every ws/* root
 ci/sync.sh  ci/check.sh               CI scripts
+ci/plugins.sh                         writes the marketplace and each workspace's .claude/settings.json
 tools/new-workspace.sh                new workspace as a PR
 templates/workspace/                  what new-workspace copies
 .github/workflows/delphi.yml          CI
@@ -78,14 +81,30 @@ The folder holding a `workspaces/` directory is a project folder. It may hold sh
 there starts with. These live only on `main`; workspaces read them by listing `main` under `workspaces:`. A
 `defaults/workspace.yml` is checked as a manifest (without `name:`) but is not a workspace.
 
-Context that every workspace under an org or project folder needs (a skill, its conventions) goes in
-that folder's `plugins/<harness>/` (`plugins/claude/` for Claude Code; a sister folder per other
-harness), so it has one copy instead of one per workspace. Claude Code plugins are listed in main's
-root `.claude-plugin/marketplace.json` (marketplace `delphi`, each plugin named after its folder);
-a workspace enables the ones it needs in `.claude/settings.json` (`extraKnownMarketplaces` with
-`autoUpdate`, plus `enabledPlugins`). Claude installs a plugin from `main` by copying only its
-folder, so it can't use files outside it; at run time its skills read the workspace as usual. With
-no `version`, each commit to `main` that touches a plugin is an update.
+Context that the workspaces under an org or project folder share (a skill, its conventions) goes in
+a plugin set of that folder, `plugins/<harness>/<set>/` (`plugins/claude/` for Claude Code; a sister
+folder per other harness), so it has one copy instead of one per workspace. Every workspace gets the
+`default` set of each folder above it, which `ci/plugins.sh` lists first under `plugins:` in its
+`workspace.yml` (`- argos   # default, from software/application-software/argos/`; a removed line
+comes back); other sets are listed there by hand (`- <scope>.<set>`). `ci/plugins.sh` generates the
+rest, and `ci/check.sh` fails if the list or either file is out of date:
+
+- `.claude-plugin/marketplace.json` at main's root: marketplace `delphi`, one plugin per set, named
+  `<scope>` for a folder's `default` set and `<scope>.<set>` for the others (`argos`,
+  `argos.testing`), so names stay short in Claude Code's `/` menu. A folder's scope is its own name,
+  or the one line in its `plugins/scope` (`application-software` has `app`). Scopes are lowercase
+  letters, digits and `-`, unique across the tree, and each `plugin.json` uses its name. (Claude
+  Code refuses `/` in plugin names; `.` works, though Claude.ai's marketplace sync wants kebab-case.)
+- Each `harness: claude-code` workspace's `.claude/settings.json`: the shared settings in
+  `ci/plugins.sh`, plus the `delphi` marketplace (with `autoUpdate`) and the sets under `plugins:`
+  in `enabledPlugins`. Never edit it by hand: personal settings go in `.claude/settings.local.json`
+  (git-ignored by Claude Code), shared ones in `workspace.yml` or the generator. Sync regenerates it
+  on every `ws/*` branch (section 3); a PR to `main` that changes a set or a `workspace.yml` runs
+  `ci/plugins.sh` itself.
+
+Claude Code installs a plugin from `main` by copying only its folder, so it can't use files outside
+it; at run time its skills read the workspace as usual. With no `version`, each commit to `main`
+that touches a set is an update.
 
 ## 3. Sync (`ci/sync.sh [refresh|propose] [<name>]`; no direction = both)
 
@@ -101,7 +120,12 @@ For every workspace on `origin/main` (or just `<name>`):
    from main's, commit main's over it ("delphi: sync .delphi/ from main", built in a temporary
    index), and push if the tree changed. (`--no-ff` matters: once ws commits are in main, a
    fast-forward would put main's whole tree on the ws branch.) A `.delphi/` edit made on `ws/<name>`
-   is undone here.
+   is undone here. Then, for a `claude-code` workspace, list main's default sets above it under the
+   branch's `workspace.yml` `plugins:` and regenerate `.claude/settings.json` from that
+   (`ci/plugins.sh yml`, `settings`), and commit them if they changed ("delphi: generate plugins:
+   defaults and .claude/settings.json"), so a new default set or one added under `plugins:` is
+   enabled and a hand edit is undone. A set that main doesn't have is reported and that
+   workspace is skipped.
 2. **Propose** (`ws/<name>` → PR to main). Build `propose/<name>` = `origin/main` +
    `git merge --no-ff -Xsubtree=<folder> ws/<name>`, with `<folder>/.delphi/` dropped from the result
    (it is main's, never a workspace's). Stop if its tree equals main's or the current
@@ -196,7 +220,7 @@ also warns when `.delphi/` isn't exactly the version it says (edited in the clon
 Validates the name (format, not on main, no leftover `ws/<name>` or `ws/<leaf>`), copies `templates/workspace/`
 and then `software/<org-path>/defaults/` if present (its `CLAUDE.md` appended to the template's)
 into `software/<org-path>/workspaces/<name>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
-temporary worktree, sets `name: software/<org-path>/<leaf>`, runs `ci/check.sh`, pushes branch
+temporary worktree, sets `name: software/<org-path>/<leaf>`, generates its `.claude/settings.json`, runs `ci/check.sh`, pushes branch
 `new-workspace/<org-path>/<leaf>`, and opens a PR. Sync creates `ws/<name>` once it merges.
 
 ## 7. CI (`.github/workflows/delphi.yml`)

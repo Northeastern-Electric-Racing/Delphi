@@ -39,6 +39,12 @@ mkdir -p "$t/seed/$FD/.claude/skills/fw"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
 printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
 echo "fw skill" >"$t/seed/$FD/.claude/skills/fw/SKILL.md"
+for p in software/application-software/plugins software/application-software/argos/plugins; do # plugin sets above argos-dev
+  mkdir -p "$t/seed/$p" && cp -R "$src/$p/." "$t/seed/$p/"
+done
+TS=software/application-software/argos/plugins/claude/testing # an extra set a workspace can list under plugins:
+mkdir -p "$t/seed/$TS/.claude-plugin" && printf '{\n  "name": "argos.testing"\n}\n' >"$t/seed/$TS/.claude-plugin/plugin.json"
+(cd "$t/seed" && bash ci/plugins.sh >/dev/null) # the marketplace and each workspace's .claude/settings.json
 git -C "$t/seed" add -A && git -C "$t/seed" commit -qm init
 git clone -q --bare "$t/seed" "$t/origin.git"
 git clone -q "$t/origin.git" "$t/ci"
@@ -131,6 +137,42 @@ sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "
 [ "$(o diff --name-only main propose/$AN)" = "$A/docs/CONTEXT.md" ] || fail "propose carries .delphi/: $(o diff --name-only main propose/$AN)"
 ok "a ws/* edit to .delphi/ is reset by refresh and never proposed into the folder"
 
+# --- 4c. .claude/settings.json is generated: refresh writes it from the ws branch's workspace.yml
+for p in app argos; do
+  o show "ws/$AN:.claude/settings.json" | grep -q "\"$p@delphi\": true" || fail "argos-dev lacks the $p default set"
+done
+! o show "ws/$BN:.claude/settings.json" | grep -q enabledPlugins || fail "bms-dev enables plugins with none above it"
+ok "each workspace's settings.json enables the default set of every folder above it"
+for p in app argos; do
+  o show "ws/$AN:workspace.yml" | grep -Eq "^  - $p +# default, from " || fail "argos-dev's workspace.yml doesn't list the $p default"
+done
+commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - app   # by hand')"
+(cd "$t/dev" && git fetch -q && git checkout -q -B drop origin/ws/$AN && sed -i.bak '/^  - argos .*# default, from /d' workspace.yml &&
+  rm workspace.yml.bak && git commit -qam "drop the argos default" && git push -q origin HEAD:ws/$AN)
+sync "$AN" >"$t/out" 2>&1 || fail "sync after dropping a default failed: $(cat "$t/out")"
+o show "ws/$AN:workspace.yml" | grep -Eq "^  - argos +# default, from " || fail "dropped default not listed again"
+[ "$(o show "ws/$AN:workspace.yml" | grep -c '^  - app ')" = 1 ] || fail "hand-listed default not folded into the generated line"
+[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate plugins: defaults and .claude/settings.json" ] || fail "no generate commit for the yml"
+ok "refresh lists every default set first under plugins: on ws/*, restoring a removed one and folding in a hand-listed one"
+commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - argos.testing')"
+sync "$AN" >"$t/out" 2>&1 || fail "sync after listing a plugin set failed: $(cat "$t/out")"
+o show "ws/$AN:.claude/settings.json" | grep -q '"argos.testing@delphi": true' || fail "listed set not enabled"
+[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate plugins: defaults and .claude/settings.json" ] || fail "no generate commit"
+o show "propose/$AN:$A/.claude/settings.json" | grep -q argos.testing || fail "proposal lacks the generated settings"
+ok "a set listed under plugins: on ws/* is enabled by refresh's generated settings.json and proposed with it"
+commit_on ws/$AN .claude/settings.json "hand edit"
+sync "$AN" >"$t/out" 2>&1 || fail "sync after a settings.json hand edit failed: $(cat "$t/out")"
+! o show "ws/$AN:.claude/settings.json" | grep -qx "hand edit" || fail "hand edit to settings.json kept"
+ok "a hand edit to .claude/settings.json on ws/* is reset by refresh"
+commit_on ws/$AN workspace.yml "  - argos.nope"
+ws=$(o rev-parse ws/$AN)
+if sync "$AN" >"$t/out" 2>"$t/err"; then fail "sync with an unknown plugin set exited 0"; fi
+grep -q "ws/$AN: plugins: .* lists argos.nope, which isn't a plugin set" "$t/err" || fail "unknown set not reported: $(cat "$t/err")"
+(cd "$t/dev" && git fetch -q && git checkout -q -B fix origin/ws/$AN && sed -i.bak '/nope/d' workspace.yml && rm workspace.yml.bak &&
+  git commit -qam "drop unknown set" && git push -q origin HEAD:ws/$AN)
+sync "$AN" >/dev/null 2>&1 || fail "sync after dropping the unknown set failed"
+ok "an unknown set under plugins: is reported, exit 1, until fixed"
+
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/$BN CLAUDE.md "ws side"
 commit_on main "$B/CLAUDE.md" "main side"
@@ -184,8 +226,15 @@ expect_bad ref-clash "can't be a branch while ws/$AN is" sh -c "mkdir -p softwar
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
 expect_bad bad-name "must be lowercase letters, digits, '-' and '/'" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
-expect_bad plugin-unlisted "software/x/plugins/claude: plugin not listed" sh -c "mkdir -p software/x/plugins/claude/.claude-plugin && echo '{}' >software/x/plugins/claude/.claude-plugin/plugin.json"
-expect_bad plugin-missing "source ./software/application-software/nero/plugins/claude has no" rm -r software/application-software/nero/plugins
+expect_bad settings-hand-edit "$A/.claude/settings.json is generated" sh -c "echo x >>$A/.claude/settings.json"
+expect_bad marketplace-stale ".claude-plugin/marketplace.json is generated" sh -c "mkdir -p software/x/plugins/claude/default/.claude-plugin && echo '{}' >software/x/plugins/claude/default/.claude-plugin/plugin.json"
+expect_bad scope-clash "two folders both have scope argos" sh -c "mkdir -p software/x/argos/plugins/claude/default/.claude-plugin && echo '{}' >software/x/argos/plugins/claude/default/.claude-plugin/plugin.json"
+expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "echo A_pp >software/application-software/plugins/scope"
+expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sed -i.bak 's/"name": ".*"/"name": "x"/' software/application-software/argos/plugins/claude/default/.claude-plugin/plugin.json
+expect_bad plugins-defaults "workspace.yml doesn't list the default set" sed -i.bak '/^  - app .*# default, from /d' $A/workspace.yml
+expect_bad plugins-unknown "lists argos.nope, which isn't a plugin set" sh -c "printf 'plugins:\n  - argos.nope\n' >>$A/workspace.yml"
+expect_bad plugins-entry "bad plugins entry" sh -c "printf 'plugins:\n  - a.b.c\n' >>$A/workspace.yml"
+expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  - a.b\n  - a.b\n' >>$A/workspace.yml"
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
@@ -216,6 +265,7 @@ expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" s
 d=$t/chk-same-leaf && rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
 mkdir -p "$d/software/x/workspaces" && cp -R "$d/$A" "$d/software/x/workspaces/"
 sed -i.bak 's|^name:.*|name: software/x/argos-dev|' "$d/software/x/workspaces/argos-dev/workspace.yml" && rm "$d/software/x/workspaces/argos-dev/workspace.yml.bak"
+bash "$src/ci/plugins.sh" "$d" >/dev/null # its settings.json: no plugin sets above software/x
 { (cd "$d" && git init -q && git add -A) && "$src/ci/check.sh" "$d" >/dev/null; } || fail "two workspaces ending in the same name failed check"
 ok "workspaces in different places may end in the same name (software/x/argos-dev beside $AN)"
 
@@ -225,7 +275,7 @@ for r in lib1 lib2; do
 done
 def=$(git -C "$t/lib1" branch --show-current)
 git clone -q -b ws/$AN "$t/origin.git" "$t/ws"
-printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
+printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nplugins:\n  - x.y\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
   "$t/lib1.git" "$t/lib2.git" >"$t/ws/workspace.yml"
 /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed"
 /bin/bash "$t/ws/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh re-run failed"
@@ -338,6 +388,7 @@ o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -qx "# Fir
 [ "$(o show "new-workspace/electrical/firmware/fw-dev:$F/workspace.yml")" = "$(printf 'name: software/electrical/firmware/fw-dev\n'; o show "main:$FD/workspace.yml")" ] ||
   fail "defaults workspace.yml not used, or name: not set"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
+o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/settings.json" || fail "new workspace has no generated settings.json"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/switch-workspace/SKILL.md" || fail "template skill lost"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
 grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
@@ -459,7 +510,7 @@ ok "switch.sh takes a workspace's name, its branch, or its last part alone"
 C=software/electrical/workspaces/vcu-dev CN=software/electrical/vcu-dev D=software/electrical/workspaces/hv-dev DN=software/electrical/hv-dev
 (cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main && mkdir -p "$C" "$D" && cp -R templates/workspace/. "$C/" &&
   cp -R templates/workspace/. "$D/" && sed -i.bak "s|{{name}}|vcu-dev|" "$C/workspace.yml" && sed -i.bak "s|{{name}}|$DN|" "$D/workspace.yml" &&
-  rm "$C/workspace.yml.bak" "$D/workspace.yml.bak" && git add -A && git commit -qm "vcu-dev, still named the old way" && git push -q origin main &&
+  rm "$C/workspace.yml.bak" "$D/workspace.yml.bak" && bash ci/plugins.sh >/dev/null && git add -A && git commit -qm "vcu-dev, still named the old way" && git push -q origin main &&
   i=$t/legacy.index && GIT_INDEX_FILE=$i git read-tree "main:$C" && GIT_INDEX_FILE=$i git read-tree --prefix=.delphi/ main:.delphi &&
   git push -q origin "$(git commit-tree -p main -m "delphi: create ws/vcu-dev" "$(GIT_INDEX_FILE=$i git write-tree)"):refs/heads/ws/vcu-dev" &&
   rm "$i" && sed -i.bak "s|^name:.*|name: $CN|" "$C/workspace.yml" && rm "$C/workspace.yml.bak" && git commit -qam "vcu-dev named by path" && git push -q origin main)
