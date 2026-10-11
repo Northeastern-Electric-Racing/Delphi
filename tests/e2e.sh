@@ -361,7 +361,7 @@ git init -q "$t/code" && git -C "$t/code" commit -q --allow-empty -m one && git 
   git -C "$t/code" branch develop && git -C "$t/code" commit -q --allow-empty -m two
 def=$(git -C "$t/code" branch --show-current)
 w=$t/nw && git clone -q -b ws/bms-dev "$t/origin.git" "$w"
-printf 'name: argos-dev\nharness: claude-code\nrepos:\n  code: %s\n' "$t/code" >"$w/workspace.yml"
+printf 'name: bms-dev\nharness: claude-code\nrepos:\n  code: %s\n' "$t/code" >"$w/workspace.yml"
 bash "$w/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed for new-worktree test"
 nw() { bash "$w/.delphi/new-worktree.sh" "$@"; }
 [ "$(nw code 1-new)" = "$w/worktrees/code/1-new" ] || fail "new-worktree path"
@@ -375,7 +375,8 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
 
-# --- 12. links: setup.sh checks out listed workspaces and main read-only under linked/, refreshed on re-run
+# --- 12. links: setup.sh checks out listed workspaces and main read-only under linked/, refreshed on re-run;
+# migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely
 printf 'name: bms-dev\nharness: claude-code\nrepos:\n  code: %s\nlinks:\n  - argos-dev  # a comment\n  - main\n  - bms-dev\n  - Bad\n' \
   "$t/code" >"$w/workspace.yml"
 bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed with links: $(cat "$t/err")"
@@ -399,7 +400,7 @@ git -C "$w/linked/main" checkout -q README.md && git -C "$w/linked/main" commit 
   [ "$(git -C "$w/linked/main" log -1 --format=%s)" = "detached work" ]; } || fail "0.0.1 deleted commits on no branch: $(cat "$t/err")"
 git -C "$w/linked/main" checkout -q --detach origin/main
 ok "a migration that can't finish safely stops setup.sh, keeps what it would lose, and records nothing"
-git -C "$w/linked/main" checkout -q README.md && git -C "$w" config delphi.bms-dev.version 0.0.1
+git -C "$w" config delphi.bms-dev.version 0.0.1
 { /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && [ -f "$w/linked/main/.git" ] && grep -q "linked/main is a worktree" "$t/err"; } ||
   fail "a migration ran again, or setup.sh wrote into a worktree: $(cat "$t/err")"
 ok "a recorded version's migrations don't run again; setup.sh never writes into a worktree in linked/"
