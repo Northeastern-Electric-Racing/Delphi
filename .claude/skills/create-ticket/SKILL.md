@@ -5,26 +5,30 @@ description: Draft and file a GitHub issue (idea, spike, epic, or dev work) on A
 
 # Create ticket
 
-The templates in .github/ISSUE_TEMPLATE are the source of truth, with conventions in docs/agents/issue-tracker.md. Read the template you need (`gh api repos/<owner>/<repo>/contents/.github/ISSUE_TEMPLATE/<file> -q .content | base64 -d`) and follow its field descriptions. Nero is Northeastern-Electric-Racing/Nero-2.0.
+Follow the repo's templates in .github/ISSUE_TEMPLATE (`gh api repos/<owner>/<repo>/contents/.github/ISSUE_TEMPLATE/<file> -q .content | base64 -d`) and docs/agents/issue-tracker.md. Repos: Northeastern-Electric-Racing/Argos and Northeastern-Electric-Racing/Nero-2.0.
 
-Pipeline: idea → spikes → epic → dev work. If unsure, a small thing is a spike and a big unexplored thing is an idea.
+## Workflow
 
-**Before drafting**
-- Check the code first: the work may already be done, or tracked under another number.
-- Rewriting an old ticket: carry over its intent, but use the project's current vocabulary (check the code; for example, Zenoh key expressions rather than MQTT topics).
-- Leave unknowns as open questions in Notes. Don't invent answers.
+One issue carries a feature from idea to epic; everything else is its sub-issue.
 
-**Draft**
-- Keep it short. Plain words; explain any project-specific term the reader may not know.
-- One `### <field label>` per field, in template order; omit empty optional fields.
-- Requirements: clear, broad bullets, aiming for 3-5 and never more than 7.
-- Idea and spike: never prescribe a solution. Ideas list open options; spikes say what to learn. Context transfer holds facts, not instructions.
-- Epic: the approach without a walkthrough of each ticket; requirements are outcomes for the whole epic, not one per sub-issue.
-- Dev work: testable requirements; Notes can carry gotchas and pointers to code.
-- Labels: the template's category, one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it, including rewrites of old tickets), and area labels.
-- Rewriting an old ticket: keep assignees, swap in current labels, set the issue type (epics and dev work only), link it under its epic.
-- Folding one ticket into another: add it as a requirement on the target, then close it as not planned with a comment pointing there. Closing any ticket gets a one-line comment saying why.
+1. **Idea**: what could be built and why, with open options. Every spike has one as parent; if none fits, draft it with the spike.
+2. **Spike**: a sub-issue of the idea; one approach and what to learn. Findings go in comments and draft PRs.
+3. **Epic**: once settled, rewrite the idea issue itself from the epic template, swap `idea` for `epic`, and set its issue type; don't open a new one. The approach and whole-epic outcomes, not a walkthrough of each ticket.
+4. **Dev work**: a sub-issue of its epic, if any; testable requirements, Notes for gotchas and pointers to code.
 
-Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, never only in a file. Get the user's OK before filing or editing, and file only what they asked for.
+If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes never prescribe a solution; context transfer holds facts, not instructions.
 
-**File** with the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the type the template sets (epics and dev work; ideas and spikes get none), and the user as assignee (not on spikes, which stay unassigned). For a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL. When an epic comes from an idea, offer to close the idea as completed.
+## Draft
+
+- Check the code first: the work may be done or already tracked. Leave unknowns as open questions in Notes.
+- Short and plain; explain project-specific terms. One `### <field label>` per field in template order; omit empty optional fields.
+- Requirements: broad bullets, 3-5 and never more than 7.
+- Labels: the template's category, one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it, including rewrites), and area labels.
+- Rewriting an old ticket: keep its intent and assignees; update vocabulary (check the code, e.g. Zenoh key expressions, not MQTT topics), labels, issue type (epics and dev work only), and parent.
+- Folding one ticket into another: add it as a requirement on the target, then close it as not planned. Every close gets a one-line comment saying why.
+
+## File
+
+Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file. File or edit only what the user OKs.
+
+Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the type the template sets (epics and dev work; ideas and spikes get none), and the user as assignee (not on spikes, which stay unassigned), then POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
