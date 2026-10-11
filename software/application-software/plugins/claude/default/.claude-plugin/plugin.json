@@ -1,6 +1,6 @@
 {
   "name": "app",
-  "description": "Shared context for every application-software project: ticket conventions and the create-ticket skill.",
+  "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments).",
   "author": {
     "name": "Northeastern Electric Racing"
   }
