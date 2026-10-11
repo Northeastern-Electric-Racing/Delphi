@@ -18,12 +18,7 @@
     {
       "name": "app",
       "source": "./software/application-software/plugins/claude/default",
-      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments)."
-    },
-    {
-      "name": "app.workflow",
-      "source": "./software/application-software/plugins/claude/workflow",
-      "description": "The spec, design, execute workflow for application-software projects: the workflow, review, and to-tickets skills."
+      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments) and the spec, design, execute workflow (workflow, review, to-tickets)."
     }
   ]
 }

@@ -13,7 +13,6 @@
   },
   "enabledPlugins": {
     "app@delphi": true,
-    "argos@delphi": true,
-    "app.workflow@delphi": true
+    "argos@delphi": true
   }
 }
