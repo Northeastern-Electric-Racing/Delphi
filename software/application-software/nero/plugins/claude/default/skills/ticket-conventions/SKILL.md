@@ -1,12 +1,12 @@
 ---
 name: ticket-conventions
-description: Nero specifics for tickets (repo, area labels, vocabulary, diagrams). Load before drafting or filing a Nero issue, alongside app:create-ticket.
+description: Nero specifics for tickets (repo, area labels, vocabulary, diagrams). Load before drafting or filing a Nero issue, alongside create-ticket.
 user-invocable: false
 ---
 
 # Nero ticket conventions
 
-The shared rules are in `app:create-ticket`; this adds only what is Nero's.
+The shared rules are in the `create-ticket` skill; this adds only what is Nero's.
 
 - Repo: Northeastern-Electric-Racing/Nero-2.0 (base branch `develop`).
 - Area labels: `view`, `controller`, `model`, `devops` (any combination).
