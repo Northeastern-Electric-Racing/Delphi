@@ -163,7 +163,7 @@ ok "check passes on the real repo"
 expect_bad() { # <label> <expected message> <setup command...>: copy the real layout, commit it, break it, check fails against that commit
   local d=$t/chk-$1 label=$1 want=$2
   shift 2
-  rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$d/"
+  rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
   (cd "$d" && git init -q && git add -A && git commit -qm base && "$@" && git add -A)
   if "$src/ci/check.sh" "$d" HEAD 2>"$t/err" >/dev/null; then fail "check passed: $label"; fi
   grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
@@ -184,6 +184,8 @@ expect_bad ref-clash "can't be a branch while ws/$AN is" sh -c "mkdir -p softwar
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
 expect_bad bad-name "must be lowercase letters, digits, '-' and '/'" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
+expect_bad plugin-unlisted "software/x/plugins/claude: plugin not listed" sh -c "mkdir -p software/x/plugins/claude/.claude-plugin && echo '{}' >software/x/plugins/claude/.claude-plugin/plugin.json"
+expect_bad plugin-missing "source ./software/application-software/nero/plugins/claude has no" rm -r software/application-software/nero/plugins
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
@@ -211,7 +213,7 @@ expect_bad lists-itself "lists itself: ws/$AN" sh -c "printf '  - ws/$AN\n' >>$A
 expect_bad unknown-workspace "lists ws/software/nope/x, which isn't a workspace on main" sh -c "printf '  - ws/software/nope/x\n' >>$A/workspace.yml"
 expect_bad template-delphi "templates/workspace/.delphi: scripts live only" mkdir templates/workspace/.delphi
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
-d=$t/chk-same-leaf && rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$d/"
+d=$t/chk-same-leaf && rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
 mkdir -p "$d/software/x/workspaces" && cp -R "$d/$A" "$d/software/x/workspaces/"
 sed -i.bak 's|^name:.*|name: software/x/argos-dev|' "$d/software/x/workspaces/argos-dev/workspace.yml" && rm "$d/software/x/workspaces/argos-dev/workspace.yml.bak"
 { (cd "$d" && git init -q && git add -A) && "$src/ci/check.sh" "$d" >/dev/null; } || fail "two workspaces ending in the same name failed check"

@@ -30,6 +30,9 @@ affect workspaces created afterwards; to change existing ones, PR each workspace
 - Keep the Delphi section of `CLAUDE.md` as generated; put project rules below it.
 - One skill per repeatable workflow, with a `description` that says when to use it.
 - Agent context (glossary, conventions, skills) lives in the workspace; the glossary goes in `docs/`.
+  Context every Argos workspace needs goes in the `argos` plugin (`plugins/claude/` here), and context
+  shared with other application-software projects in the `application-software` plugin; change them
+  like the defaults, by PR to `main`.
   ADRs about a code repo live in that repo, so `docs/` holds only ADRs about the workspace itself.
   Avoid file paths and code in specs and tickets.
 - Make new branches as worktrees (`new-worktree` skill) unless told otherwise.

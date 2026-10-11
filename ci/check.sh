@@ -14,7 +14,9 @@
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
 # `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself. A project's
-# defaults/workspace.yml is the same without `name:`.
+# defaults/workspace.yml is the same without `name:`. .claude-plugin/marketplace.json lists every
+# software/**/plugins/claude/ outside a workspace as a `./<path>` source, and each source has a
+# .claude-plugin/plugin.json.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
 cd "${1:-.}"
@@ -76,6 +78,11 @@ fi
 [ ! -e $tpl/.delphi ] || bad "$tpl/.delphi: scripts live only in the root .delphi/"
 while IFS= read -r f; do bad "$f: symlinks are not allowed under software/"; done \
   < <(find software -type l 2>/dev/null)
+mk=.claude-plugin/marketplace.json
+srcs=$([ ! -f $mk ] || sed -nE 's#^[[:space:]]*"source":[[:space:]]*"\./([^"]+)".*#\1#p' $mk)
+for s in $srcs; do [ -f "$s/.claude-plugin/plugin.json" ] || bad "$mk: source ./$s has no .claude-plugin/plugin.json"; done
+while IFS= read -r p; do echo "$srcs" | grep -qxF "$p" || bad "$p: plugin not listed in $mk"; done \
+  < <(find software -path '*/workspaces/*' -prune -o -type d -path '*/plugins/claude' -print 2>/dev/null)
 
 manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), `name:` is not allowed
   while IFS= read -r msg; do bad "$1: $msg"; done < <(awk -v want="${2:-}" '

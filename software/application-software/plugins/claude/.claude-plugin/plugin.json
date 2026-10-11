@@ -1,0 +1,7 @@
+{
+  "name": "application-software",
+  "description": "Shared context for every application-software project: ticket conventions and the create-ticket skill.",
+  "author": {
+    "name": "Northeastern Electric Racing"
+  }
+}

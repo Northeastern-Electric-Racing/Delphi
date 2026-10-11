@@ -1,0 +1,15 @@
+{
+  "extraKnownMarketplaces": {
+    "delphi": {
+      "source": {
+        "source": "github",
+        "repo": "Northeastern-Electric-Racing/Delphi"
+      },
+      "autoUpdate": true
+    }
+  },
+  "enabledPlugins": {
+    "application-software@delphi": true,
+    "argos@delphi": true
+  }
+}
