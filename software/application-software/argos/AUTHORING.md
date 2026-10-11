@@ -5,7 +5,7 @@ full model; this is the Argos-specific short version.
 
 ## Change an existing workspace
 
-1. Check out `ws/<name>` (from another workspace: `bash .delphi/switch.sh <name>`, the
+1. Check out `ws/software/application-software/argos/<leaf>` (from another workspace: `bash .delphi/switch.sh <leaf>`, the
    `switch-workspace` skill), then `git switch -c <branch>`.
 2. Edit at normal harness paths: `CLAUDE.md`, `.claude/skills/<skill>/SKILL.md`, `docs/`.
 3. Push the branch and open a PR into `ws/<name>`. After it merges, CI proposes it to `main`.

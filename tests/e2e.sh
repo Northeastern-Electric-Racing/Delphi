@@ -25,6 +25,7 @@ ok() { echo "ok - $*" && pass=$((pass + 1)); }
 fail() { echo "FAIL - $*" >&2 && exit 1; }
 A=software/application-software/argos/workspaces/argos-dev
 B=software/electrical/workspaces/bms-dev
+AN=software/application-software/argos/argos-dev BN=software/electrical/bms-dev # their names: folder path without workspaces/
 
 # --- sandbox: seed repo -> bare origin; "ci" is the clone CI runs in, "dev" a person's clone
 git init -q "$t/seed"
@@ -32,7 +33,7 @@ cp -R "$src/ci" "$src/tools" "$src/templates" "$src/.github" "$src/.delphi" "$sr
 mkdir -p "$t/seed/$A" "$t/seed/$B"
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
-sed -i.bak "s/{{name}}/bms-dev/" "$t/seed/$B/workspace.yml" && rm "$t/seed/$B/workspace.yml.bak"
+sed -i.bak "s|{{name}}|$BN|" "$t/seed/$B/workspace.yml" && rm "$t/seed/$B/workspace.yml.bak"
 FD=software/electrical/firmware/defaults # project defaults for new workspaces under electrical/firmware
 mkdir -p "$t/seed/$FD/.claude/skills/fw"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
@@ -55,7 +56,7 @@ commit_on() {
 sync >"$t/out"
 main=$(o rev-parse main)
 for w in "$A" "$B"; do
-  n=${w##*/}
+  n=${w%/workspaces/*}/${w##*/}
   o diff --quiet "main:$w" "ws/$n" -- ':!.delphi' || fail "ws/$n root != $w"
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n lacks main's .delphi/"
   [ "$(o rev-parse "ws/$n^")" = "$main" ] || fail "ws/$n parent is not main"
@@ -74,86 +75,86 @@ sync >/dev/null
 [ "$before" = "$(o for-each-ref --format='%(objectname)' refs/heads)" ] || fail "second sync changed refs"
 ok "sync is a no-op when nothing changed"
 
-# --- 2. an edit merged into ws/argos-dev becomes propose/argos-dev and a PR to main
-commit_on ws/argos-dev docs/CONTEXT.md "ws edit one"
-sync argos-dev >"$t/out"
-o show "propose/argos-dev:$A/docs/CONTEXT.md" | grep -qx "ws edit one" || fail "propose/argos-dev lacks the edit"
-[ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose diff not just the edit"
-grep -q "gh pr create --base main --head propose/argos-dev --title ws/argos-dev → main" "$t/gh.log" ||
+# --- 2. an edit merged into ws/$AN becomes propose/$AN and a PR to main
+commit_on ws/$AN docs/CONTEXT.md "ws edit one"
+sync "$AN" >"$t/out"
+o show "propose/$AN:$A/docs/CONTEXT.md" | grep -qx "ws edit one" || fail "propose/$AN lacks the edit"
+[ "$(o diff --name-only main propose/$AN)" = "$A/docs/CONTEXT.md" ] || fail "propose diff not just the edit"
+grep -q "gh pr create --base main --head propose/$AN --title ws/$AN → main" "$t/gh.log" ||
   fail "no PR created: $(cat "$t/gh.log")"
-grep -q -- "- edit docs/CONTEXT.md on ws/argos-dev (tester)" "$t/gh.log" || fail "PR body lacks ws commit"
-ok "ws edit -> propose/argos-dev with the change under the folder, PR opened with gh"
-prop=$(o rev-parse propose/argos-dev)
+grep -q -- "- edit docs/CONTEXT.md on ws/$AN (tester)" "$t/gh.log" || fail "PR body lacks ws commit"
+ok "ws edit -> propose/$AN with the change under the folder, PR opened with gh"
+prop=$(o rev-parse propose/$AN)
 sleep 1 # a re-built merge commit would get a new timestamp, hence a new id
 : >"$t/gh.log"
-sync argos-dev >/dev/null
-{ [ "$(o rev-parse propose/argos-dev)" = "$prop" ] && [ ! -s "$t/gh.log" ]; } || fail "unchanged proposal re-pushed"
+sync "$AN" >/dev/null
+{ [ "$(o rev-parse propose/$AN)" = "$prop" ] && [ ! -s "$t/gh.log" ]; } || fail "unchanged proposal re-pushed"
 ok "an unchanged proposal is not re-pushed and its PR not touched"
 
-# --- 3. merging propose/argos-dev into main, then sync: clean, ws unchanged, nothing to propose
+# --- 3. merging propose/$AN into main, then sync: clean, ws unchanged, nothing to propose
 (cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
-  git merge -q --no-ff --no-edit origin/propose/argos-dev && git push -q origin main)
-ws=$(o rev-parse ws/argos-dev)
+  git merge -q --no-ff --no-edit origin/propose/$AN && git push -q origin main)
+ws=$(o rev-parse ws/$AN)
 : >"$t/gh.log"
 sync >"$t/out" || fail "sync after merging propose failed"
-[ "$(o rev-parse "ws/argos-dev^{tree}")" = "$(o rev-parse "$ws^{tree}")" ] || fail "ws tree changed"
+[ "$(o rev-parse "ws/$AN^{tree}")" = "$(o rev-parse "$ws^{tree}")" ] || fail "ws tree changed"
 [ ! -s "$t/gh.log" ] || fail "gh called after propose merged: $(cat "$t/gh.log")"
 ok "after the propose PR merges into main, sync is clean and opens no PR"
 
 # --- 4. a main change to another file refreshes into a ws branch with its own edits, then propose
-commit_on ws/argos-dev docs/CONTEXT.md "ws edit two"
+commit_on ws/$AN docs/CONTEXT.md "ws edit two"
 commit_on main "$A/CLAUDE.md" "main edit"
 commit_on main README.md "root edit"
 sync >"$t/out" || fail "sync with non-overlapping edits failed"
-o show ws/argos-dev:CLAUDE.md | grep -qx "main edit" || fail "main edit not in ws"
-o show ws/argos-dev:docs/CONTEXT.md | grep -qx "ws edit two" || fail "ws edit lost"
-! o cat-file -e ws/argos-dev:README.md 2>/dev/null || fail "root file leaked into ws"
-[ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose diff wrong after refresh"
+o show ws/$AN:CLAUDE.md | grep -qx "main edit" || fail "main edit not in ws"
+o show ws/$AN:docs/CONTEXT.md | grep -qx "ws edit two" || fail "ws edit lost"
+! o cat-file -e ws/$AN:README.md 2>/dev/null || fail "root file leaked into ws"
+[ "$(o diff --name-only main propose/$AN)" = "$A/docs/CONTEXT.md" ] || fail "propose diff wrong after refresh"
 ok "main-side edit refreshes cleanly alongside ws edits; propose carries only the ws edit"
-o diff --quiet "main:$B" ws/bms-dev -- ":!.delphi" || fail "bms-dev drifted"
+o diff --quiet "main:$B" ws/$BN -- ":!.delphi" || fail "bms-dev drifted"
 ok "unrelated main changes leave other ws branches' trees alone"
 
 # --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
 (cd "$t/dev" && git fetch -q && git checkout -q -B release origin/main && echo "# main edit" >>.delphi/new-worktree.sh &&
-  sed -i.bak 's/^version: .*/version: 0.0.2/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
-  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.0.2" &&
-  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.0.2 failed"
+  sed -i.bak 's/^version: .*/version: 0.1.1/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
+  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.1.1" &&
+  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.1.1 failed"
 sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out")"
-for n in argos-dev bms-dev; do
+for n in "$AN" "$BN"; do
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
 done
-[ "$(o log -1 --format=%s ws/argos-dev)" = "delphi: sync .delphi/ from main" ] || fail "no sync commit on ws/argos-dev"
+[ "$(o log -1 --format=%s ws/$AN)" = "delphi: sync .delphi/ from main" ] || fail "no sync commit on ws/$AN"
 ok "a main change to .delphi/, released as a new version, reaches every ws/* branch on refresh"
-commit_on ws/argos-dev .delphi/setup.sh "# ws edit"
-sync argos-dev >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "$t/out")"
-[ "$(o rev-parse ws/argos-dev:.delphi)" = "$(o rev-parse main:.delphi)" ] || fail "ws edit to .delphi/ not reset"
-[ "$(o diff --name-only main propose/argos-dev)" = "$A/docs/CONTEXT.md" ] || fail "propose carries .delphi/: $(o diff --name-only main propose/argos-dev)"
+commit_on ws/$AN .delphi/setup.sh "# ws edit"
+sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "$t/out")"
+[ "$(o rev-parse ws/$AN:.delphi)" = "$(o rev-parse main:.delphi)" ] || fail "ws edit to .delphi/ not reset"
+[ "$(o diff --name-only main propose/$AN)" = "$A/docs/CONTEXT.md" ] || fail "propose carries .delphi/: $(o diff --name-only main propose/$AN)"
 ok "a ws/* edit to .delphi/ is reset by refresh and never proposed into the folder"
 
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
-commit_on ws/bms-dev CLAUDE.md "ws side"
+commit_on ws/$BN CLAUDE.md "ws side"
 commit_on main "$B/CLAUDE.md" "main side"
 commit_on main "$A/CLAUDE.md" "main edit two"
-bms=$(o rev-parse ws/bms-dev)
+bms=$(o rev-parse ws/$BN)
 if sync 2>"$t/err" >"$t/out"; then fail "conflicting sync exited 0"; fi
-{ grep -q "ws/bms-dev: CONFLICT" "$t/err" && grep -q "  CLAUDE.md" "$t/err"; } || fail "conflict not reported: $(cat "$t/err")"
-[ "$(o rev-parse ws/bms-dev)" = "$bms" ] || fail "conflicting ws/bms-dev was changed"
-o show ws/argos-dev:CLAUDE.md | grep -qx "main edit two" || fail "argos-dev not synced"
+{ grep -q "ws/$BN: CONFLICT" "$t/err" && grep -q "  CLAUDE.md" "$t/err"; } || fail "conflict not reported: $(cat "$t/err")"
+[ "$(o rev-parse ws/$BN)" = "$bms" ] || fail "conflicting ws/$BN was changed"
+o show ws/$AN:CLAUDE.md | grep -qx "main edit two" || fail "argos-dev not synced"
 ok "conflict: reported with files, exit 1, other workspaces still synced"
 
-# resolve as documented: merge main into ws/bms-dev on a branch, PR into ws/bms-dev
-(cd "$t/dev" && git fetch -q && git checkout -q -B fix origin/ws/bms-dev &&
+# resolve as documented: merge main into ws/$BN on a branch, PR into ws/$BN
+(cd "$t/dev" && git fetch -q && git checkout -q -B fix origin/ws/$BN &&
   { git merge -q -Xsubtree="$B" origin/main >/dev/null 2>&1 || true; } &&
-  git checkout -q --ours CLAUDE.md && git commit -qam "resolve" && git push -q origin HEAD:ws/bms-dev)
+  git checkout -q --ours CLAUDE.md && git commit -qam "resolve" && git push -q origin HEAD:ws/$BN)
 sync >"$t/out" 2>"$t/err" || fail "sync after resolving failed: $(cat "$t/err")"
-grep -q "ws/bms-dev: proposed" "$t/out" || fail "resolved ws not proposed"
+grep -q "ws/$BN: proposed" "$t/out" || fail "resolved ws not proposed"
 ok "conflict resolved by merging main into ws in a PR; sync then succeeds"
 
 # --- 6. removed workspace folder: notice, branch kept
 (cd "$t/dev" && git checkout -q -B main origin/main && git rm -rq "$B" && git commit -qm rm && git push -q origin main)
 sync >"$t/out"
-grep -q "notice: ws/bms-dev has no workspace folder on main" "$t/out" || fail "no removal notice"
-o rev-parse -q --verify ws/bms-dev >/dev/null || fail "ws/bms-dev deleted"
+grep -q "notice: ws/$BN has no workspace folder on main" "$t/out" || fail "no removal notice"
+o rev-parse -q --verify ws/$BN >/dev/null || fail "ws/$BN deleted"
 ok "removed workspace: notice printed, branch kept"
 
 # --- 7. check.sh: real layout passes; each bad layout fails
@@ -174,47 +175,55 @@ expect_bad bad-repo "bad repos entry" sh -c "awk '{ print } /^repos:/ { print \"
 expect_bad bad-reference "bad references-git entry" sh -c "printf 'references-git:\n  x: url ref extra\n' >>$A/workspace.yml"
 expect_bad reference-repo-clash "duplicate repo: argos" sh -c "printf 'references-git:\n  argos: https://example.com/a.git\n' >>$A/workspace.yml"
 expect_bad bad-key "unexpected line" sh -c "printf 'color: x\n' >>$A/workspace.yml"
-expect_bad wrong-name "want the folder name" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
+expect_bad wrong-name "the folder path without workspaces/" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad no-name "name is missing" sh -c "sed -i.bak '/^name:/d' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad defaults-name "defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/defaults/workspace.yml"
 expect_bad folder-delphi "$A/.delphi: managed in the root" sh -c "mkdir $A/.delphi && cp .delphi/park.sh $A/.delphi/"
-expect_bad duplicate "is also used by" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/"
+expect_bad ref-clash "can't be a branch while ws/$AN is" sh -c "mkdir -p software/application-software/workspaces && cp -R $A software/application-software/workspaces/argos &&
+  sed -i.bak 's|^name:.*|name: software/application-software/argos|' software/application-software/workspaces/argos/workspace.yml"
 expect_bad nested "nested inside" sh -c "mkdir -p $A/docs/workspaces/inner && cp $A/workspace.yml $A/docs/workspaces/inner/"
-expect_bad bad-name "name must be" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
+expect_bad bad-name "must be lowercase letters, digits, '-' and '/'" sh -c "mkdir -p software/x/workspaces && cp -R $A software/x/workspaces/Bad_Name"
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
-expect_bad not-bumped "changed since 0.0.1: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
-expect_bad bumped-no-line "add \`0.0.2 " sed -i.bak 's/^version: .*/version: 0.0.2/' .delphi/manifest.yml
+expect_bad not-bumped "changed since 0.1.0: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
+expect_bad bumped-no-line "add \`0.1.1 " sed -i.bak 's/^version: .*/version: 0.1.1/' .delphi/manifest.yml
 release() { # <version> [<migration slug>]: bump to <version> (with an empty migration) and add its line, as a release would
   [ -z "${2:-}" ] || printf '#!/usr/bin/env bash\nset -euo pipefail\n' >".delphi/migrations/$1-$2.sh"
   sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
     echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
 }
-expect_bad migration-patch "0.0.2 has a migration, so it must bump MINOR" release 0.0.2 x
-expect_bad version-down "0.0.0 is not above 0.0.1" release 0.0.0
+expect_bad migration-patch "0.1.1 has a migration, so it must bump MINOR" release 0.1.1 x
+expect_bad version-down "0.0.9 is not above 0.1.0" release 0.0.9
 expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
 expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
-expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.1.0-x.sh"
+expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.2.0-x.sh"
 expect_bad history-rewritten "only add lines" sed -i.bak 's/linked/LINKED/' .delphi/versions
 expect_bad released-migration-changed "add a new version's migration instead" sh -c "echo '# x' >>.delphi/migrations/0.0.1-linked-worktrees-to-clones.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
 expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/defaults/workspace.yml"
 expect_bad defaults-named-workspace "defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/defaults/.delphi && cp -R $A/. software/x/workspaces/defaults/"
-expect_bad bad-link "bad links entry" sh -c "printf 'links:\n  main\n' >>$A/workspace.yml"
-expect_bad duplicate-link "duplicate link: main" sh -c "printf '  - main\n' >>$A/workspace.yml"
-expect_bad self-link "links itself: argos-dev" sh -c "printf '  - argos-dev\n' >>$A/workspace.yml"
+expect_bad links-renamed "links: is now workspaces:" sh -c "sed -i.bak 's/^workspaces:/links:/' $A/workspace.yml && rm $A/workspace.yml.bak"
+expect_bad bad-workspaces-entry "bad workspaces entry" sh -c "printf '  - argos-dev\n' >>$A/workspace.yml"
+expect_bad duplicate-workspace "duplicate workspace: main" sh -c "printf '  - main\n' >>$A/workspace.yml"
+expect_bad lists-itself "lists itself: ws/$AN" sh -c "printf '  - ws/$AN\n' >>$A/workspace.yml"
+expect_bad unknown-workspace "lists ws/software/nope/x, which isn't a workspace on main" sh -c "printf '  - ws/software/nope/x\n' >>$A/workspace.yml"
 expect_bad template-delphi "templates/workspace/.delphi: scripts live only" mkdir templates/workspace/.delphi
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
+d=$t/chk-same-leaf && rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$d/"
+mkdir -p "$d/software/x/workspaces" && cp -R "$d/$A" "$d/software/x/workspaces/"
+sed -i.bak 's|^name:.*|name: software/x/argos-dev|' "$d/software/x/workspaces/argos-dev/workspace.yml" && rm "$d/software/x/workspaces/argos-dev/workspace.yml.bak"
+{ (cd "$d" && git init -q && git add -A) && "$src/ci/check.sh" "$d" >/dev/null; } || fail "two workspaces ending in the same name failed check"
+ok "workspaces in different places may end in the same name (software/x/argos-dev beside $AN)"
 
 # --- 8. setup.sh fetches workspace.yml repos into repos/<repo>, checks out the default branch under worktrees/, and is idempotent
 for r in lib1 lib2; do
   git init -q "$t/$r" && git -C "$t/$r" commit -q --allow-empty -m "$r" && git clone -q --bare "$t/$r" "$t/$r.git"
 done
 def=$(git -C "$t/lib1" branch --show-current)
-git clone -q -b ws/argos-dev "$t/origin.git" "$t/ws"
-printf 'name: argos-dev\nharness: claude-code\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
+git clone -q -b ws/$AN "$t/origin.git" "$t/ws"
+printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nrepos:\n  # a comment\n  lib1: %s  # trailing\n  lib2: %s\n' \
   "$t/lib1.git" "$t/lib2.git" >"$t/ws/workspace.yml"
 /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed"
 /bin/bash "$t/ws/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh re-run failed"
@@ -229,11 +238,11 @@ for d in /repos/ /worktrees/; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" 
 rm -rf "$t/ws/worktrees/lib2" && git -C "$t/ws/repos/lib2" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
   [ -d "$t/ws/worktrees/lib2/$def" ] || fail "re-run did not restore a missing default worktree"
 ok "setup.sh makes a bare store in repos/ plus a default-branch worktree in worktrees/, excludes both once, and is idempotent"
-w=$t/legacy && git clone -q -b ws/argos-dev "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" && git clone -q "$t/lib1.git" "$w/repos/lib1"
+w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" && git clone -q "$t/lib1.git" "$w/repos/lib1"
 /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed on a pre-existing clone"
 { grep -q "could not check out worktrees/lib1/$def" "$t/err" && [ -d "$w/worktrees/lib2/$def" ]; } || fail "pre-existing clone not reported"
 ok "setup.sh warns and carries on when repos/<repo> is an older plain clone"
-git clone -q -c core.autocrlf=true -b ws/argos-dev "$t/origin.git" "$t/ws-crlf"
+git clone -q -c core.autocrlf=true -b ws/$AN "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh fails with core.autocrlf=true"
 ! grep -q "as released" "$t/err" || fail "core.autocrlf=true changed .delphi/'s version hash"
@@ -242,8 +251,8 @@ ok "setup.sh runs in a core.autocrlf=true clone (Git Bash default), thanks to .g
 # --- 8b. references-git: shallow, detached, push-disabled checkouts under references/, refreshed on re-run
 git -C "$t/lib2" tag lib2@v1 && git -C "$t/lib2" commit -q --allow-empty -m "after v1" && git -C "$t/lib2" push -q "$t/lib2.git" --all && git -C "$t/lib2" push -q "$t/lib2.git" --tags
 git -C "$t/lib1" commit -q --allow-empty -m "lib1 two" && git -C "$t/lib1" push -q "$t/lib1.git" --all
-w=$t/refs && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
-printf 'name: argos-dev\nharness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s lib2@v1  # pinned, monorepo-style tag\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
+w=$t/refs && git clone -q -b ws/$AN "$t/origin.git" "$w"
+printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nreferences-git:\n  lib1: file://%s\n  lib2: file://%s lib2@v1  # pinned, monorepo-style tag\n' "$t/lib1.git" "$t/lib2.git" >"$w/workspace.yml"
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed with references-git: $(cat "$t/out")"
 [ "$(git -C "$w/references/lib1" rev-parse HEAD)" = "$(git -C "$t/lib1" rev-parse HEAD)" ] || fail "lib1 reference not at default branch"
 [ "$(git -C "$w/references/lib2" rev-parse HEAD)" = "$(git -C "$t/lib2" rev-parse 'lib2@v1^{commit}')" ] || fail "lib2 reference not at its pin"
@@ -263,38 +272,36 @@ ok "new-worktree.sh refuses a reference repo"
 
 # --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/, linked/ in the
 # git-ignored .delphi/parked/ and restores them, same paths, when the workspace comes back; same-workspace branches don't move
-w=$t/park && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
+w=$t/park && git clone -q -b ws/$AN "$t/origin.git" "$w"
 local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch> whose workspace.yml lists <repo>
-  git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\nlinks:\n  - main\n' \
+  git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\nworkspaces:\n  - main\n' \
     "$3" "$4" "$t/$4.git" "$4" "$t/$4.git" >"$w/workspace.yml" && git -C "$w" commit -qam "$1" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
 }
 live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" branch --show-current)" = "$def" ] &&
   ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
   [ -f "$w/linked/main/ci/sync.sh" ]; }
-local_ws a1 ws/argos-dev argos-dev lib1 || fail "park: setup on argos-dev failed"
+local_ws a1 "ws/$AN" "$AN" lib1 || fail "park: setup on argos-dev failed"
 [ "$(readlink "$w/.git/hooks/post-checkout")" = ../../.delphi/park.sh ] || fail "setup.sh did not link the hook to .delphi/park.sh"
 { git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.delphi/parked" ]; } || fail "park: same-workspace branch moved clones"
-local_ws b1 ws/bms-dev bms-dev lib2 || fail "park: setup on bms-dev failed"
-{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/argos-dev/worktrees/lib1/$def" ] &&
-  [ -d "$w/.delphi/parked/argos-dev/linked/main/.git" ] && live lib2; } ||
+local_ws b1 "ws/$BN" "$BN" lib2 || fail "park: setup on bms-dev failed"
+{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/$AN/worktrees/lib1/$def" ] &&
+  [ -d "$w/.delphi/parked/$AN/linked/main/.git" ] && live lib2; } ||
   fail "park: argos-dev not parked on bms-dev"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: parked clones show in status: $(git -C "$w" status --porcelain)"
 { git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/linked" ]; } ||
   fail "park: clones visible on main: $(ls -A "$w")"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
-{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/bms-dev/repos/lib2" ] &&
-  [ ! -e "$w/.delphi/parked/argos-dev" ]; } ||
+{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/$BN/repos/lib2" ] &&
+  [ ! -e "$w/.delphi/parked/$AN" ]; } ||
   fail "park: argos-dev not restored"
 git -C "$w/worktrees/lib1/$def" commit -q --allow-empty -m "after restore" || fail "park: restored worktree unusable"
 { git -C "$w" checkout -q b1 && live lib2 && git -C "$w" checkout -q a1 && live lib1; } || fail "park: second round trip"
 git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q a1 2>"$t/err"
-{ grep -q "worktrees/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.delphi/parked/argos-dev/worktrees" ]; } ||
+{ grep -q "worktrees/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.delphi/parked/$AN/worktrees" ]; } ||
   fail "park: a folder in the way was not reported and kept: $(cat "$t/err")"
 { rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
-git -C "$w" checkout -q main && mkdir -p "$w/.git/delphi" && mv "$w/.delphi/parked/argos-dev" "$w/.git/delphi/argos-dev"
-{ git -C "$w" checkout -q a1 && live lib1 && [ ! -e "$w/.git/delphi/argos-dev" ]; } || fail "park: not restored from the old .git/delphi/ location"
 ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
-ok "parked clones sit git-ignored in .delphi/parked/; ones parked in .git/delphi/ by older versions still come back"
+ok "parked clones sit git-ignored in .delphi/parked/<name>/, the workspace's place in the tree"
 ok "park.sh leaves same-workspace branches alone and reports, never overwrites, a folder in the way"
 git -C "$w" checkout -q -b a3 a1 && echo 'echo "park.sh from a3" >&2' >>"$w/.delphi/park.sh" && git -C "$w" commit -qam a3
 { git -C "$w" checkout -q b1 2>"$t/err" && ! grep -q "from a3" "$t/err" && git -C "$w" checkout -q a3 2>"$t/err" &&
@@ -312,21 +319,21 @@ ok "setup.sh keeps someone else's post-checkout hook and says so"
 
 # --- 9. new-workspace.sh creates the folder on a branch and opens a PR
 : >"$t/gh.log"
-git -C "$t/dev" branch -q new-workspace/fw-dev origin/main # left by an earlier failed run
+git -C "$t/dev" branch -q new-workspace/electrical/firmware/fw-dev origin/main # left by an earlier failed run
 (cd "$t/dev" && git checkout -q -B main origin/main && tools/new-workspace.sh electrical/firmware fw-dev >/dev/null) ||
   fail "new-workspace.sh failed (blocked by a leftover local branch?)"
 F=software/electrical/firmware/workspaces/fw-dev
-o cat-file -e "new-workspace/fw-dev:$F/workspace.yml" || fail "no workspace.yml on new-workspace/fw-dev"
-o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "branch \`ws/fw-dev\`" || fail "CLAUDE.md not filled in"
-! o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -q "{{" || fail "placeholder left"
-o show "new-workspace/fw-dev:$F/CLAUDE.md" | grep -qx "# Firmware for fw-dev" || fail "defaults CLAUDE.md not appended"
-[ "$(o show "new-workspace/fw-dev:$F/workspace.yml")" = "$(printf 'name: fw-dev\n'; o show "main:$FD/workspace.yml")" ] ||
+o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/workspace.yml" || fail "no workspace.yml on new-workspace/electrical/firmware/fw-dev"
+o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -q "branch \`ws/software/electrical/firmware/fw-dev\`" || fail "CLAUDE.md not filled in"
+! o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -q "{{" || fail "placeholder left"
+o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -qx "# Firmware for software/electrical/firmware/fw-dev" || fail "defaults CLAUDE.md not appended"
+[ "$(o show "new-workspace/electrical/firmware/fw-dev:$F/workspace.yml")" = "$(printf 'name: software/electrical/firmware/fw-dev\n'; o show "main:$FD/workspace.yml")" ] ||
   fail "defaults workspace.yml not used, or name: not set"
-o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
-o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/switch-workspace/SKILL.md" || fail "template skill lost"
-o cat-file -e "new-workspace/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
-grep -q "gh pr create --base main --head new-workspace/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
-(cd "$t/dev" && ! tools/new-workspace.sh x argos-dev 2>/dev/null) || fail "duplicate name accepted"
+o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
+o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/switch-workspace/SKILL.md" || fail "template skill lost"
+o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
+grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
+(cd "$t/dev" && ! tools/new-workspace.sh application-software/argos argos-dev 2>/dev/null) || fail "duplicate workspace accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh x Bad 2>/dev/null) || fail "bad name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh ../x ok 2>/dev/null) || fail "bad org path accepted"
 [ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "new-workspace touched the checkout"
@@ -335,33 +342,33 @@ ok "new-workspace.sh adds the project's defaults/ (CLAUDE.md appended, placehold
 ok "new-workspace.sh works when a local new-workspace/<name> branch is left over"
 
 # --- 10. one direction at a time: `sync refresh` only updates ws/, `sync propose` only updates propose/
-sync argos-dev >/dev/null || fail "settling sync failed"
+sync "$AN" >/dev/null || fail "settling sync failed"
 commit_on main "$A/CLAUDE.md" "one-way refresh"
-prop_before=$(o rev-parse propose/argos-dev)
-sync refresh argos-dev >/dev/null || fail "sync refresh failed"
-o show ws/argos-dev:CLAUDE.md | grep -qx "one-way refresh" || fail "sync refresh did not merge main"
-[ "$(o rev-parse propose/argos-dev)" = "$prop_before" ] || fail "sync refresh touched propose/argos-dev"
-commit_on ws/argos-dev docs/CONTEXT.md "one-way propose"
-ws_before=$(o rev-parse ws/argos-dev)
+prop_before=$(o rev-parse propose/$AN)
+sync refresh "$AN" >/dev/null || fail "sync refresh failed"
+o show ws/$AN:CLAUDE.md | grep -qx "one-way refresh" || fail "sync refresh did not merge main"
+[ "$(o rev-parse propose/$AN)" = "$prop_before" ] || fail "sync refresh touched propose/$AN"
+commit_on ws/$AN docs/CONTEXT.md "one-way propose"
+ws_before=$(o rev-parse ws/$AN)
 commit_on main "$A/CLAUDE.md" "not yet refreshed"
-sync propose argos-dev >/dev/null || fail "sync propose failed"
-o show "propose/argos-dev:$A/docs/CONTEXT.md" | grep -qx "one-way propose" || fail "sync propose lacks the ws edit"
-[ "$(o rev-parse ws/argos-dev)" = "$ws_before" ] || fail "sync propose changed ws/argos-dev"
-! o show ws/argos-dev:CLAUDE.md | grep -qx "not yet refreshed" || fail "sync propose merged main into ws"
+sync propose "$AN" >/dev/null || fail "sync propose failed"
+o show "propose/$AN:$A/docs/CONTEXT.md" | grep -qx "one-way propose" || fail "sync propose lacks the ws edit"
+[ "$(o rev-parse ws/$AN)" = "$ws_before" ] || fail "sync propose changed ws/$AN"
+! o show ws/$AN:CLAUDE.md | grep -qx "not yet refreshed" || fail "sync propose merged main into ws"
 ok "sync refresh / sync propose each move changes one way only"
-prop_before=$(o rev-parse propose/argos-dev)
-commit_on ws/argos-dev workspace.yml "bad: line"
-if sync argos-dev 2>"$t/err" >/dev/null; then fail "sync proposed a workspace failing check"; fi
-grep -q "ws/argos-dev: check failed" "$t/err" || fail "check failure not reported: $(cat "$t/err")"
-[ "$(o rev-parse propose/argos-dev)" = "$prop_before" ] || fail "failing proposal was pushed"
+prop_before=$(o rev-parse propose/$AN)
+commit_on ws/$AN workspace.yml "bad: line"
+if sync "$AN" 2>"$t/err" >/dev/null; then fail "sync proposed a workspace failing check"; fi
+grep -q "ws/$AN: check failed" "$t/err" || fail "check failure not reported: $(cat "$t/err")"
+[ "$(o rev-parse propose/$AN)" = "$prop_before" ] || fail "failing proposal was pushed"
 ok "a proposal failing check.sh is reported and not pushed; exit 1"
 
 # --- 11. new-worktree.sh: new branch from the default branch or <base>; existing branch checked out; reruns reuse
 git init -q "$t/code" && git -C "$t/code" commit -q --allow-empty -m one && git -C "$t/code" branch feat &&
   git -C "$t/code" branch develop && git -C "$t/code" commit -q --allow-empty -m two
 def=$(git -C "$t/code" branch --show-current)
-w=$t/nw && git clone -q -b ws/bms-dev "$t/origin.git" "$w"
-printf 'name: bms-dev\nharness: claude-code\nrepos:\n  code: %s\n' "$t/code" >"$w/workspace.yml"
+w=$t/nw && git clone -q -b ws/$BN "$t/origin.git" "$w"
+printf 'name: software/electrical/bms-dev\nharness: claude-code\nrepos:\n  code: %s\n' "$t/code" >"$w/workspace.yml"
 bash "$w/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed for new-worktree test"
 nw() { bash "$w/.delphi/new-worktree.sh" "$@"; }
 [ "$(nw code 1-new)" = "$w/worktrees/code/1-new" ] || fail "new-worktree path"
@@ -375,68 +382,101 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
 
-# --- 12. links: setup.sh checks out listed workspaces and main read-only under linked/, refreshed on re-run;
+# --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<branch>, refreshed on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely
-printf 'name: bms-dev\nharness: claude-code\nrepos:\n  code: %s\nlinks:\n  - argos-dev  # a comment\n  - main\n  - bms-dev\n  - Bad\n' \
+printf 'name: software/electrical/bms-dev\nharness: claude-code\nrepos:\n  code: %s\nworkspaces:\n  - ws/software/application-software/argos/argos-dev  # a comment\n  - main\n  - ws/software/electrical/bms-dev\n  - Bad\n' \
   "$t/code" >"$w/workspace.yml"
 bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed with links: $(cat "$t/err")"
-[ "$(git -C "$w/linked/argos-dev" rev-parse HEAD)" = "$(o rev-parse ws/argos-dev)" ] || fail "link not at ws/argos-dev"
+[ "$(git -C "$w/linked/ws/$AN" rev-parse HEAD)" = "$(o rev-parse "ws/$AN")" ] || fail "copy not at ws/$AN"
 [ -f "$w/linked/main/ci/sync.sh" ] || fail "link main"
-{ [ ! -e "$w/linked/bms-dev" ] && [ ! -e "$w/linked/Bad" ] && grep -q "skipping bad link 'Bad'" "$t/err"; } || fail "linked itself or a bad name"
-! git -C "$w/linked/argos-dev" push -q origin HEAD:refs/heads/x 2>/dev/null || fail "push from a link succeeded"
-commit_on ws/argos-dev docs/CONTEXT.md "linked update"
-{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && grep -qx "linked update" "$w/linked/argos-dev/docs/CONTEXT.md"; } || fail "re-run did not refresh a link"
+{ [ ! -e "$w/linked/ws/$BN" ] && [ ! -e "$w/linked/Bad" ] && grep -q "skipping bad workspaces: entry 'Bad'" "$t/err"; } || fail "copied itself or a bad entry"
+! git -C "$w/linked/ws/$AN" push -q origin HEAD:refs/heads/x 2>/dev/null || fail "push from a link succeeded"
+commit_on ws/$AN docs/CONTEXT.md "linked update"
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && grep -qx "linked update" "$w/linked/ws/$AN/docs/CONTEXT.md"; } || fail "re-run did not refresh a link"
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
-ok "setup.sh checks out links: read-only under linked/, skips itself and bad names, refreshes on re-run"
-[ "$(git -C "$w" config delphi.bms-dev.version)" = 0.0.2 ] || fail "setup.sh did not record the version"
-old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.bms-dev.version; }
+ok "setup.sh checks out workspaces: read-only at linked/<branch>, skips itself and bad entries, refreshes on re-run"
+[ "$(git -C "$w" config delphi.$BN.version)" = 0.1.1 ] || fail "setup.sh did not record the version"
+old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
 old_link && echo x >>"$w/linked/main/README.md"
 { ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has uncommitted changes" "$t/err" &&
-  grep -qx x <(tail -n 1 "$w/linked/main/README.md") && ! git -C "$w" config delphi.bms-dev.version >/dev/null; } ||
+  grep -qx x <(tail -n 1 "$w/linked/main/README.md") && ! git -C "$w" config delphi.$BN.version >/dev/null; } ||
   fail "a failing migration did not stop setup.sh with nothing lost: $(cat "$t/err")"
 git -C "$w/linked/main" checkout -q README.md && git -C "$w/linked/main" commit -q --allow-empty -m "detached work"
 { ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has commits on no branch" "$t/err" &&
   [ "$(git -C "$w/linked/main" log -1 --format=%s)" = "detached work" ]; } || fail "0.0.1 deleted commits on no branch: $(cat "$t/err")"
 git -C "$w/linked/main" checkout -q --detach origin/main
 ok "a migration that can't finish safely stops setup.sh, keeps what it would lose, and records nothing"
-git -C "$w" config delphi.bms-dev.version 0.0.1
+git -C "$w" config delphi.$BN.version 0.0.1
 { /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && [ -f "$w/linked/main/.git" ] && grep -q "linked/main is a worktree" "$t/err"; } ||
   fail "a migration ran again, or setup.sh wrote into a worktree: $(cat "$t/err")"
 ok "a recorded version's migrations don't run again; setup.sh never writes into a worktree in linked/"
-git -C "$w" config --unset delphi.bms-dev.version
-{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating bms-dev to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
+git -C "$w" config --unset delphi.$BN.version
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
   [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
-  [ "$(git -C "$w" config delphi.bms-dev.version)" = 0.0.2 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
+  [ "$(git -C "$w" config delphi.$BN.version)" = 0.1.1 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
 ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a read-only copy) and records the version"
 echo "# local" >>"$w/.delphi/switch.sh"
-{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.0.2 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.1.1 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
 ok "setup.sh warns when .delphi/ isn't the version it says"
 
 # --- 12b. switch.sh: refuses a dirty root; switches workspaces (parking and restoring), fast-forwards, sets up; main too
-(cd "$t/dev" && git fetch -q && git checkout -q -B sw origin/ws/argos-dev &&
-  printf 'name: argos-dev\nharness: claude-code\nrepos:\n  lib1: %s\nlinks:\n  - main\n' "$t/lib1.git" >workspace.yml &&
-  git commit -qam "local repos" && git push -q origin HEAD:ws/argos-dev)
-w=$t/sw && git clone -q -b ws/argos-dev "$t/origin.git" "$w"
+(cd "$t/dev" && git fetch -q && git checkout -q -B sw origin/ws/$AN &&
+  printf 'name: software/application-software/argos/argos-dev\nharness: claude-code\nrepos:\n  lib1: %s\nworkspaces:\n  - main\n' "$t/lib1.git" >workspace.yml &&
+  git commit -qam "local repos" && git push -q origin HEAD:ws/$AN)
+w=$t/sw && git clone -q -b ws/$AN "$t/origin.git" "$w"
 /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1 || fail "switch: setup failed"
 sw() { /bin/bash "$w/.delphi/switch.sh" "$@"; }
 echo x >>"$w/CLAUDE.md"
-{ ! sw bms-dev 2>"$t/err" >/dev/null && grep -q "commit or set aside" "$t/err" && [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ]; } ||
+{ ! sw bms-dev 2>"$t/err" >/dev/null && grep -q "commit or set aside" "$t/err" && [ "$(git -C "$w" branch --show-current)" = ws/$AN ]; } ||
   fail "switch: dirty root not refused"
 git -C "$w" checkout -q CLAUDE.md
-sw bms-dev >"$t/out" 2>&1 || fail "switch to bms-dev failed: $(cat "$t/out")"
-{ [ "$(git -C "$w" branch --show-current)" = ws/bms-dev ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/linked" ] &&
-  [ -d "$w/.delphi/parked/argos-dev/linked/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
-commit_on ws/argos-dev docs/CONTEXT.md "while away"
-sw argos-dev >"$t/out" 2>&1 || fail "switch back failed: $(cat "$t/out")"
-{ [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ] && grep -qx "while away" "$w/docs/CONTEXT.md" &&
+sw bms-dev >"$t/out" 2>&1 || fail "switch to bms-dev (by its last part) failed: $(cat "$t/out")"
+{ [ "$(git -C "$w" branch --show-current)" = ws/$BN ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/linked" ] &&
+  [ -d "$w/.delphi/parked/$AN/linked/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
+commit_on ws/$AN docs/CONTEXT.md "while away"
+sw "ws/$AN" >"$t/out" 2>&1 || fail "switch back (by branch) failed: $(cat "$t/out")"
+{ [ "$(git -C "$w" branch --show-current)" = ws/$AN ] && grep -qx "while away" "$w/docs/CONTEXT.md" &&
   [ -d "$w/worktrees/lib1/$def" ] && [ -f "$w/linked/main/ci/sync.sh" ]; } || fail "switch: argos-dev not restored and fast-forwarded"
 { sw main >/dev/null 2>&1 && [ "$(git -C "$w" branch --show-current)" = main ] && [ ! -e "$w/repos" ] && [ -f "$w/ci/sync.sh" ]; } ||
   fail "switch to main"
-git -C "$w" switch -q ws/argos-dev
-{ ! sw ../x 2>/dev/null && ! sw nope 2>/dev/null && [ "$(git -C "$w" branch --show-current)" = ws/argos-dev ]; } || fail "switch accepted a bad or missing workspace"
+git -C "$w" switch -q ws/$AN
+{ ! sw ../x 2>/dev/null && ! sw nope 2>/dev/null && ! sw software/nope/x 2>/dev/null && [ "$(git -C "$w" branch --show-current)" = ws/$AN ]; } || fail "switch accepted a bad or missing workspace"
 ok "switch.sh refuses a dirty root, parks and restores workspaces, fast-forwards, runs setup, and switches to main"
+ok "switch.sh takes a workspace's name, its branch, or its last part alone"
+
+# --- 14. named by path: a workspace's old ws/<leaf> branch carries over into ws/<name>; moving a clone onto the
+# renamed branch moves nothing; 0.1.0 renames what the clone keeps under old names
+C=software/electrical/workspaces/vcu-dev CN=software/electrical/vcu-dev D=software/electrical/workspaces/hv-dev DN=software/electrical/hv-dev
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main && mkdir -p "$C" "$D" && cp -R templates/workspace/. "$C/" &&
+  cp -R templates/workspace/. "$D/" && sed -i.bak "s|{{name}}|vcu-dev|" "$C/workspace.yml" && sed -i.bak "s|{{name}}|$DN|" "$D/workspace.yml" &&
+  rm "$C/workspace.yml.bak" "$D/workspace.yml.bak" && git add -A && git commit -qm "vcu-dev, still named the old way" && git push -q origin main &&
+  i=$t/legacy.index && GIT_INDEX_FILE=$i git read-tree "main:$C" && GIT_INDEX_FILE=$i git read-tree --prefix=.delphi/ main:.delphi &&
+  git push -q origin "$(git commit-tree -p main -m "delphi: create ws/vcu-dev" "$(GIT_INDEX_FILE=$i git write-tree)"):refs/heads/ws/vcu-dev" &&
+  rm "$i" && sed -i.bak "s|^name:.*|name: $CN|" "$C/workspace.yml" && rm "$C/workspace.yml.bak" && git commit -qam "vcu-dev named by path" && git push -q origin main)
+commit_on ws/vcu-dev CLAUDE.md "on the old branch"
+legacy=$(o rev-parse ws/vcu-dev)
+sync >"$t/out" 2>&1 || fail "sync after a rename failed: $(cat "$t/out")"
+{ grep -q "ws/$CN: created from ws/vcu-dev, its old name" "$t/out" && o merge-base --is-ancestor "$legacy" "ws/$CN" &&
+  o show "ws/$CN:CLAUDE.md" | grep -qx "on the old branch" && [ "$(o show "ws/$CN:workspace.yml" | sed -n 1p)" = "name: $CN" ] &&
+  grep -q "notice: ws/vcu-dev is a workspace's old name; it's now ws/$CN" "$t/out" && o show "propose/$CN:$C/CLAUDE.md" | grep -qx "on the old branch"; } ||
+  fail "ws/$CN did not carry over ws/vcu-dev: $(cat "$t/out")"
+ok "a workspace renamed by path starts its ws/<name> from its old ws/<leaf>, history and unproposed edits included"
+w=$t/rename && git clone -q -b ws/vcu-dev "$t/origin.git" "$w" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && mkdir -p "$w/repos/keep"
+{ git -C "$w" checkout -q "ws/$CN" && [ -d "$w/repos/keep" ] && [ ! -e "$w/.delphi/parked" ]; } || fail "moving onto the renamed branch parked the workspace"
+ok "checking out a workspace's renamed branch over its old one moves nothing"
+mkdir -p "$w/.delphi/parked/argos-dev/linked/vcu-dev" "$w/.git/delphi/hv-dev/repos/r" "$w/linked/argos-dev" && git -C "$w" config delphi.argos-dev.version 0.0.1
+/bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed running 0.1.0: $(cat "$t/out")"
+{ [ -d "$w/.delphi/parked/$AN/linked/ws/$CN" ] && [ -d "$w/.delphi/parked/$DN/repos/r" ] && [ ! -e "$w/.git/delphi" ] &&
+  [ -d "$w/linked/ws/$AN" ] && [ ! -e "$w/linked/argos-dev" ] && ! git -C "$w" config delphi.argos-dev.version >/dev/null &&
+  [ "$(git -C "$w" config "delphi.$CN.version")" = 0.1.1 ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "setup.sh re-ran 0.1.0"
+{ git -C "$w" config --unset "delphi.$CN.version" && /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "0.1.0 is not safe to re-run"
+ok "0.1.0 moves parked slots (.delphi/parked/<leaf>, .git/delphi/<leaf>), old copies in linked/ and old version records to path names, once"
+git -C "$w" checkout -q ws/vcu-dev && /bin/bash "$w/.delphi/switch.sh" vcu-dev >"$t/out" 2>&1 && [ "$(git -C "$w" branch --show-current)" = "ws/$CN" ] ||
+  fail "switch.sh by last part picked the old ws/vcu-dev: $(cat "$t/out")"
+ok "switch.sh by a workspace's last part ignores its old ws/<leaf> branch"
 
 # --- 13. shellcheck, if installed
 if command -v shellcheck >/dev/null; then

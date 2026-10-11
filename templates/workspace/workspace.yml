@@ -1,9 +1,9 @@
-name: {{name}}            # the folder name; checkouts park and restore repos/ by it
+name: {{name}}            # its place in the tree, the folder path without workspaces/ (branch ws/<name>); checkouts park and restore repos/ by it
 harness: claude-code
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git
 references-git:           # `<name>: <git-url> [<tag-or-branch>]`: dependency sources to read, never edit; shallow copy at references/<name>
   # name: https://github.com/<owner>/<repo>.git v1.2.3   # no tag or branch: its default branch
-links:                    # `- <workspace>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name>
+workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
   # - main                # recommended: this project's shared context, AUTHORING.md and defaults/

@@ -1,7 +1,8 @@
 # Delphi — developing it
 
-Delphi stores NER's AI-harness context. Each workspace is a folder `software/**/workspaces/<name>/`
-on `main`; branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
+Delphi stores NER's AI-harness context. Each workspace is a folder `software/**/workspaces/<leaf>/`
+on `main`, named by its place in the tree (the path without `workspaces/`:
+`software/application-software/argos/argos-dev`); branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
 subtree merges: **refresh** (main → `ws/<name>`) and **propose** (`ws/<name>` → PR to main via
 `propose/<name>`). There is no CLI, just a few shell scripts run by CI. `docs/design.md` is the
 source of truth; `docs/goals.md` lists what any change must keep.

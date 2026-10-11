@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # ci/check.sh [<dir> [<base>]]: validate Delphi (CI runs it on PRs to main, against main; sync.sh on
-# each proposal). Rules: a workspace is software/**/workspaces/<name>/ with a workspace.yml; names are
-# lowercase letters, digits, and '-', unique repo-wide; workspaces never nest; no symlinks under
+# each proposal). Rules: a workspace is software/**/workspaces/<leaf>/ with a workspace.yml; its name
+# is its folder's path without `workspaces/` (software/x/workspaces/y -> software/x/y; branch
+# ws/<name>), in lowercase letters, digits, '-' and '/', and no name is a folder of another's (git
+# can't have both ws/a and ws/a/b); workspaces never nest; no symlinks under
 # software/; no workspace (nor the template) has its own .delphi/ (sync puts main's on every ws/*
 # branch); .delphi/manifest.yml lists itself, every file in .delphi/ but `versions`, and only files
 # git tracks; its `version:` and the hash of those files (.delphi/version.sh) are the last line of
 # .delphi/versions, whose versions rise; each .delphi/migrations/<version>-<slug>.sh has its line
 # there, bumps MAJOR (MINOR while 0.x) over the line before, and starts like every script; against
 # <base>, .delphi/versions only gains lines and released migrations are unchanged; each manifest file
-# outside .delphi/ (the workflow) is the same in templates/workspace/ and every workspace; workspace.yml is `name: <folder name>`,
+# outside .delphi/ (the workflow) is the same in templates/workspace/ and every workspace; workspace.yml is `name: <its name>`,
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
-# `links:` list of `- <workspace>` or `- main`, without duplicates or the workspace itself. A project's
+# `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself. A project's
 # defaults/workspace.yml is the same without `name:`.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
@@ -79,19 +81,20 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
   while IFS= read -r msg; do bad "$1: $msg"; done < <(awk -v want="${2:-}" '
     /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     want != "" && /^name:/ { v = $0; sub(/^name:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
-                  if (v != want) print "name is \"" v "\", want the folder name \"" want "\""
+                  if (v != want) print "name is \"" v "\", want \"" want "\" (the folder path without workspaces/)"
                   if (nm++) print "duplicate name"; r = 0; next }
     /^harness:/ { v = $0; sub(/^harness:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
                   if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
     /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
     /^references-git:[[:space:]]*(#.*)?$/ { r = 2; next }
-    /^links:[[:space:]]*(#.*)?$/ { r = 3; next }
+    /^links:/ { print "links: is now workspaces: (entries `  - ws/<name>` or `  - main`)"; r = 3; next }
+    /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
     r == 3 && /^[[:space:]]/ {
-      if ($0 !~ /^[[:space:]]+-[[:space:]]+[a-z0-9][a-z0-9-]*[[:space:]]*(#.*)?$/) {
-        print "bad links entry (want `  - <workspace>` or `  - main`): " $0; next }
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+(main|ws\/[a-z0-9][a-z0-9\/-]*)[[:space:]]*(#.*)?$/ || $0 ~ /\/\/|\/[[:space:]]*(#.*)?$/) {
+        print "bad workspaces entry (want `  - ws/<name>` or `  - main`): " $0; next }
       v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
-      if (v == want) print "links itself: " v
-      if (linked[v]++) print "duplicate link: " v
+      if (v == "ws/" want) print "lists itself: " v
+      if (listed[v]++) print "duplicate workspace: " v
       next }
     r == 1 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/ {
       print "bad repos entry (want `  <name>: <git-url>`): " $0; next }
@@ -104,19 +107,25 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
       next }
     { print "unexpected line: " $0 }
     END { if (!h) print "harness is missing"; if (want != "" && !nm) print "name is missing" }' "$1")
+  while IFS= read -r v; do listed="$listed $1|${v#ws/}"; done < <(awk '/^workspaces:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
+    s && /^[[:space:]]+-[[:space:]]+ws\// { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$1")
 }
 
-folders=""
+folders="" names="" listed=""
 while IFS= read -r f; do
   folder=${f%/workspace.yml}
-  name=${folder##*/}
+  name=${folder%/workspaces/*}/${folder##*/}
   case "$(dirname "$folder")" in */workspaces) ;; *)
     bad "$f: must be at software/**/workspaces/<name>/workspace.yml" && continue ;;
   esac
   case "$folder" in *[!A-Za-z0-9._/-]*) bad "$folder: path has unsafe characters" && continue ;; esac
-  case "$name" in -* | *[!a-z0-9-]*) bad "$folder: name must be lowercase letters, digits, and '-'" ;; esac
+  case "$name" in */-* | *[!a-z0-9/-]*) bad "$folder: name $name must be lowercase letters, digits, '-' and '/'" ;; esac
+  for other in $names; do
+    case "$name/" in "$other"/*) bad "$folder: ws/$name can't be a branch while ws/$other is (git can't hold both); rename one" ;; esac
+    case "$other/" in "$name"/*) bad "$folder: ws/$name can't be a branch while ws/$other is (git can't hold both); rename one" ;; esac
+  done
+  names="$names $name"
   for other in $folders; do
-    [ "${other##*/}" != "$name" ] || bad "$folder: name '$name' is also used by $other"
     case "$folder/" in "$other"/*) bad "$folder: nested inside workspace $other" ;; esac
     case "$other/" in "$folder"/*) bad "$other: nested inside workspace $folder" ;; esac
   done
@@ -127,6 +136,9 @@ while IFS= read -r f; do
 done < <(find software -name workspace.yml -type f \( ! -path '*/defaults/workspace.yml' -o -path '*/workspaces/defaults/*' \) 2>/dev/null | sort)
 while IFS= read -r f; do manifest "$f"; done \
   < <(find software -path '*/defaults/workspace.yml' ! -path '*/workspaces/defaults/*' -type f 2>/dev/null)
+for l in $listed; do
+  case " $names " in *" ${l#*|} "*) ;; *) bad "${l%%|*}: workspaces: lists ws/${l#*|}, which isn't a workspace on main" ;; esac
+done
 
 [ "$problems" = 0 ] || { echo "check: $problems problem(s)" >&2 && exit 1; }
 echo "check: ok"
