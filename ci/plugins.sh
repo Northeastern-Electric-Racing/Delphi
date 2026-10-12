@@ -9,8 +9,9 @@
 #   each `harness: claude-code` workspace's workspace.yml `plugins:`: the `default` set of every
 #     folder above the workspace, listed first (`# default, from <folder>/`; a removed line comes
 #     back), then the sets listed by hand.
-#   each `harness: claude-code` workspace's .claude/settings.json: the shared settings below, plus the
-#     sets under `plugins:`, enabled from the delphi marketplace. Never edit it by hand: personal
+#   each `harness: claude-code` workspace's .claude/settings.json: the shared settings below (a SessionStart
+#     hook running .delphi/paths.sh and .delphi/plugins.sh), plus the sets under `plugins:`, enabled
+#     from the delphi marketplace. Never edit it by hand: personal
 #     settings go in .claude/settings.local.json, shared ones here or in workspace.yml.
 #   --check writes nothing; it lists each out-of-date file or problem and exits 1 if any.
 # ci/plugins.sh yml|settings <folder> <workspace.yml>: print one workspace's workspace.yml or
@@ -89,10 +90,14 @@ settings() { # <folder> <workspace.yml>
   done < <(awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$2")
   printf '{\n  "attribution": {\n    "sessionUrl": false\n  }'
-  # every shell (the model's, subagents', skill scripts') gets $DELPHI_ROOT and the layout from paths.sh
+  # every shell (the model's, subagents', skill scripts') gets $DELPHI_ROOT and the layout from paths.sh,
+  # and the session hears which enabled plugins aren't installed (plugins.sh prints nothing when all are)
   printf ',\n  "hooks": {\n    "SessionStart": [\n      {\n        "hooks": [\n          {\n            "type": "command",\n'
   # shellcheck disable=SC2016 # the hook expands them, not this script
   printf '            "command": "bash \\"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\\" >> \\"$CLAUDE_ENV_FILE\\""\n'
+  printf '          },\n          {\n            "type": "command",\n'
+  # shellcheck disable=SC2016
+  printf '            "command": "bash \\"$CLAUDE_PROJECT_DIR/.delphi/plugins.sh\\""\n'
   printf '          }\n        ]\n      }\n    ]\n  }'
   if [ -n "${list// /}" ]; then
     printf ',\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n'

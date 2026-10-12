@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/e2e.sh: end-to-end test of Delphi's scripts in a throwaway sandbox: a temp dir with a bare
-# origin, a stub `gh` on PATH that logs its calls to gh.log, and a copy of this repo's scripts plus
+# origin, stub `gh` and `claude` on PATH that log their calls to gh.log and claude.log, and a copy of this repo's scripts plus
 # two workspaces in different org folders. Runs ci/sync.sh and friends as CI and people would.
 # Never touches GitHub or this checkout's origin. Run: bash tests/e2e.sh
 set -euo pipefail
@@ -16,7 +16,12 @@ cat >"$t/bin/gh" <<EOF
 #!/usr/bin/env bash
 echo "gh \$*" >>"$t/gh.log"
 EOF
-chmod +x "$t/bin/gh"
+cat >"$t/bin/claude" <<EOF
+#!/usr/bin/env bash
+echo "claude \$*" >>"$t/claude.log"
+case "\$*" in "plugin list --json") cat "$t/plugins.json" 2>/dev/null || echo "[]" ;; "plugin marketplace list --json") echo "[]" ;; esac
+EOF
+chmod +x "$t/bin/gh" "$t/bin/claude"
 export PATH=$t/bin:$PATH
 touch "$t/gh.log"
 
@@ -122,9 +127,9 @@ ok "unrelated main changes leave other ws branches' trees alone"
 
 # --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
 (cd "$t/dev" && git fetch -q && git checkout -q -B release origin/main && echo "# main edit" >>.delphi/new-worktree.sh &&
-  sed -i.bak 's/^version: .*/version: 0.2.1/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
-  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.2.1" &&
-  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.2.1 failed"
+  sed -i.bak 's/^version: .*/version: 0.3.1/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
+  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.3.1" &&
+  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.3.1 failed"
 sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out")"
 for n in "$AN" "$BN"; do
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
@@ -145,6 +150,9 @@ done
 # shellcheck disable=SC2016 # the hook expands them
 o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\" >> \"$CLAUDE_ENV_FILE\""' ||
   fail "bms-dev's settings.json lacks the SessionStart hook that sets DELPHI_ROOT"
+# shellcheck disable=SC2016
+o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/plugins.sh\""' ||
+  fail "bms-dev's settings.json lacks the SessionStart hook that warns about plugins not installed"
 ok "each workspace's settings.json enables the default set of every folder above it"
 for p in app argos; do
   o show "ws/$AN:workspace.yml" | grep -Eq "^  - $p +# default, from " || fail "argos-dev's workspace.yml doesn't list the $p default"
@@ -241,18 +249,18 @@ expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  -
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
-expect_bad not-bumped "changed since 0.2.0: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
-expect_bad bumped-no-line "add \`0.2.1 " sed -i.bak 's/^version: .*/version: 0.2.1/' .delphi/manifest.yml
+expect_bad not-bumped "changed since 0.3.0: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
+expect_bad bumped-no-line "add \`0.3.1 " sed -i.bak 's/^version: .*/version: 0.3.1/' .delphi/manifest.yml
 release() { # <version> [<migration slug>]: bump to <version> (with an empty migration) and add its line, as a release would
   [ -z "${2:-}" ] || printf '#!/usr/bin/env bash\nset -euo pipefail\n' >".delphi/migrations/$1-$2.sh"
   sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
     echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
 }
-expect_bad migration-patch "0.2.1 has a migration, so it must bump MINOR" release 0.2.1 x
-expect_bad version-down "0.0.9 is not above 0.2.0" release 0.0.9
+expect_bad migration-patch "0.3.1 has a migration, so it must bump MINOR" release 0.3.1 x
+expect_bad version-down "0.0.9 is not above 0.3.0" release 0.0.9
 expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
 expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
-expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.2.0-x.sh"
+expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.3.0-x.sh"
 expect_bad history-rewritten "only add lines" sed -i.bak 's/linked/LINKED/' .delphi/versions
 expect_bad released-migration-changed "add a new version's migration instead" sh -c "echo '# x' >>.delphi/migrations/0.0.1-linked-worktrees-to-clones.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
@@ -455,6 +463,29 @@ cap=$src/templates/workspace/.claude/skills/journal/scripts/capture.sh
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
 ! DELPHI_ROOT=$t bash "$cap" "a note" >/dev/null 2>&1 || fail "capture.sh accepted a DELPHI_ROOT that is not a workspace root"
 ok "paths.sh gives the layout, sourced or as an export line; capture.sh reads \$DELPHI_ROOT, refusing it unset or not a root"
+# plugins.sh: the enabled sets not installed for this workspace (user scope, or this root's), warned, then installed at local scope
+printf '{\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n        "repo": "o/Delphi"\n      },\n      "autoUpdate": true\n    }\n  },\n  "enabledPlugins": {\n    "app@delphi": true,\n    "argos@delphi": true\n  }\n}\n' >"$w/.claude/settings.json"
+pl() { # <id> <scope> <projectPath or ->...: what `claude plugin list --json` reports
+  local sep=""
+  printf '[' && while [ $# -ge 3 ]; do
+    printf '%s\n  {\n    "id": "%s",\n    "scope": "%s",\n' "$sep" "$1" "$2"
+    [ "$3" = - ] || printf '    "projectPath": "%s",\n' "$3"
+    printf '    "enabled": true\n  }' && sep=, && shift 3
+  done && printf '\n]\n'
+}
+rm -f "$t/plugins.json"
+{ out=$(bash "$w/.delphi/plugins.sh") && echo "$out" | grep -qF "plugins app@delphi argos@delphi aren't installed"; } || fail "plugins.sh with none installed: $out"
+pl app@delphi user - argos@delphi local "$t/elsewhere" >"$t/plugins.json"
+{ out=$(bash "$w/.delphi/plugins.sh") && echo "$out" | grep -qF "plugins argos@delphi aren't"; } || fail "plugins.sh counted another clone's install: $out"
+{ err=$(bash "$w/.delphi/setup.sh" 2>&1 >/dev/null) && echo "$err" | grep -qF "argos@delphi aren't installed"; } ||
+  fail "setup.sh doesn't warn about plugins not installed: $err"
+: >"$t/claude.log"
+bash "$w/.delphi/plugins.sh" --install >/dev/null || fail "plugins.sh --install failed"
+[ "$(grep -v 'list --json' "$t/claude.log")" = "$(printf 'claude plugin marketplace add o/Delphi\nclaude plugin install argos@delphi --scope local')" ] ||
+  fail "plugins.sh --install: $(cat "$t/claude.log")"
+pl app@delphi user - argos@delphi local "$w" >"$t/plugins.json"
+[ -z "$(bash "$w/.delphi/plugins.sh")" ] || fail "plugins.sh warned with every set installed"
+ok "plugins.sh warns (and setup.sh with it) about enabled sets not installed for this workspace; --install adds the marketplace and installs them locally"
 
 # --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<branch>, refreshed on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely
@@ -470,7 +501,7 @@ commit_on ws/$AN docs/CONTEXT.md "linked update"
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
 ok "setup.sh checks out workspaces: read-only at linked/<branch>, skips itself and bad entries, refreshes on re-run"
-[ "$(git -C "$w" config delphi.$BN.version)" = 0.2.1 ] || fail "setup.sh did not record the version"
+[ "$(git -C "$w" config delphi.$BN.version)" = 0.3.1 ] || fail "setup.sh did not record the version"
 old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
 old_link && echo x >>"$w/linked/main/README.md"
 { ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has uncommitted changes" "$t/err" &&
@@ -488,10 +519,10 @@ ok "a recorded version's migrations don't run again; setup.sh never writes into 
 git -C "$w" config --unset delphi.$BN.version
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
   [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
-  [ "$(git -C "$w" config delphi.$BN.version)" = 0.2.1 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
+  [ "$(git -C "$w" config delphi.$BN.version)" = 0.3.1 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
 ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a read-only copy) and records the version"
 echo "# local" >>"$w/.delphi/switch.sh"
-{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.2.1 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.3.1 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
 ok "setup.sh warns when .delphi/ isn't the version it says"
 
@@ -544,7 +575,7 @@ mkdir -p "$w/.delphi/parked/argos-dev/linked/vcu-dev" "$w/.git/delphi/hv-dev/rep
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed running 0.1.0: $(cat "$t/out")"
 { [ -d "$w/.delphi/parked/$AN/linked/ws/$CN" ] && [ -d "$w/.delphi/parked/$DN/repos/r" ] && [ ! -e "$w/.git/delphi" ] &&
   [ -d "$w/linked/ws/$AN" ] && [ ! -e "$w/linked/argos-dev" ] && ! git -C "$w" config delphi.argos-dev.version >/dev/null &&
-  [ "$(git -C "$w" config "delphi.$CN.version")" = 0.2.1 ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
+  [ "$(git -C "$w" config "delphi.$CN.version")" = 0.3.1 ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "setup.sh re-ran 0.1.0"
 { git -C "$w" config --unset "delphi.$CN.version" && /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "0.1.0 is not safe to re-run"
 ok "0.1.0 moves parked slots (.delphi/parked/<leaf>, .git/delphi/<leaf>), old copies in linked/ and old version records to path names, once"
