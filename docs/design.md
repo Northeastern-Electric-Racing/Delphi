@@ -14,9 +14,9 @@ in normal three-way merges. The one thing shared is main's root `.delphi/` (the 
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
 only on main. Likewise each `workspace-inherit/` folder: sync writes its files onto the `ws/*`
 root of every workspace below its folder and never proposes them back. Otherwise nothing is shared
-or generated between workspaces: a project's `workspace-defaults/` is copied once at creation, `workspaces:` only checks out other branches to read, and context shared by
-the workspaces under a folder ships as harness plugins (section 2). The one generated workspace file
-is `.claude/settings.json`, which enables those plugins.
+or generated between workspaces: a project's `workspace-defaults/` is copied once at creation, `workspaces:` only checks out other branches to read, and
+harness plugins (section 2) carry what workspaces opt into. The one generated workspace file is
+`.claude/settings.json`.
 
 ```
    ┌───────────────────────────────┐
@@ -94,11 +94,17 @@ any workspace file. `ci/check.sh` fails on a path inherited from two folders, a 
 inherited path it hasn't opted out of, an `opt-out:` that matches nothing, and a workspace's own
 files in `workspace-inherit/` (`CLAUDE.md`, `workspace.yml`, `.delphi/`, `.claude/settings.json`,
 the workflow). The general skills (`new-worktree`, `switch-workspace`,
-`setup-workspace`, `journal`) live in `software/workspace-inherit/`.
+`setup-workspace`, `journal`) live in `software/workspace-inherit/`, and the skills a folder's
+workspaces share live in its own: `application-software/` (`commit`, `open-pr`, `update-pr`,
+`address-pr-comments`, `create-ticket`), `argos/` (`implement`, `run-local`, `verify-graph`,
+`verify-telemetry`, `pr-conventions`, `ticket-conventions`) and `nero/` (`pr-conventions`,
+`ticket-conventions`). Shared skills go there rather than in a plugin: they're plain files on the
+workspace branch, with nothing to install.
 
-Context that the workspaces under an org or project folder share (a skill, its conventions) goes in
-a plugin set of that folder, `plugins/<harness>/<set>/` (`plugins/claude/` for Claude Code; a sister
-folder per other harness), so it has one copy instead of one per workspace. Every workspace gets the
+A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
+harness features beyond files (hooks, MCP servers). It lives in `plugins/<harness>/<set>/` of a
+folder (`plugins/claude/` for Claude Code; a sister folder per other harness), one copy for the
+workspaces below. There are none yet; the plumbing below stays for when there are. Every workspace gets the
 `default` set of each folder above it, which `ci/plugins.sh` lists first under `plugins:` in its
 `workspace.yml` (`- argos   # default, from software/application-software/argos/`; a removed line
 comes back); other sets are listed there by hand (`- <scope>.<set>`). `ci/plugins.sh` generates the
@@ -117,10 +123,10 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
   on every `ws/*` branch (section 3); a PR to `main` that changes a set or a `workspace.yml` runs
   `ci/plugins.sh` itself.
 - Enabled isn't installed: someone's Claude Code may never have installed a set, and then its skills
-  are silently missing. Each workspace's `CLAUDE.md` tells the model so (install with `claude plugin
-  install <plugin> --scope local`, which leaves the generated file alone), and `setup.sh` warns,
-  through `.delphi/plugins.sh`, about enabled sets not installed for this workspace (`claude plugin
-  list --json`: user scope, or project or local scope for this root).
+  are silently missing. `setup.sh` warns, through `.delphi/plugins.sh`, about enabled sets not
+  installed for this workspace (`claude plugin list --json`: user scope, or project or local scope
+  for this root); install with `claude plugin install <plugin> --scope local`, which leaves the
+  generated file alone.
 
 Claude Code installs a plugin from `main` by copying only its folder, so it can't use files outside
 it; at run time its skills read the workspace as usual. With no `version`, each commit to `main`

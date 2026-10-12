@@ -45,9 +45,11 @@ mkdir -p "$t/seed/$FD/.claude/skills/fw"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
 printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
 echo "fw skill" >"$t/seed/$FD/.claude/skills/fw/SKILL.md"
-for p in software/application-software/plugins software/application-software/argos/plugins; do # plugin sets above argos-dev
-  mkdir -p "$t/seed/$p" && cp -R "$src/$p/." "$t/seed/$p/"
-done
+set_json() { # <folder> <set> <name>: a minimal plugin set
+  mkdir -p "$1/plugins/claude/$2/.claude-plugin" && printf '{\n  "name": "%s"\n}\n' "$3" >"$1/plugins/claude/$2/.claude-plugin/plugin.json"
+}
+set_json "$t/seed/software/application-software" default app && echo app >"$t/seed/software/application-software/plugins/scope"
+set_json "$t/seed/software/application-software/argos" default argos # default sets above argos-dev
 TS=software/application-software/argos/plugins/claude/testing # an extra set a workspace can list under plugins:
 mkdir -p "$t/seed/$TS/.claude-plugin" && printf '{\n  "name": "argos.testing"\n}\n' >"$t/seed/$TS/.claude-plugin/plugin.json"
 (cd "$t/seed" && bash ci/plugins.sh >/dev/null) # the marketplace and each workspace's .claude/settings.json
@@ -269,10 +271,10 @@ expect_bad bad-name "must be lowercase letters, digits, '-' and '/'" sh -c "mkdi
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
 expect_bad settings-hand-edit "$A/.claude/settings.json is generated" sh -c "echo x >>$A/.claude/settings.json"
 expect_bad marketplace-stale ".claude-plugin/marketplace.json is generated" sh -c "mkdir -p software/x/plugins/claude/default/.claude-plugin && echo '{}' >software/x/plugins/claude/default/.claude-plugin/plugin.json"
-expect_bad scope-clash "two folders both have scope argos" sh -c "mkdir -p software/x/argos/plugins/claude/default/.claude-plugin && echo '{}' >software/x/argos/plugins/claude/default/.claude-plugin/plugin.json"
-expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "echo A_pp >software/application-software/plugins/scope"
-expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sed -i.bak 's/"name": ".*"/"name": "x"/' software/application-software/argos/plugins/claude/default/.claude-plugin/plugin.json
-expect_bad plugins-defaults "workspace.yml doesn't list the default set" sed -i.bak '/^  - app .*# default, from /d' $A/workspace.yml
+expect_bad scope-clash "two folders both have scope argos" sh -c "$(declare -f set_json); set_json software/x/argos default argos && set_json software/y/argos default argos"
+expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "$(declare -f set_json); set_json software/application-software default x && echo A_pp >software/application-software/plugins/scope"
+expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sh -c "$(declare -f set_json); set_json software/application-software/argos default x"
+expect_bad plugins-defaults "workspace.yml doesn't list the default set" sh -c "$(declare -f set_json); set_json software/application-software default app"
 expect_bad plugins-unknown "lists argos.nope, which isn't a plugin set" sh -c "printf 'plugins:\n  - argos.nope\n' >>$A/workspace.yml"
 expect_bad plugins-entry "bad plugins entry" sh -c "printf 'plugins:\n  - a.b.c\n' >>$A/workspace.yml"
 expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  - a.b\n  - a.b\n' >>$A/workspace.yml"

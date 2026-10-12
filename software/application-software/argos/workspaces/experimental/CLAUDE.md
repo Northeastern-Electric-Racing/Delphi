@@ -1,6 +1,6 @@
 # Delphi workspace
 
-You're in Delphi workspace `software/application-software/argos/experimental` (branch `ws/software/application-software/argos/experimental`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Delphi workspaces (or `main`) under `workspaces:` in `workspace.yml` (`- ws/<name>`, a workspace's place in the tree, or `- main`) are read-only copies at `linked/<branch>/` for reading their context; change what's checked out with the `setup-workspace` skill. To work in another workspace, switch this clone to it (`switch-workspace` skill). Park rough notes with the `journal` skill. If a skill named here is missing, this workspace's plugins (`plugins:` in `workspace.yml`) aren't installed on this machine: tell the user, and with their go-ahead run `claude plugin install <plugin>@delphi --scope local` for each (local scope leaves the generated `.claude/settings.json` alone), then have them restart the session. Work here unless the task clearly belongs to another project.
+You're in Delphi workspace `software/application-software/argos/experimental` (branch `ws/software/application-software/argos/experimental`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Delphi workspaces (or `main`) under `workspaces:` in `workspace.yml` (`- ws/<name>`, a workspace's place in the tree, or `- main`) are read-only copies at `linked/<branch>/` for reading their context; change what's checked out with the `setup-workspace` skill. To work in another workspace, switch this clone to it (`switch-workspace` skill). Park rough notes with the `journal` skill. Work here unless the task clearly belongs to another project.
 
 # NER Software conventions
 
@@ -57,7 +57,7 @@ Save Playwright screenshots to `pictures/<branch>/` at the repo root, with kebab
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `app` plugin (Delphi enables it); it holds the ticket types, labels, and conventions, with Argos's specifics in the `argos` plugin. Specs and tickets avoid file paths and code snippets; they go stale.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill (shared by every application-software workspace); it holds the ticket types, labels, and conventions, with Argos's specifics in `ticket-conventions`. Specs and tickets avoid file paths and code snippets; they go stale.
 
 ## Domain docs
 

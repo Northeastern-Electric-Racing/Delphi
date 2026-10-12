@@ -43,7 +43,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
 - Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
-  way. Skill scripts (plugins and workspaces) take only names (repo, branch) and read the workspace
+  way. Skill scripts (inherited, plugin or workspace) take only names (repo, branch) and read the workspace
   from `$DELPHI_ROOT`, sourcing `$DELPHI_ROOT/.delphi/paths.sh` for every folder; each harness's
   generated settings set it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
   `ci/plugins.sh`). Never search for the root or default to the cwd's branch.
