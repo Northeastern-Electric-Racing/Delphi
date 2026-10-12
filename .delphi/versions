@@ -7,4 +7,5 @@
 0.2.0 311f7b23606c .delphi/paths.sh is the workspace layout (DELPHI_ROOT, DELPHI_WORKTREES, …): sourced, it exports it; run, it prints the export line a session hook puts in every shell
 0.3.0 2c870f633c30 workspace-inherit/ folders at any level of software/ reach every workspace below on each sync (opt-out: in workspace.yml); defaults/ is workspace-defaults/
 0.4.0 ba662e754219 setup.sh warns (.delphi/plugins.sh) about enabled plugins not installed here; CLAUDE.md says how to install them
-0.5.0 60684cfdec50 switch.sh --list prints main and the workspaces, marking this clone's; the delphi mod's /ws pane reads it
+0.4.1 c5e413632e1c setup.sh also excludes what tools leave at the root: /.playwright-mcp/, /pictures/ and .DS_Store
+0.5.0 6088d535fdd9 switch.sh --list prints main and the workspaces, marking this clone's; the delphi mod's /ws pane reads it

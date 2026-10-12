@@ -341,11 +341,12 @@ for r in lib1 lib2; do
 done
 [ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = true ] || fail "repos/lib1 not a bare store"
 grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
-for d in /repos/ /worktrees/; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
-[ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/ or worktrees/ shows in status"
+for d in /repos/ /worktrees/ /.playwright-mcp/ /pictures/ .DS_Store; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
+mkdir -p "$t/ws/.playwright-mcp" "$t/ws/pictures/b" "$t/ws/docs" && touch "$t/ws/.playwright-mcp/p.yml" "$t/ws/pictures/b/s.png" "$t/ws/.DS_Store" "$t/ws/docs/.DS_Store"
+[ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/, worktrees/ or a tool's files show in status: $(git -C "$t/ws" status --porcelain)"
 rm -rf "$t/ws/worktrees/lib2" && git -C "$t/ws/repos/lib2" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
   [ -d "$t/ws/worktrees/lib2/$def" ] || fail "re-run did not restore a missing default worktree"
-ok "setup.sh makes a bare store in repos/ plus a default-branch worktree in worktrees/, excludes both once, and is idempotent"
+ok "setup.sh makes a bare store in repos/ plus a default-branch worktree in worktrees/, excludes both (and tools' files) once, and is idempotent"
 w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" && git clone -q "$t/lib1.git" "$w/repos/lib1"
 /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed on a pre-existing clone"
 { grep -q "could not check out worktrees/lib1/$def" "$t/err" && [ -d "$w/worktrees/lib2/$def" ]; } || fail "pre-existing clone not reported"
