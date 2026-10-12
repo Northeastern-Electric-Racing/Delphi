@@ -8,7 +8,8 @@
 # run, with pushes disabled. Each entry under `workspaces:` (`- ws/<name>` or `- main`, a workspace
 # being named by its place in the tree) gets the same kind of copy of that branch of this clone's
 # origin (Delphi), at linked/<branch>; to edit one, switch this clone to it (.delphi/switch.sh). Adds /repos/, /worktrees/, /references/ and
-# /linked/ to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
+# /linked/ to this clone's .git/info/exclude, with what tools leave at the root (Playwright MCP's
+# /.playwright-mcp/, screenshots in /pictures/, macOS's .DS_Store), and writes its post-checkout hook, which runs .delphi/park.sh (on
 # every branch) as just checked out in the worktree that checked out (unless another hook is there), so switching
 # to another workspace or main parks them. First
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
@@ -103,7 +104,7 @@ EOF2
 
 exclude=$(git rev-parse --git-path info/exclude)
 mkdir -p "$(dirname "$exclude")"
-for d in /repos/ /worktrees/ /references/ /linked/; do
+for d in /repos/ /worktrees/ /references/ /linked/ /.playwright-mcp/ /pictures/ .DS_Store; do
   grep -qxF "$d" "$exclude" 2>/dev/null || echo "$d" >>"$exclude"
 done
 hook=$(git rev-parse --git-path hooks/post-checkout)

@@ -182,7 +182,8 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
 `repos/<name>`, then checks out its default branch as the first worktree,
 `worktrees/<name>/<default-branch>/` (re-created if missing). Adds `/repos/` and `/worktrees/` to
-the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
+the clone's `.git/info/exclude` once, along with what tools leave at the root: `/.playwright-mcp/`,
+`/pictures/` (screenshots) and `.DS_Store`. For each repo under `references-git:` (read-only dependency
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
