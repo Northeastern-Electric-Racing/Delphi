@@ -19,7 +19,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
   it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
-  runs `plugins.sh` to warn about enabled plugins not installed); `.delphi/paths.sh`
+  runs `plugins.sh`, which installs the `@delphi` plugins the workspace enables and uninstalls ones the
+  marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
   is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
 - `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per

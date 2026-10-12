@@ -123,11 +123,17 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
   (git-ignored by Claude Code), shared ones in `workspace.yml` or the generator. Sync regenerates it
   on every `ws/*` branch (section 3); a PR to `main` that changes a set or a `workspace.yml` runs
   `ci/plugins.sh` itself.
-- Enabled isn't installed: someone's Claude Code may never have installed a set, and then its skills
-  are silently missing. `setup.sh` warns, through `.delphi/plugins.sh`, about enabled sets not
-  installed for this workspace (`claude plugin list --json`: user scope, or project or local scope
-  for this root); install with `claude plugin install <plugin> --scope local`, which leaves the
-  generated file alone (`delphi` at `--scope user` also has `/ws-delphi` on `main` and in every clone).
+- Enabled isn't installed: Claude Code only offers to install a project's enabled plugins, so
+  someone may never have installed a set, and then its skills are silently missing; and a set that
+  leaves the marketplace stays installed, failing to load. So `setup.sh` (on every setup, switch and
+  pull) runs `.delphi/plugins.sh`, which keeps this machine's `@delphi` plugins in step: it installs
+  the ones this workspace enables but this root lacks (`claude plugin list --json`: user scope, or
+  project or local scope for this root) with `claude plugin install <plugin> --scope local`, which
+  leaves the generated file alone, and uninstalls installed ones Claude Code marks `plugin-not-found`
+  in the Delphi marketplace. It refreshes the marketplace first, only when there's something to do;
+  offline it changes nothing and warns, as it does for other marketplaces' plugins. So renaming,
+  splitting or dropping a set needs no migration: every clone catches up on its next pull or switch.
+  (`delphi` at `--scope user` also has `/ws-delphi` on `main` and in every clone.)
 
 Claude Code installs a plugin from `main` by copying only its folder, so it can't use files outside
 it; at run time its skills read the workspace as usual. With no `version`, each commit to `main`
