@@ -1,0 +1,3 @@
+# what Claude Code writes for an editor when it loads the mod from --plugin-dir
+tsconfig.json
+.claude-plugin/types/

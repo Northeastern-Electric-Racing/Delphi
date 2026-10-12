@@ -6,6 +6,7 @@
 set -euo pipefail
 src=$(cd "$(dirname "$0")/.." && pwd)
 t=$(mktemp -d)
+real_path=$PATH real_home=$HOME # the real claude, for the delphi mod's own tests (section 12c)
 trap 'rm -rf "$t"' EXIT
 export HOME=$t GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=tester GIT_AUTHOR_EMAIL=t@example.com
 export GIT_COMMITTER_NAME=tester GIT_COMMITTER_EMAIL=t@example.com
@@ -590,6 +591,23 @@ git -C "$w" switch -q ws/$AN
 { ! sw ../x 2>/dev/null && ! sw nope 2>/dev/null && ! sw software/nope/x 2>/dev/null && [ "$(git -C "$w" branch --show-current)" = ws/$AN ]; } || fail "switch accepted a bad or missing workspace"
 ok "switch.sh refuses a dirty root, parks and restores workspaces, fast-forwards, runs setup, and switches to main"
 ok "switch.sh takes a workspace's name, its branch, or its last part alone"
+git -C "$w" branch -q -f ws/old-leaf origin/ws/$AN && git -C "$w" push -q origin ws/old-leaf # a workspace's old ws/<leaf> name
+[ "$(sw --list)" = "$(printf '  main\n* %s\n  %s' "$AN" "$BN")" ] || fail "switch.sh --list: $(sw --list 2>&1)"
+git -C "$w" push -q origin :ws/old-leaf && git -C "$w" branch -q -D ws/old-leaf
+ok "switch.sh --list prints main and each workspace (not old ws/<leaf> names), marking this clone's"
+
+# --- 12c. the delphi mod (software/plugins/claude/default): /ws, a pane that switches through switch.sh.
+# Its own tests stub every process; they need a real claude, which CI doesn't have.
+mod=$src/software/plugins/claude/default
+real() { PATH=$real_path HOME=$real_home "$@"; } # a claude wrapper may look itself up on PATH
+if real command -v claude >/dev/null; then
+  { out=$(real claude plugin validate "$mod" 2>&1) && echo "$out" | grep -q "hooks: session.start, command.run{command=ws}"; } ||
+    fail "the delphi mod doesn't validate: $out"
+  out=$(cd "$mod" && real claude plugin test 2>&1) || fail "the delphi mod's tests failed: $out"
+  ok "the delphi mod validates and its tests pass ($(echo "$out" | grep -E '^ *[0-9]+ pass$' | sed 's/^ *//'))"
+else
+  echo "skip - the delphi mod's tests: no claude on PATH"
+fi
 
 # --- 14. named by path: a workspace's old ws/<leaf> branch carries over into ws/<name>; moving a clone onto the
 # renamed branch moves nothing; 0.1.0 renames what the clone keeps under old names

@@ -54,7 +54,7 @@ software/<org>/…/plugins/scope        the folder's short name in plugin names 
 .claude-plugin/marketplace.json       every Claude Code plugin set under software/ (generated)
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
-.delphi/                              {setup,new-worktree,switch,park,version}.sh  manifest.yml  versions
+.delphi/                              {setup,new-worktree,switch,park,plugins,version}.sh  manifest.yml  versions
                                       migrations/  .gitattributes  .gitignore: on every ws/* root
 ci/sync.sh  ci/check.sh               CI scripts
 ci/plugins.sh                         writes the marketplace and each workspace's .claude/settings.json
@@ -104,7 +104,8 @@ workspace branch, with nothing to install.
 A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
 harness features beyond files (hooks, MCP servers). It lives in `plugins/<harness>/<set>/` of a
 folder (`plugins/claude/` for Claude Code; a sister folder per other harness), one copy for the
-workspaces below. There are none yet; the plumbing below stays for when there are. Every workspace gets the
+workspaces below. The one so far is `delphi`, `software/`'s `default` set (scope `delphi`): a mod
+(section 5) whose `/ws` pane switches workspaces. Every workspace gets the
 `default` set of each folder above it, which `ci/plugins.sh` lists first under `plugins:` in its
 `workspace.yml` (`- argos   # default, from software/application-software/argos/`; a removed line
 comes back); other sets are listed there by hand (`- <scope>.<set>`). `ci/plugins.sh` generates the
@@ -126,7 +127,7 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
   are silently missing. `setup.sh` warns, through `.delphi/plugins.sh`, about enabled sets not
   installed for this workspace (`claude plugin list --json`: user scope, or project or local scope
   for this root); install with `claude plugin install <plugin> --scope local`, which leaves the
-  generated file alone.
+  generated file alone (`delphi` at `--scope user` also has `/ws` on `main` and in every clone).
 
 Claude Code installs a plugin from `main` by copying only its folder, so it can't use files outside
 it; at run time its skills read the workspace as usual. With no `version`, each commit to `main`
@@ -226,7 +227,13 @@ variable, so another harness needs only its own settings to set `DELPHI_ROOT`.
 
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
-to origin, and runs the new workspace's `setup.sh`. The inherited `switch-workspace` skill makes it
+to origin, and runs the new workspace's `setup.sh`. `switch.sh --list` prints `main` and the workspaces, `*` before this clone's. The `delphi` mod
+(`software/plugins/claude/default/`) puts that in a pane to keep open: `/ws` shows them as cards grouped by project, this clone's
+marked current, with a warning when tracked files have changed; pressing a card selects it, and
+**Switch workspace** runs `switch.sh` (`/ws <name>` skips the pane); since a session keeps the `CLAUDE.md` and skills it loaded, it then asks for a restart. All
+the git work stays in `switch.sh`, which `tests/e2e.sh` covers; the mod's own tests
+(`tests/ws.test.ts`, `claude plugin test`) stub its processes, and `tests/e2e.sh` runs them when a
+real `claude` is installed. The inherited `switch-workspace` skill makes it
 the way to work in another workspace; its `setup-workspace` skill covers `workspace.yml` (repos,
 references, links) and re-running setup.
 
