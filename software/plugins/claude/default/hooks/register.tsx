@@ -1,10 +1,10 @@
-// The delphi mod: /ws opens a pane to keep open, with every Delphi workspace and main as cards
+// The delphi mod: /ws-delphi opens a pane to keep open, with every Delphi workspace and main as cards
 // grouped by project (.delphi/switch.sh --list). Press one to select it, then Switch workspace, which
-// runs switch.sh; /ws <name> switches straight away. A switch (or pull) changes CLAUDE.md and the
+// runs switch.sh; /ws-delphi <name> switches straight away. A switch (or pull) changes CLAUDE.md and the
 // skills on disk: Claude Code reloads the skills itself but keeps the CLAUDE.md it started with, so
-// the next prompt after the root's CLAUDE.md changed (by /ws or anything else) carries the new one,
-// which says it replaces the old. All the git work is switch.sh's; outside a Delphi clone /ws says so.
-// /ws --web (or the pane's Open in browser) starts web/server.py for the session: the same cards in
+// the next prompt after the root's CLAUDE.md changed (by /ws-delphi or anything else) carries the new one,
+// which says it replaces the old. All the git work is switch.sh's; outside a Delphi clone /ws-delphi says so.
+// /ws-delphi --web (or the pane's Open in browser) starts web/server.py for the session: the same cards in
 // a browser tab, served on 127.0.0.1; a switch made there shows up here too. Refresh fetches the
 // list again; Pull brings this clone's workspace up to date (switch.sh on the one it's on: fetch,
 // fast-forward, setup.sh) and says how many commits came.
@@ -214,12 +214,12 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     try {
       await $.command.register({
-        name: 'ws',
+        name: 'ws-delphi',
         description: 'Delphi: open the workspace switcher, or switch this clone to a workspace',
         argumentHint: '[workspace | --web]',
       })
     } catch (err) {
-      await $.ui.log('/ws not added: ' + String((err as Error)?.message ?? err))
+      await $.ui.log('/ws-delphi not added: ' + String((err as Error)?.message ?? err))
     }
     if (await findRoot($)) toldMd = await readMd($)
     return next(e)
@@ -238,7 +238,7 @@ export const register: Register = on => {
     return next({ ...e, context: [...(e.context ?? []), note] })
   })
 
-  on('command.run', { command: 'ws' }, async ($, e) => {
+  on('command.run', { command: 'ws-delphi' }, async ($, e) => {
     if (!(await findRoot($))) return { text: 'Not in a Delphi clone: no .delphi/switch.sh at the top of this repository.' }
     phase = 'pick'
     message = ''

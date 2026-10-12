@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The delphi mod's browser view of /ws: python3 web/server.py <clone> serves index.html (the same
+"""The delphi mod's browser view of /ws-delphi: python3 web/server.py <clone> serves index.html (the same
 cards: select one, then Switch workspace) on 127.0.0.1 at a random port, and prints its URL, the
 first line on stdout. The page asks it for .delphi/switch.sh --list and runs switch.sh <name>; each
 switch prints `switched <name>`, which the mod reads to update its pane. Pull runs switch.sh on the
 workspace the clone is on (fetch, fast-forward, setup.sh) and prints `pulled <what it did>`. The mod starts it with
-/ws --web (or the pane's Open in browser) and stops it with the session; by hand, Ctrl-C ends it.
+/ws-delphi --web (or the pane's Open in browser) and stops it with the session; by hand, Ctrl-C ends it.
 
 Only this machine reaches it, and only a page holding the URL's token: any web page the browser has
 open can send requests to 127.0.0.1, so every request needs the token in its path and a Host of

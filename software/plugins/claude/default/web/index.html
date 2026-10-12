@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- The delphi mod's browser view of /ws (web/server.py serves it): every workspace and main as
+<!-- The delphi mod's browser view of /ws-delphi (web/server.py serves it): every workspace and main as
      cards grouped by project; press one to select it, then Switch workspace. Same states as the
      pane: pick, switching, done, failed (Back). -->
 <html lang="en">
@@ -171,7 +171,7 @@ function render() {
     el('span', { class: 'dot' }, '●'), el('strong', {}, cur.leaf || 'not on a workspace'), el('span', { class: 'dim' }, cur.group))
 
   const banners = []
-  if (isGone) banners.push(el('div', { class: 'banner err' }, 'This page’s server is gone: its Claude Code session ended. Run /ws --web again for a new one.'))
+  if (isGone) banners.push(el('div', { class: 'banner err' }, 'This page’s server is gone: its Claude Code session ended. Run /ws-delphi --web again for a new one.'))
   else if (error) banners.push(el('div', { class: 'banner err' }, error))
   if (isDirty && !isGone) banners.push(el('div', { class: 'banner warn' }, '⚠ Tracked files have changes: commit them before switching.'))
   document.getElementById('banners').replaceChildren(...banners)

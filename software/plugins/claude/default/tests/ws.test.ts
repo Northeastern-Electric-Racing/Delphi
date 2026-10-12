@@ -1,4 +1,4 @@
-// Tests for the delphi mod's /ws (claude plugin test; tests/e2e.sh runs them). A fake clone answers
+// Tests for the delphi mod's /ws-delphi (claude plugin test; tests/e2e.sh runs them). A fake clone answers
 // the mod's processes: git for the clone's top and its changes, .delphi/switch.sh for the list and
 // the switch, web/server.py and the browser it opens, so no git, switch or server runs (tests/e2e.sh
 // runs the real server).
@@ -18,9 +18,9 @@ const PANE = {
   props: { title: 'Workspaces', isFocused: true, bodyColumns: 80, placement: 'inline', scroll: { offset: 0, bodyRows: 20 }, view: {} },
 } as const
 
-// /ws as typed at the prompt
+// /ws-delphi as typed at the prompt
 const ws = (args: string) => ({
-  command: 'ws',
+  command: 'ws-delphi',
   args,
   origin: { kind: 'composer' as const },
   presentation: { isFullscreen: false, columns: 100 },
@@ -117,7 +117,7 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
   return c
 }
 
-test('/ws is registered at session start', async ($, on) => {
+test('/ws-delphi is registered at session start', async ($, on) => {
   const names: string[] = []
   on('session.start', () => ({ cwd: ROOT }))
   on('command.register', ($, e) => {
@@ -125,10 +125,10 @@ test('/ws is registered at session start', async ($, on) => {
     return { value: { command: e.name } }
   })
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: ROOT })
-  expect(names).toEqual(['ws'])
+  expect(names).toEqual(['ws-delphi'])
 })
 
-test('/ws opens a pane of cards grouped by project, this one marked current', async ($, on) => {
+test('/ws-delphi opens a pane of cards grouped by project, this one marked current', async ($, on) => {
   fakeClone(on)
   expect(await $.command.run(ws(''))).toEqual({})
   const ui = await $.ui.mount(PANE)
@@ -168,14 +168,14 @@ test('with tracked changes the pane warns, a refused switch says why, and Back r
   expect(await ui.find({ key: 'switch' })).toBeDefined()
 })
 
-test('/ws <name> switches without the pane', async ($, on) => {
+test('/ws-delphi <name> switches without the pane', async ($, on) => {
   const c = fakeClone(on)
   const answer = await $.command.run(ws('bms-dev'))
   expect(c.switches.map(s => s.name)).toEqual(['bms-dev'])
   expect(answer.text).toMatch(/^On bms-dev: Claude reads its CLAUDE.md with your next message/)
 })
 
-test('outside a Delphi clone, /ws says so and runs nothing', async ($, on) => {
+test('outside a Delphi clone, /ws-delphi says so and runs nothing', async ($, on) => {
   const c = fakeClone(on, ARGOS, false, false)
   const answer = await $.command.run(ws('main'))
   expect(answer.text).toMatch(/^Not in a Delphi clone/)
@@ -209,7 +209,7 @@ test('a switch made in the browser view shows in the pane and under the prompt',
   expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
 })
 
-test('/ws --web answers with the URL', async ($, on) => {
+test('/ws-delphi --web answers with the URL', async ($, on) => {
   const c = fakeClone(on)
   expect((await $.command.run(ws('--web'))).text).toMatch(/^Browser view: http:\/\/127\.0\.0\.1:8765\/token\//)
   expect(c.opened).toEqual([URL])
@@ -218,7 +218,7 @@ test('/ws --web answers with the URL', async ($, on) => {
   await c.seen
 })
 
-test('without python3, /ws --web says it needs it and opens nothing', async ($, on) => {
+test('without python3, /ws-delphi --web says it needs it and opens nothing', async ($, on) => {
   const c = fakeClone(on, ARGOS, false, true, false)
   expect((await $.command.run(ws('--web'))).text).toMatch(/^No browser view \(it needs python3\)/)
   expect(c.opened).toEqual([])
