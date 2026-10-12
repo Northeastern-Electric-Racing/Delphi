@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/e2e.sh: end-to-end test of Delphi's scripts in a throwaway sandbox: a temp dir with a bare
-# origin, stub `gh` and `claude` on PATH that log their calls to gh.log and claude.log, and a copy of this repo's scripts plus
+# origin, a stub `gh` on PATH that logs its calls to gh.log (and a stub `claude`), and a copy of this repo's scripts plus
 # two workspaces in different org folders. Runs ci/sync.sh and friends as CI and people would.
 # Never touches GitHub or this checkout's origin. Run: bash tests/e2e.sh
 set -euo pipefail
@@ -18,8 +18,7 @@ echo "gh \$*" >>"$t/gh.log"
 EOF
 cat >"$t/bin/claude" <<EOF
 #!/usr/bin/env bash
-echo "claude \$*" >>"$t/claude.log"
-case "\$*" in "plugin list --json") cat "$t/plugins.json" 2>/dev/null || echo "[]" ;; "plugin marketplace list --json") echo "[]" ;; esac
+[ "\$*" != "plugin list --json" ] || cat "$t/plugins.json" 2>/dev/null || echo "[]"
 EOF
 chmod +x "$t/bin/gh" "$t/bin/claude"
 export PATH=$t/bin:$PATH
@@ -150,9 +149,6 @@ done
 # shellcheck disable=SC2016 # the hook expands them
 o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\" >> \"$CLAUDE_ENV_FILE\""' ||
   fail "bms-dev's settings.json lacks the SessionStart hook that sets DELPHI_ROOT"
-# shellcheck disable=SC2016
-o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/plugins.sh\""' ||
-  fail "bms-dev's settings.json lacks the SessionStart hook that warns about plugins not installed"
 ok "each workspace's settings.json enables the default set of every folder above it"
 for p in app argos; do
   o show "ws/$AN:workspace.yml" | grep -Eq "^  - $p +# default, from " || fail "argos-dev's workspace.yml doesn't list the $p default"
@@ -463,7 +459,7 @@ cap=$src/templates/workspace/.claude/skills/journal/scripts/capture.sh
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
 ! DELPHI_ROOT=$t bash "$cap" "a note" >/dev/null 2>&1 || fail "capture.sh accepted a DELPHI_ROOT that is not a workspace root"
 ok "paths.sh gives the layout, sourced or as an export line; capture.sh reads \$DELPHI_ROOT, refusing it unset or not a root"
-# plugins.sh: the enabled sets not installed for this workspace (user scope, or this root's), warned, then installed at local scope
+# plugins.sh: setup.sh warns about the enabled sets not installed for this workspace (user scope, or this root's)
 printf '{\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n        "repo": "o/Delphi"\n      },\n      "autoUpdate": true\n    }\n  },\n  "enabledPlugins": {\n    "app@delphi": true,\n    "argos@delphi": true\n  }\n}\n' >"$w/.claude/settings.json"
 pl() { # <id> <scope> <projectPath or ->...: what `claude plugin list --json` reports
   local sep=""
@@ -479,13 +475,9 @@ pl app@delphi user - argos@delphi local "$t/elsewhere" >"$t/plugins.json"
 { out=$(bash "$w/.delphi/plugins.sh") && echo "$out" | grep -qF "plugins argos@delphi aren't"; } || fail "plugins.sh counted another clone's install: $out"
 { err=$(bash "$w/.delphi/setup.sh" 2>&1 >/dev/null) && echo "$err" | grep -qF "argos@delphi aren't installed"; } ||
   fail "setup.sh doesn't warn about plugins not installed: $err"
-: >"$t/claude.log"
-bash "$w/.delphi/plugins.sh" --install >/dev/null || fail "plugins.sh --install failed"
-[ "$(grep -v 'list --json' "$t/claude.log")" = "$(printf 'claude plugin marketplace add o/Delphi\nclaude plugin install argos@delphi --scope local')" ] ||
-  fail "plugins.sh --install: $(cat "$t/claude.log")"
 pl app@delphi user - argos@delphi local "$w" >"$t/plugins.json"
 [ -z "$(bash "$w/.delphi/plugins.sh")" ] || fail "plugins.sh warned with every set installed"
-ok "plugins.sh warns (and setup.sh with it) about enabled sets not installed for this workspace; --install adds the marketplace and installs them locally"
+ok "setup.sh warns (plugins.sh) about enabled plugin sets not installed for this workspace, and is quiet when all are"
 
 # --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<branch>, refreshed on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely

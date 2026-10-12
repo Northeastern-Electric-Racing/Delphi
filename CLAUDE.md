@@ -16,10 +16,10 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its name or
   its `plugins/scope`), each workspace's `workspace.yml` `plugins:` defaults (the
-  `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT` and runs `.delphi/plugins.sh`; never edit
+  `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
   it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
-- `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (`plugins.sh`
-  warns about enabled plugins not installed, and installs them); `.delphi/paths.sh`
+- `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
+  runs `plugins.sh` to warn about enabled plugins not installed); `.delphi/paths.sh`
   is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
 - `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
@@ -27,7 +27,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
   `.github/workflows/delphi.yml` every workspace carries unchanged, and default `new-worktree`, `switch-workspace`, `setup-workspace`,
-  and `journal` skills (the `delphi` skill, an index of upkeep tasks, is in the `app` plugin).
+  and `journal` skills.
 - `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `defaults/`.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.

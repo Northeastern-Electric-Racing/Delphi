@@ -18,7 +18,7 @@
     {
       "name": "app",
       "source": "./software/application-software/plugins/claude/default",
-      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments), and Delphi upkeep (delphi)."
+      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments)."
     }
   ]
 }
