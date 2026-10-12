@@ -2,6 +2,18 @@
   "attribution": {
     "sessionUrl": false
   },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\" >> \"$CLAUDE_ENV_FILE\""
+          }
+        ]
+      }
+    ]
+  },
   "extraKnownMarketplaces": {
     "delphi": {
       "source": {

@@ -5,10 +5,10 @@ description: Park rough notes locally mid-task ("note to self", "remember to", "
 
 Notes live in `.journal/` at the workspace root (git-excluded, outside worktrees so they survive removal). An **entry** is one file, a **category** a subfolder. The journal never pushes, files, or contacts GitHub itself.
 
-**Capture** (from anywhere; no git, no other skills):
+**Capture** (no git, no other skills):
 
 ```
-bash <workspace>/.claude/skills/journal/scripts/capture.sh [-c <category>] ["note text"]
+bash scripts/capture.sh [-c <category>] ["note text"]
 ```
 
 Omit `-c` for a loose entry, omit the text for an empty one to edit. Report the path it prints.
