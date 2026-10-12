@@ -107,7 +107,8 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
   prints nothing when all are or when it can't tell. `setup.sh` and the session's SessionStart hook
   run it, so both the person and the model see the warning; `--install` adds the marketplace if it's
   new here and installs each set at local scope (the git-ignored `.claude/settings.local.json`), so
-  the generated file never changes. The template's `delphi` skill runs it.
+  the generated file never changes. The `app` plugin's `delphi` skill runs it; the warning names the
+  command itself, since that skill may be missing too.
 
 Claude Code installs a plugin from `main` by copying only its folder, so it can't use files outside
 it; at run time its skills read the workspace as usual. With no `version`, each commit to `main`
@@ -210,9 +211,10 @@ references, links) and re-running setup.
 The template's `journal` skill parks rough notes in `.journal/` at the workspace root (its
 `capture.sh` adds `/.journal/` to `.git/info/exclude`) and exports them through other skills.
 
-The template's `delphi` skill is the entry point for keeping a workspace working: a table of tasks,
-each handed off to a section file in its folder (`plugins.md`: install the workspace's plugins) or to
-another of the template's skills. New Delphi upkeep goes in as a section, not a new skill.
+The `delphi` skill (in the `app` plugin, so every application-software workspace has one copy) is
+the entry point for keeping a workspace working: a table of tasks, each handed off to a section file
+in its folder (`plugins.md`: install the workspace's plugins) or to one of the template's skills. New
+Delphi upkeep goes in as a section, not a new skill.
 
 ## 5b. Versions and migrations
 

@@ -1,6 +1,6 @@
 # Plugins
 
-The workspace's generated `.claude/settings.json` enables plugin sets from Delphi's marketplace (the `plugins:` in `workspace.yml`): that's where skills like `commit` and `open-pr` come from. Enabled isn't installed: until a set is installed on this machine, its skills are missing. Each session's start and `.delphi/setup.sh` print a warning naming the ones that aren't.
+The workspace's generated `.claude/settings.json` enables plugin sets from Delphi's marketplace (the `plugins:` in `workspace.yml`): that's where skills like `commit` and `open-pr` come from. Enabled isn't installed: until a set is installed on this machine, its skills are missing. Each session's start and `.delphi/setup.sh` print a warning naming the ones that aren't, with the command to install them: this skill comes from a plugin too, so it may be the one missing.
 
 From the workspace root:
 

@@ -31,7 +31,7 @@ missing=$(for p in $enabled; do echo "$installed" | grep -qxF "$p" || echo "$p";
 names=$(echo "$missing" | paste -sd " " -)
 if [ "$install" = 0 ]; then
   echo "delphi: this workspace's plugins $names aren't installed here, so their skills are missing." \
-    "Install them with the delphi skill (bash .delphi/plugins.sh --install, from the workspace root), then restart the session."
+    "Install them, with the user's go-ahead: bash .delphi/plugins.sh --install, from the workspace root; then restart the session."
   exit 0
 fi
 known=$(claude plugin marketplace list --json 2>/dev/null || true)

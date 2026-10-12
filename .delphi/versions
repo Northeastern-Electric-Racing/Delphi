@@ -5,4 +5,4 @@
 0.1.0 6522fea335e8 workspaces named by their place in the tree (ws/software/.../<name>); links: is workspaces: (- ws/<name> | - main) (migration)
 0.1.1 4829c508fd00 the post-checkout hook is a script running each worktree's own .delphi/park.sh, not a link to one checkout's
 0.2.0 311f7b23606c .delphi/paths.sh is the workspace layout (DELPHI_ROOT, DELPHI_WORKTREES, …): sourced, it exports it; run, it prints the export line a session hook puts in every shell
-0.3.0 e06ece17a374 .delphi/plugins.sh warns (setup.sh, the session hook) about enabled plugins not installed here, and --install installs them; the delphi skill
+0.3.0 b9fa5b8f6086 .delphi/plugins.sh warns (setup.sh, the session hook) about enabled plugins not installed here, and --install installs them

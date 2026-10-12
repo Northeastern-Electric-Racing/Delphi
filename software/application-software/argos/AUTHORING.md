@@ -36,10 +36,10 @@ affect workspaces created afterwards; to change existing ones, PR each workspace
   context shared with other application-software projects in the `app` plugin. Context
   only some workspaces need goes in another set (`plugins/claude/<set>/`) that they list under
   `plugins:`. Change them like the defaults, by PR to `main`, and run `ci/plugins.sh` in it.
-  Workspaces keep only Delphi's own skills (`delphi`, `new-worktree`, `journal`,
-  `setup-workspace`, `switch-workspace`), plus skills too tied to one app or one workspace for a plugin (`run-local` and
+  Workspaces keep only Delphi's own skills (`new-worktree`, `journal`, `setup-workspace`,
+  `switch-workspace`), plus skills too tied to one app or one workspace for a plugin (`run-local` and
   `verify-telemetry` in the Argos workspaces; the `workflow`, `review` and `to-tickets` trial in the
-  experimental ones); `commit`, `open-pr`, `update-pr`, `address-pr-comments` and `create-ticket` are in
+  experimental ones); `commit`, `open-pr`, `update-pr`, `address-pr-comments`, `create-ticket` and `delphi` are in
   `app`, and the Argos ones in `argos`.
   ADRs about a code repo live in that repo, so `docs/` holds only ADRs about the workspace itself.
   Avoid file paths and code in specs and tickets.
