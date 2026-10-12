@@ -46,6 +46,7 @@
   .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 16px 24px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--line); }
   .bar .inner { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .bar .what { flex: 1; min-width: 240px; }
+  .bar .tools { display: flex; align-items: center; gap: 10px; padding-left: 16px; border-left: 1px solid var(--line); font-size: 13px; }
   .bar.done { border-top-color: var(--ok); } .bar.done .what { color: var(--ok); }
   .bar.failed { border-top-color: var(--err); } .bar.failed .what { color: var(--err); }
   .bar.switching { border-top-color: var(--warn); }
@@ -60,7 +61,6 @@
     <div class="here" id="here"></div>
     <span class="spacer"></span>
     <input type="search" id="filter" placeholder="Filter" aria-label="Filter workspaces">
-    <button id="refresh" type="button">Refresh</button>
   </header>
   <div id="banners"></div>
   <div id="groups"><p class="empty">Loading…</p></div>
@@ -69,6 +69,7 @@
 <script>
 'use strict'
 let all = [], here = '', isDirty = false, error = '', selected = '', phase = 'pick', message = '', isGone = false
+let isRefreshing = false, fetchedAt = '' // the list is being fetched; when it last was, HH:MM
 
 const MAIN_GROUP = 'project folders, templates, CI'
 function toWs(name) {
@@ -89,20 +90,26 @@ function el(tag, attrs, ...children) {
 }
 
 async function load() {
+  if (isRefreshing) return
+  isRefreshing = true
+  draw()
   try {
     const r = await fetch('api/state', { cache: 'no-store' })
     if (!r.ok) throw new Error('HTTP ' + r.status)
     const s = await r.json()
     isGone = false
-    all = s.workspaces.map(toWs); here = s.here; isDirty = s.isDirty; error = s.error
+    if (!s.error || !all.length) { all = s.workspaces.map(toWs); here = s.here } // a failed refresh keeps the last list
+    isDirty = s.isDirty; error = s.error
     if (s.switching) { phase = 'switching'; selected = s.switching }
     else if (phase === 'switching') phase = 'pick'
     if (!all.some(w => w.name === selected) || (selected === here && phase === 'pick')) {
       selected = (all.find(w => w.name !== here) || {}).name || ''
     }
+    fetchedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   } catch {
     isGone = true
   }
+  isRefreshing = false
   draw()
 }
 
@@ -166,10 +173,14 @@ function draw() {
     action.push(el('span', { class: 'what' }, '✗ Not switched: ' + message))
     action.push(el('button', { type: 'button', id: 'back', onclick: () => pick(selected) }, 'Back'))
   }
+  if (phase !== 'switching') {
+    action.push(el('span', { class: 'tools' },
+      el('button', { type: 'button', id: 'refresh', disabled: isRefreshing, onclick: load }, 'Refresh'),
+      el('span', { class: 'dim' }, isRefreshing ? 'Fetching from origin…' : fetchedAt && 'Fetched at ' + fetchedAt)))
+  }
   document.getElementById('action').replaceChildren(...action)
 }
 
-document.getElementById('refresh').addEventListener('click', load)
 document.getElementById('filter').addEventListener('input', draw)
 document.addEventListener('visibilitychange', () => { if (!document.hidden && phase !== 'switching') load() })
 load()

@@ -18,6 +18,9 @@ let isDirty = false // tracked files have changes, so switch.sh would refuse
 let selected = ''
 let phase: Phase = 'pick'
 let message = ''
+let isRefreshing = false // switch.sh --list is fetching
+let fetchedAt = '' // when it last listed, HH:MM
+let listError = '' // why it couldn't, if it couldn't
 let webUrl = '' // the browser view's address while web/server.py runs
 let webError = '' // why it isn't running, when it failed to
 let webStart: Promise<string> | null = null
@@ -52,12 +55,20 @@ async function findRoot($: EngineInterface): Promise<boolean> {
   return root !== ''
 }
 
+const hhmm = (d: Date) => String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+
 async function load($: EngineInterface) {
+  isRefreshing = true
+  $.ui.invalidate('ui.render')
   const list = await run($, ['bash', root + '/.delphi/switch.sh', '--list'], 60_000)
   const lines = list.stdout.split('\n').filter(l => l.trim() !== '')
-  if (list.exitCode !== 0) message = 'Could not list the workspaces: ' + list.stderr.trim()
-  all = lines.map(l => toWs(l.slice(2)))
-  here = lines.find(l => l.startsWith('* '))?.slice(2) ?? ''
+  listError = list.exitCode === 0 ? '' : 'Could not list the workspaces: ' + (list.stderr.trim().split('\n').pop() ?? '')
+  fetchedAt = hhmm(new Date())
+  isRefreshing = false
+  if (list.exitCode === 0 || all.length === 0) { // a failed refresh keeps the last list
+    all = lines.map(l => toWs(l.slice(2)))
+    here = lines.find(l => l.startsWith('* '))?.slice(2) ?? ''
+  }
   isDirty = (await run($, ['git', 'diff', '--quiet', 'HEAD', '--'], 10_000)).exitCode !== 0
   if (!all.some(w => w.name === selected) || (selected === here && phase === 'pick')) {
     selected = all.find(w => w.name !== here)?.name ?? ''
@@ -222,12 +233,6 @@ export const register: Register = on => {
                 <Button key="switch" variant="primary" autoFocus onPress={() => doSwitch($)}>
                   Switch workspace
                 </Button>
-                <Button key="refresh" onPress={() => load($)}>
-                  Refresh
-                </Button>
-                <Button key="web" onPress={() => openWeb($)}>
-                  Open in browser
-                </Button>
               </Box>
             </Box>
           )}
@@ -250,6 +255,19 @@ export const register: Register = on => {
             </Box>
           )}
         </Box>
+        {phase !== 'switching' && (
+          <Box flexDirection="row" columnGap={2}>
+            <Button key="refresh" onPress={() => load($)}>
+              Refresh
+            </Button>
+            <Button key="web" onPress={() => openWeb($)}>
+              Open in browser
+            </Button>
+            {isRefreshing && <Text dimColor>Fetching the workspaces from origin…</Text>}
+            {!isRefreshing && listError && <Text color="error">{listError}</Text>}
+            {!isRefreshing && !listError && fetchedAt && <Text dimColor>{'Fetched from origin at ' + fetchedAt}</Text>}
+          </Box>
+        )}
         {webUrl && (
           <Box flexDirection="row" columnGap={1}>
             <Text dimColor>Browser view</Text>

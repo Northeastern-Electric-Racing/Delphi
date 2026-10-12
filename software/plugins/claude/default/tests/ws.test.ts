@@ -38,6 +38,8 @@ type Clone = {
   isDirty: boolean
   isDelphi: boolean
   switches: { name: string; timeoutMs?: number }[]
+  lists: number // switch.sh --list runs
+  isOffline: boolean // --list can't fetch, so it fails
   status: string[]
   servers: string[][] // each web/server.py started, its argv
   opened: string[] // the URLs opened in a browser
@@ -50,7 +52,7 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
   let browse = (name: string) => {}
   let seen = () => {}
   const switched = new Promise<string>(r => (browse = r))
-  const c: Clone = { here, isDirty, isDelphi, switches: [], status: [], servers: [], opened: [], browser: n => browse(n), seen: new Promise(r => (seen = r)) }
+  const c: Clone = { here, isDirty, isDelphi, switches: [], lists: 0, isOffline: false, status: [], servers: [], opened: [], browser: n => browse(n), seen: new Promise(r => (seen = r)) }
   on('session.start', () => ({ cwd: ROOT }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -65,6 +67,8 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
     if (cmd === 'git' && a1 === 'rev-parse') return done(0, ROOT + '\n')
     if (cmd === 'git' && a1 === 'diff') return done(c.isDirty ? 1 : 0)
     if (cmd === 'bash' && a1 === SWITCH && a2 === '--list') {
+      c.lists++
+      if (c.isOffline) return done(128, '', 'fatal: unable to access origin\n')
       const out = ['main', ARGOS, BMS].map((n) => (n === c.here ? '* ' : '  ') + n).join('\n') + '\n'
       return done(0, out)
     }
@@ -200,4 +204,21 @@ test('without python3, /ws --web says it needs it and opens nothing', async ($, 
   const c = fakeClone(on, ARGOS, false, true, false)
   expect((await $.command.run(ws('--web'))).text).toMatch(/^No browser view \(it needs python3\)/)
   expect(c.opened).toEqual([])
+})
+
+test('Refresh sits under the action card in every state but switching, and says when it last fetched', async ($, on) => {
+  const c = fakeClone(on)
+  await $.command.run(ws(''))
+  const ui = await $.ui.mount(PANE)
+  expect(await ui.find({ type: 'Text', text: /^Fetched from origin at \d\d:\d\d$/ })).toBeDefined()
+  await ui.press({ key: 'ws:' + BMS })
+  await ui.press({ key: 'switch' })
+  expect(await ui.find({ key: 'close' })).toBeDefined()
+  const before = c.lists
+  await ui.press({ key: 'refresh' })
+  expect(c.lists).toBe(before + 1)
+  c.isOffline = true
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ type: 'Text', text: 'Could not list the workspaces: fatal: unable to access origin' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
 })
