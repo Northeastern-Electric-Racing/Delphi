@@ -2,7 +2,8 @@
 """The delphi mod's browser view of /ws: python3 web/server.py <clone> serves index.html (the same
 cards: select one, then Switch workspace) on 127.0.0.1 at a random port, and prints its URL, the
 first line on stdout. The page asks it for .delphi/switch.sh --list and runs switch.sh <name>; each
-switch prints `switched <name>`, which the mod reads to update its pane. The mod starts it with
+switch prints `switched <name>`, which the mod reads to update its pane. Pull runs switch.sh on the
+workspace the clone is on (fetch, fast-forward, setup.sh) and prints `pulled <what it did>`. The mod starts it with
 /ws --web (or the pane's Open in browser) and stops it with the session; by hand, Ctrl-C ends it.
 
 Only this machine reaches it, and only a page holding the URL's token: any web page the browser has
@@ -25,7 +26,7 @@ if not switch.is_file():
 token = secrets.token_urlsafe(18)
 page = (Path(__file__).parent / 'index.html').read_bytes()
 busy = threading.Lock()  # one switch at a time
-switching = ''  # the workspace being switched to, while one runs
+switching = ''  # the workspace being switched to (or pulled), while one runs
 
 
 def run(argv, timeout):
@@ -68,6 +69,33 @@ def do_switch(name):
     return 200, {'ok': True, 'message': last_line(done.stdout, 'switched')}
 
 
+def do_pull():
+    global switching
+    here = state()['here']
+    if not here:
+        return 400, {'ok': False, 'message': 'this clone is on no workspace'}
+    if not busy.acquire(blocking=False):
+        return 409, {'ok': False, 'message': 'a switch to ' + switching + ' is running'}
+    leaf = here.split('/')[-1]
+    try:
+        switching = here
+        before = run(['git', 'rev-parse', 'HEAD'], 10).stdout.strip()
+        done = run(['bash', str(switch), here], 600)
+        after = run(['git', 'rev-parse', 'HEAD'], 10).stdout.strip()
+    finally:
+        switching = ''
+        busy.release()
+    if done.returncode != 0:
+        return 200, {'ok': False, 'message': 'Not pulled: ' + last_line(done.stderr, 'switch.sh failed')}
+    if 'diverged' in done.stderr:
+        return 200, {'ok': False, 'message': last_line(done.stderr, 'diverged from origin')}
+    count = run(['git', 'rev-list', '--count', before + '..' + after], 10).stdout.strip() if before and after and before != after else '0'
+    n = int(count or 0)
+    message = leaf + ' is up to date with origin' if n == 0 else 'Pulled %d commit%s into %s' % (n, '' if n == 1 else 's', leaf)
+    print('pulled ' + message, flush=True)
+    return 200, {'ok': True, 'message': message}
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def send(self, status, body, kind):
         self.send_response(status)
@@ -107,10 +135,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.route()
         if path is None:
             return
-        if path != 'api/switch':
+        if path not in ('api/switch', 'api/pull'):
             return self.send(404, b'not found\n', 'text/plain')
         if self.headers.get('Content-Type', '').split(';')[0].strip() != 'application/json':
             return self.json(415, {'ok': False, 'message': 'send JSON'})
+        if path == 'api/pull':
+            return self.json(*do_pull())
         try:
             name = json.loads(self.rfile.read(int(self.headers.get('Content-Length') or 0)) or b'{}').get('name', '')
         except (ValueError, AttributeError):

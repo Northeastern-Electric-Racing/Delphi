@@ -4,12 +4,16 @@
 // disk, but this session keeps the ones it loaded, so after one the pane and the line under the
 // prompt ask for a restart. All the git work is switch.sh's; outside a Delphi clone /ws says so.
 // /ws --web (or the pane's Open in browser) starts web/server.py for the session: the same cards in
-// a browser tab, served on 127.0.0.1; a switch made there shows up here too.
+// a browser tab, served on 127.0.0.1; a switch made there shows up here too. Refresh fetches the
+// list again; Pull brings this clone's workspace up to date (switch.sh on the one it's on: fetch,
+// fast-forward, setup.sh) and says how many commits came.
 import type { EngineInterface, Register } from 'claude-code'
 
 // One Delphi workspace, or main: its name (switch.sh takes it), last part, and the folders above it
 type Ws = { name: string; leaf: string; group: string }
 type Phase = 'pick' | 'confirm' | 'switching' | 'done' | 'failed'
+
+const PANE = 'delphi-workspaces'
 
 let root = '' // this clone's top, where .delphi/switch.sh is; '' outside a Delphi clone
 let all: Ws[] = []
@@ -21,6 +25,9 @@ let message = ''
 let isRefreshing = false // switch.sh --list is fetching
 let fetchedAt = '' // when it last listed, HH:MM
 let listError = '' // why it couldn't, if it couldn't
+let isPulling = false
+let pullNote = '' // what the last pull did
+let isPullOk = true
 let webUrl = '' // the browser view's address while web/server.py runs
 let webError = '' // why it isn't running, when it failed to
 let webStart: Promise<string> | null = null
@@ -76,6 +83,46 @@ async function load($: EngineInterface) {
   $.ui.invalidate('ui.render')
 }
 
+// Plural-aware "N commit(s)"
+const commits = (n: number) => n + (n === 1 ? ' commit' : ' commits')
+
+// What `switch.sh <name>` printed last on stderr, or `otherwise`
+const lastLine = (text: string, otherwise: string) => text.trim().split('\n').pop() || otherwise
+
+// Says what a pull of `name` did, from HEAD before and after and switch.sh's answer
+async function notePull($: EngineInterface, name: string, before: string, r: { exitCode: number; stderr: string }) {
+  const after = (await run($, ['git', 'rev-parse', 'HEAD'], 10_000)).stdout.trim()
+  const n = before && after && before !== after ? Number((await run($, ['git', 'rev-list', '--count', before + '..' + after], 10_000)).stdout.trim()) || 0 : 0
+  isPullOk = r.exitCode === 0 && !r.stderr.includes('diverged')
+  if (r.exitCode !== 0) pullNote = 'Not pulled: ' + lastLine(r.stderr, 'switch.sh failed')
+  else if (!isPullOk) pullNote = lastLine(r.stderr, 'diverged from origin')
+  else pullNote = n === 0 ? leafOf(name) + ' is up to date with origin' : 'Pulled ' + commits(n) + ' into ' + leafOf(name)
+  if (n > 0) await $.ui.status('pulled ' + commits(n) + '; restart Claude Code if CLAUDE.md or skills changed')
+}
+
+async function doPull($: EngineInterface) {
+  if (isPulling || phase === 'switching' || !here) return
+  isPulling = true
+  pullNote = ''
+  $.ui.invalidate('ui.render')
+  const name = here
+  const before = (await run($, ['git', 'rev-parse', 'HEAD'], 10_000)).stdout.trim()
+  await notePull($, name, before, await run($, ['bash', root + '/.delphi/switch.sh', name], 600_000))
+  isPulling = false
+  await load($)
+}
+
+// Refresh from its button: fetch again, then put the focus back on it
+async function refresh($: EngineInterface) {
+  pullNote = ''
+  await load($)
+  try {
+    await $.ui.focus({ requestId: PANE, key: 'refresh' })
+  } catch {
+    // the pane isn't holding the keys
+  }
+}
+
 async function doSwitch($: EngineInterface) {
   if (phase === 'switching' || !selected || selected === here) return
   phase = 'switching'
@@ -124,6 +171,11 @@ function startWeb($: EngineInterface): Promise<string> {
               resolve(line)
               $.ui.invalidate('ui.render')
             } else if (line.startsWith('switched ')) await switchedInBrowser($, line.slice('switched '.length))
+            else if (line.startsWith('pulled ')) {
+              pullNote = line.slice('pulled '.length) // the browser view's own note
+              isPullOk = true
+              await load($)
+            }
           }
         }
       } catch (err) {
@@ -146,7 +198,6 @@ async function openWeb($: EngineInterface): Promise<string> {
   return url
 }
 
-const PANE = 'delphi-workspaces'
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -257,15 +308,22 @@ export const register: Register = on => {
         </Box>
         {phase !== 'switching' && (
           <Box flexDirection="row" columnGap={2}>
-            <Button key="refresh" onPress={() => load($)}>
+            <Button key="refresh" onPress={() => refresh($)}>
               Refresh
             </Button>
+            {here && (
+              <Button key="pull" onPress={() => doPull($)}>
+                Pull
+              </Button>
+            )}
             <Button key="web" onPress={() => openWeb($)}>
               Open in browser
             </Button>
-            {isRefreshing && <Text dimColor>Fetching the workspaces from origin…</Text>}
-            {!isRefreshing && listError && <Text color="error">{listError}</Text>}
-            {!isRefreshing && !listError && fetchedAt && <Text dimColor>{'Fetched from origin at ' + fetchedAt}</Text>}
+            {isPulling && <Text color="warning">{'Pulling ' + cur.leaf + '… fetching, fast-forwarding, running setup.sh'}</Text>}
+            {!isPulling && isRefreshing && <Text dimColor>Fetching the workspaces from origin…</Text>}
+            {!isPulling && !isRefreshing && pullNote && <Text color={isPullOk ? 'success' : 'error'}>{pullNote}</Text>}
+            {!isPulling && !isRefreshing && !pullNote && listError && <Text color="error">{listError}</Text>}
+            {!isPulling && !isRefreshing && !pullNote && !listError && fetchedAt && <Text dimColor>{'Fetched from origin at ' + fetchedAt}</Text>}
           </Box>
         )}
         {webUrl && (

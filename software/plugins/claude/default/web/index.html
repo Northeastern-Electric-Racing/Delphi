@@ -47,6 +47,7 @@
   .bar .inner { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .bar .what { flex: 1; min-width: 240px; }
   .bar .tools { display: flex; align-items: center; gap: 10px; padding-left: 16px; border-left: 1px solid var(--line); font-size: 13px; }
+  .ok { color: var(--ok); } .err { color: var(--err); }
   .bar.done { border-top-color: var(--ok); } .bar.done .what { color: var(--ok); }
   .bar.failed { border-top-color: var(--err); } .bar.failed .what { color: var(--err); }
   .bar.switching { border-top-color: var(--warn); }
@@ -70,6 +71,7 @@
 'use strict'
 let all = [], here = '', isDirty = false, error = '', selected = '', phase = 'pick', message = '', isGone = false
 let isRefreshing = false, fetchedAt = '' // the list is being fetched; when it last was, HH:MM
+let isPulling = false, pullNote = '', isPullOk = true // a pull is running; what the last one did
 
 const MAIN_GROUP = 'project folders, templates, CI'
 function toWs(name) {
@@ -128,13 +130,42 @@ async function doSwitch() {
   await load()
 }
 
+async function doPull() {
+  if (isPulling || phase === 'switching' || !here) return
+  isPulling = true; pullNote = ''
+  draw()
+  try {
+    const r = await fetch('api/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    const answer = await r.json()
+    isPullOk = answer.ok; pullNote = answer.message
+  } catch {
+    isPullOk = false; pullNote = 'the server stopped answering (its Claude Code session may have ended)'
+  }
+  isPulling = false
+  await load()
+}
+
+function refresh() {
+  pullNote = ''
+  load()
+}
+
 function pick(name) {
   selected = name
   if (phase !== 'switching') phase = 'pick'
   draw()
 }
 
+// Redraws, keeping the keyboard focus on the element that had it (by id or card)
 function draw() {
+  const had = document.activeElement
+  const focusId = had && had.id, focusWs = had && had.dataset && had.dataset.ws
+  render()
+  const again = (focusId && document.getElementById(focusId)) || (focusWs && document.querySelector('[data-ws="' + CSS.escape(focusWs) + '"]'))
+  if (again && again !== document.activeElement) again.focus()
+}
+
+function render() {
   const cur = toWs(here)
   document.getElementById('here').replaceChildren(
     el('span', { class: 'dot' }, '●'), el('strong', {}, cur.leaf || 'not on a workspace'), el('span', { class: 'dim' }, cur.group))
@@ -174,9 +205,14 @@ function draw() {
     action.push(el('button', { type: 'button', id: 'back', onclick: () => pick(selected) }, 'Back'))
   }
   if (phase !== 'switching') {
+    const note = isPulling ? el('span', {}, el('span', { class: 'spin' }), 'Pulling ' + cur.leaf + '… fetching, fast-forwarding, running setup.sh')
+      : isRefreshing ? el('span', { class: 'dim' }, 'Fetching from origin…')
+      : pullNote ? el('span', { class: isPullOk ? 'ok' : 'err' }, pullNote)
+      : el('span', { class: 'dim' }, fetchedAt && 'Fetched at ' + fetchedAt)
     action.push(el('span', { class: 'tools' },
-      el('button', { type: 'button', id: 'refresh', disabled: isRefreshing, onclick: load }, 'Refresh'),
-      el('span', { class: 'dim' }, isRefreshing ? 'Fetching from origin…' : fetchedAt && 'Fetched at ' + fetchedAt)))
+      el('button', { type: 'button', id: 'refresh', 'aria-busy': String(isRefreshing), onclick: refresh }, 'Refresh'),
+      here && el('button', { type: 'button', id: 'pull', 'aria-busy': String(isPulling), onclick: doPull }, 'Pull'),
+      note))
   }
   document.getElementById('action').replaceChildren(...action)
 }

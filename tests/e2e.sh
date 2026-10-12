@@ -609,7 +609,7 @@ else
 fi
 
 # --- 12d. the mod's browser view (web/server.py): serves the page and the list only with its token and a local
-# Host, switches only on a JSON POST, through switch.sh, and says so on stdout for the mod
+# Host, pulls and switches only on a JSON POST, through switch.sh, and says so on stdout for the mod
 if command -v python3 >/dev/null && command -v curl >/dev/null; then
   python3 "$mod/web/server.py" "$w" >"$t/web.out" 2>"$t/web.err" &
   web=$!
@@ -621,6 +621,12 @@ if command -v python3 >/dev/null && command -v curl >/dev/null; then
     [ "$(get -H "Host: evil.example:$port" "${url}api/state")" = 403 ]; } || fail "web/server.py let a request without its token or a local Host through"
   curl -s "${url}api/state" | python3 -c 'import json, sys; s = json.load(sys.stdin); sys.exit(not (s["here"] == sys.argv[1] and s["workspaces"] == ["main", sys.argv[1], sys.argv[2]] and not s["isDirty"]))' "$AN" "$BN" ||
     fail "web/server.py api/state: $(curl -s "${url}api/state")"
+  commit_on ws/$AN docs/CONTEXT.md "for the browser's pull"
+  { [ "$(get -X POST -d '{}' "${url}api/pull")" = 415 ] &&
+    curl -s -X POST -H 'Content-Type: application/json' -d '{}' "${url}api/pull" | grep -Eq '"Pulled [0-9]+ commits? into argos-dev"' &&
+    [ "$(git -C "$w" rev-parse HEAD)" = "$(git -C "$t/origin.git" rev-parse "ws/$AN")" ] && grep -Eqx "pulled Pulled [0-9]+ commits? into argos-dev" "$t/web.out" &&
+    curl -s -X POST -H 'Content-Type: application/json' -d '{}' "${url}api/pull" | grep -q '"argos-dev is up to date with origin"'; } ||
+    fail "web/server.py pull: $(cat "$t/web.out" "$t/web.err")"
   { [ "$(get -X POST -d '{"name":"bms-dev"}' "${url}api/switch")" = 415 ] && [ "$(git -C "$w" branch --show-current)" = "ws/$AN" ]; } ||
     fail "web/server.py switched without a JSON body"
   { curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"bms-dev"}' "${url}api/switch" | grep -q '"ok": true' &&
@@ -628,7 +634,7 @@ if command -v python3 >/dev/null && command -v curl >/dev/null; then
     fail "web/server.py switch to bms-dev: $(cat "$t/web.out" "$t/web.err")"
   kill "$web" && wait "$web" 2>/dev/null || true
   git -C "$w" switch -q "ws/$AN"
-  ok "the browser view answers only its own page and switches through switch.sh, printing what it switched to"
+  ok "the browser view answers only its own page, pulls and switches through switch.sh, printing what it did"
 else
   echo "skip - the delphi mod's browser view: no python3 or curl"
 fi

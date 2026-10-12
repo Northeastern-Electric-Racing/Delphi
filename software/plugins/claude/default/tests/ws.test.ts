@@ -39,6 +39,8 @@ type Clone = {
   isDelphi: boolean
   switches: { name: string; timeoutMs?: number }[]
   lists: number // switch.sh --list runs
+  head: number // this clone's HEAD, as a count of commits
+  behind: number // commits on origin it doesn't have yet
   isOffline: boolean // --list can't fetch, so it fails
   status: string[]
   servers: string[][] // each web/server.py started, its argv
@@ -52,7 +54,7 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
   let browse = (name: string) => {}
   let seen = () => {}
   const switched = new Promise<string>(r => (browse = r))
-  const c: Clone = { here, isDirty, isDelphi, switches: [], lists: 0, isOffline: false, status: [], servers: [], opened: [], browser: n => browse(n), seen: new Promise(r => (seen = r)) }
+  const c: Clone = { here, isDirty, isDelphi, switches: [], lists: 0, head: 0, behind: 0, isOffline: false, status: [], servers: [], opened: [], browser: n => browse(n), seen: new Promise(r => (seen = r)) }
   on('session.start', () => ({ cwd: ROOT }))
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -64,7 +66,12 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
   on('fs.exists', ($, e) => ({ value: c.isDelphi && e.path === SWITCH }))
   on('process.run', ($, e) => {
     const [cmd = '', a1 = '', a2 = ''] = e.argv
+    if (cmd === 'git' && a1 === 'rev-parse' && a2 === 'HEAD') return done(0, 'c' + c.head + '\n')
     if (cmd === 'git' && a1 === 'rev-parse') return done(0, ROOT + '\n')
+    if (cmd === 'git' && a1 === 'rev-list') {
+      const [from = '', to = ''] = (e.argv[3] ?? '').split('..')
+      return done(0, Number(to.slice(1)) - Number(from.slice(1)) + '\n')
+    }
     if (cmd === 'git' && a1 === 'diff') return done(c.isDirty ? 1 : 0)
     if (cmd === 'bash' && a1 === SWITCH && a2 === '--list') {
       c.lists++
@@ -79,6 +86,11 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
     if (cmd === 'bash' && a1 === SWITCH) {
       c.switches.push(e.init?.timeoutMs === undefined ? { name: a2 } : { name: a2, timeoutMs: e.init.timeoutMs })
       if (c.isDirty) return done(1, '', 'switch: commit or set aside your changes first (git status)\n')
+      if (a2 === c.here) { // the one it's on: a pull
+        c.head += c.behind
+        c.behind = 0
+        return done(0, 'switch: on ws/' + c.here + '\n')
+      }
       c.here = a2.split('/').length > 1 || a2 === 'main' ? a2 : BMS
       return done(0, 'switch: on ws/' + c.here + '\n')
     }
@@ -221,4 +233,27 @@ test('Refresh sits under the action card in every state but switching, and says 
   await ui.press({ key: 'refresh' })
   expect(await ui.find({ type: 'Text', text: 'Could not list the workspaces: fatal: unable to access origin' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
+})
+
+test('Pull runs switch.sh on this clone\'s workspace and says how many commits came', async ($, on) => {
+  const c = fakeClone(on)
+  c.behind = 3
+  await $.command.run(ws(''))
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'pull' })
+  expect(c.switches).toEqual([{ name: ARGOS, timeoutMs: 600_000 }])
+  expect(await ui.find({ type: 'Text', text: 'Pulled 3 commits into argos-dev' })).toBeDefined()
+  expect(c.status).toEqual(['pulled 3 commits; restart Claude Code if CLAUDE.md or skills changed'])
+  await ui.press({ key: 'pull' })
+  expect(await ui.find({ type: 'Text', text: 'argos-dev is up to date with origin' })).toBeDefined()
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ type: 'Text', text: /^Fetched from origin at/ })).toBeDefined()
+})
+
+test('with tracked changes Pull says why it did not', async ($, on) => {
+  fakeClone(on, ARGOS, true)
+  await $.command.run(ws(''))
+  const ui = await $.ui.mount(PANE)
+  await ui.press({ key: 'pull' })
+  expect(await ui.find({ type: 'Text', text: 'Not pulled: switch: commit or set aside your changes first (git status)' })).toBeDefined()
 })
