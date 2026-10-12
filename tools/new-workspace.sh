@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # tools/new-workspace.sh <org-path under software/> <name>: propose a new workspace as a PR to main.
 # In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
-# project's software/<org-path>/defaults/ (its CLAUDE.md appended to the template's) to
+# project's software/<org-path>/workspace-defaults/ (its CLAUDE.md appended to the template's) to
 # software/<org-path>/workspaces/<name>/, sets `name:` in its workspace.yml to its place in the tree
-# (software/<org-path>/<name>), lists its default plugin sets and generates its .claude/settings.json (ci/plugins.sh), checks it, pushes branch new-workspace/<org-path>/<name>, and opens
+# (software/<org-path>/<name>; the workspace-inherit/ folders above it reach ws/<name> on each sync), lists its default plugin sets and generates its .claude/settings.json (ci/plugins.sh), checks it, pushes branch new-workspace/<org-path>/<name>, and opens
 # the PR with gh. Your checkout is untouched. After merge, ci/sync.sh creates ws/software/<org-path>/<name>.
 set -euo pipefail
 die() { echo "new-workspace: $*" >&2 && exit 1; }
@@ -28,7 +28,7 @@ branch=new-workspace/$org/$name
 wt=$(mktemp -d)
 git worktree add --quiet --detach "$wt" origin/main
 trap 'git worktree remove --force "$wt"' EXIT
-defaults=$wt/software/$org/defaults
+defaults=$wt/software/$org/workspace-defaults
 mkdir -p "$wt/$folder"
 cp -R "$wt/templates/workspace/." "$wt/$folder/"
 if [ -d "$defaults" ]; then
@@ -44,4 +44,4 @@ bash "$wt/ci/plugins.sh" "$wt" >/dev/null # its plugins: defaults and .claude/se
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $id"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
-gh pr create --base main --head "$branch" --title "New workspace: $id" --body "Adds \`$folder/\` from templates/workspace (plus \`software/$org/defaults\` if present). Fill in \`workspace.yml\` repos (and list \`main\` under \`workspaces:\`, recommended, so it can read this project's shared context) and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$id\`."
+gh pr create --base main --head "$branch" --title "New workspace: $id" --body "Adds \`$folder/\` from templates/workspace (plus \`software/$org/workspace-defaults\` if present). Fill in \`workspace.yml\` repos (and list \`main\` under \`workspaces:\`, recommended, so it can read this project's shared context) and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$id\`."
