@@ -26,10 +26,13 @@ source of truth; `docs/goals.md` lists what any change must keep.
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
   cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
-  `.github/workflows/delphi.yml` every workspace carries unchanged, and default `new-worktree`, `switch-workspace`, `setup-workspace`,
-  and `journal` skills.
+  `.github/workflows/delphi.yml` every workspace carries unchanged. The general `new-worktree`,
+  `switch-workspace`, `setup-workspace`, and `journal` skills are in `software/workspace-inherit/`.
 - `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
-  folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `defaults/`.
+  folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
+  (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the
+  `ws/*` root of every workspace below on each refresh, never proposed; `opt-out:` in a
+  `workspace.yml` skips a path).
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
 

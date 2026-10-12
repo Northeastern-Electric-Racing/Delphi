@@ -93,11 +93,17 @@ a version needs cleanup in people's clones, it ships `.delphi/migrations/<versio
 ## New workspace
 
 `tools/new-workspace.sh <org-path under software/> <name>` copies `templates/workspace/` into
-`software/<org-path>/workspaces/<name>/`, adds the project's `defaults/` if it has one, and opens a
-PR to `main`. Once it merges, CI creates `ws/software/<org-path>/<name>`.
+`software/<org-path>/workspaces/<name>/`, adds the project's `workspace-defaults/` if it has one, and
+opens a PR to `main`. Once it merges, CI creates `ws/software/<org-path>/<name>`.
 
 **Project folders.** The folder above `workspaces/` (e.g. `software/application-software/argos/`)
-can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`.
+can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and
+`workspace-defaults/` (what a new workspace there starts with).
+
+**Inherited files.** Any folder under `software/`, `software/` itself included, can hold
+`workspace-inherit/`: files (usually skills, never `CLAUDE.md`) that CI writes onto the `ws/*` branch
+of every workspace below it on each sync. Edit them on `main`; a workspace's own edit is undone. To
+keep its own copy, a workspace lists the path under `opt-out:` in its `workspace.yml`.
 A workspace that lists `main` under `workspaces:` reads them at `linked/main/` (recommended for every
 new workspace); to change them, switch to `main`.
 
