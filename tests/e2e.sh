@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/e2e.sh: end-to-end test of Delphi's scripts in a throwaway sandbox: a temp dir with a bare
-# origin, a stub `gh` on PATH that logs its calls to gh.log, and a copy of this repo's scripts plus
+# origin, a stub `gh` on PATH that logs its calls to gh.log (and a stub `claude`), and a copy of this repo's scripts plus
 # two workspaces in different org folders. Runs ci/sync.sh and friends as CI and people would.
 # Never touches GitHub or this checkout's origin. Run: bash tests/e2e.sh
 set -euo pipefail
@@ -16,7 +16,11 @@ cat >"$t/bin/gh" <<EOF
 #!/usr/bin/env bash
 echo "gh \$*" >>"$t/gh.log"
 EOF
-chmod +x "$t/bin/gh"
+cat >"$t/bin/claude" <<EOF
+#!/usr/bin/env bash
+[ "\$*" != "plugin list --json" ] || cat "$t/plugins.json" 2>/dev/null || echo "[]"
+EOF
+chmod +x "$t/bin/gh" "$t/bin/claude"
 export PATH=$t/bin:$PATH
 touch "$t/gh.log"
 
@@ -41,9 +45,11 @@ mkdir -p "$t/seed/$FD/.claude/skills/fw"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
 printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
 echo "fw skill" >"$t/seed/$FD/.claude/skills/fw/SKILL.md"
-for p in software/application-software/plugins software/application-software/argos/plugins; do # plugin sets above argos-dev
-  mkdir -p "$t/seed/$p" && cp -R "$src/$p/." "$t/seed/$p/"
-done
+set_json() { # <folder> <set> <name>: a minimal plugin set
+  mkdir -p "$1/plugins/claude/$2/.claude-plugin" && printf '{\n  "name": "%s"\n}\n' "$3" >"$1/plugins/claude/$2/.claude-plugin/plugin.json"
+}
+set_json "$t/seed/software/application-software" default app && echo app >"$t/seed/software/application-software/plugins/scope"
+set_json "$t/seed/software/application-software/argos" default argos # default sets above argos-dev
 TS=software/application-software/argos/plugins/claude/testing # an extra set a workspace can list under plugins:
 mkdir -p "$t/seed/$TS/.claude-plugin" && printf '{\n  "name": "argos.testing"\n}\n' >"$t/seed/$TS/.claude-plugin/plugin.json"
 (cd "$t/seed" && bash ci/plugins.sh >/dev/null) # the marketplace and each workspace's .claude/settings.json
@@ -265,10 +271,10 @@ expect_bad bad-name "must be lowercase letters, digits, '-' and '/'" sh -c "mkdi
 expect_bad symlink "symlinks are not allowed" ln -s ../CLAUDE.md "$A/docs/link.md"
 expect_bad settings-hand-edit "$A/.claude/settings.json is generated" sh -c "echo x >>$A/.claude/settings.json"
 expect_bad marketplace-stale ".claude-plugin/marketplace.json is generated" sh -c "mkdir -p software/x/plugins/claude/default/.claude-plugin && echo '{}' >software/x/plugins/claude/default/.claude-plugin/plugin.json"
-expect_bad scope-clash "two folders both have scope argos" sh -c "mkdir -p software/x/argos/plugins/claude/default/.claude-plugin && echo '{}' >software/x/argos/plugins/claude/default/.claude-plugin/plugin.json"
-expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "echo A_pp >software/application-software/plugins/scope"
-expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sed -i.bak 's/"name": ".*"/"name": "x"/' software/application-software/argos/plugins/claude/default/.claude-plugin/plugin.json
-expect_bad plugins-defaults "workspace.yml doesn't list the default set" sed -i.bak '/^  - app .*# default, from /d' $A/workspace.yml
+expect_bad scope-clash "two folders both have scope argos" sh -c "$(declare -f set_json); set_json software/x/argos default argos && set_json software/y/argos default argos"
+expect_bad bad-scope "scope 'A_pp' must be lowercase" sh -c "$(declare -f set_json); set_json software/application-software default x && echo A_pp >software/application-software/plugins/scope"
+expect_bad plugin-json-name "plugin.json: name must be \"argos\"" sh -c "$(declare -f set_json); set_json software/application-software/argos default x"
+expect_bad plugins-defaults "workspace.yml doesn't list the default set" sh -c "$(declare -f set_json); set_json software/application-software default app"
 expect_bad plugins-unknown "lists argos.nope, which isn't a plugin set" sh -c "printf 'plugins:\n  - argos.nope\n' >>$A/workspace.yml"
 expect_bad plugins-entry "bad plugins entry" sh -c "printf 'plugins:\n  - a.b.c\n' >>$A/workspace.yml"
 expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  - a.b\n  - a.b\n' >>$A/workspace.yml"
@@ -500,6 +506,25 @@ cap=$src/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
 ! DELPHI_ROOT=$t bash "$cap" "a note" >/dev/null 2>&1 || fail "capture.sh accepted a DELPHI_ROOT that is not a workspace root"
 ok "paths.sh gives the layout, sourced or as an export line; capture.sh reads \$DELPHI_ROOT, refusing it unset or not a root"
+# plugins.sh: setup.sh warns about the enabled sets not installed for this workspace (user scope, or this root's)
+printf '{\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n        "repo": "o/Delphi"\n      },\n      "autoUpdate": true\n    }\n  },\n  "enabledPlugins": {\n    "app@delphi": true,\n    "argos@delphi": true\n  }\n}\n' >"$w/.claude/settings.json"
+pl() { # <id> <scope> <projectPath or ->...: what `claude plugin list --json` reports
+  local sep=""
+  printf '[' && while [ $# -ge 3 ]; do
+    printf '%s\n  {\n    "id": "%s",\n    "scope": "%s",\n' "$sep" "$1" "$2"
+    [ "$3" = - ] || printf '    "projectPath": "%s",\n' "$3"
+    printf '    "enabled": true\n  }' && sep=, && shift 3
+  done && printf '\n]\n'
+}
+rm -f "$t/plugins.json"
+{ out=$(bash "$w/.delphi/plugins.sh") && echo "$out" | grep -qF "plugins app@delphi argos@delphi aren't installed"; } || fail "plugins.sh with none installed: $out"
+pl app@delphi user - argos@delphi local "$t/elsewhere" >"$t/plugins.json"
+{ out=$(bash "$w/.delphi/plugins.sh") && echo "$out" | grep -qF "plugins argos@delphi aren't"; } || fail "plugins.sh counted another clone's install: $out"
+{ err=$(bash "$w/.delphi/setup.sh" 2>&1 >/dev/null) && echo "$err" | grep -qF "argos@delphi aren't installed"; } ||
+  fail "setup.sh doesn't warn about plugins not installed: $err"
+pl app@delphi user - argos@delphi local "$w" >"$t/plugins.json"
+[ -z "$(bash "$w/.delphi/plugins.sh")" ] || fail "plugins.sh warned with every set installed"
+ok "setup.sh warns (plugins.sh) about enabled plugin sets not installed for this workspace, and is quiet when all are"
 
 # --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<branch>, refreshed on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely

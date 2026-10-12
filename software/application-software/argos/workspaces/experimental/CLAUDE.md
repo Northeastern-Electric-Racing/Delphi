@@ -57,7 +57,7 @@ Save Playwright screenshots to `pictures/<branch>/` at the repo root, with kebab
 
 ## Issue tracker
 
-Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill from Delphi's `app` plugin (Delphi enables it); it holds the ticket types, labels, and conventions, with Argos's specifics in the `argos` plugin. Specs and tickets avoid file paths and code snippets; they go stale.
+Issues live in GitHub Issues on `Northeastern-Electric-Racing/Argos` via the `gh` CLI. File tickets with the `create-ticket` skill (shared by every application-software workspace); it holds the ticket types, labels, and conventions, with Argos's specifics in `ticket-conventions`. Specs and tickets avoid file paths and code snippets; they go stale.
 
 ## Domain docs
 

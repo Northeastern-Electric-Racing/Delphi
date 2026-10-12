@@ -5,20 +5,5 @@
   },
   "description": "Delphi's Claude Code plugins: context shared by the workspaces under a folder.",
   "plugins": [
-    {
-      "name": "argos",
-      "source": "./software/application-software/argos/plugins/claude/default",
-      "description": "Argos context for every Argos workspace: ticket and PR conventions, and the verify-graph and implement skills."
-    },
-    {
-      "name": "nero",
-      "source": "./software/application-software/nero/plugins/claude/default",
-      "description": "Nero context for every Nero workspace: ticket and PR conventions."
-    },
-    {
-      "name": "app",
-      "source": "./software/application-software/plugins/claude/default",
-      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments)."
-    }
   ]
 }

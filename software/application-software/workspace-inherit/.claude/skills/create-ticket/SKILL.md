@@ -7,7 +7,7 @@ description: Draft and file a GitHub issue (idea, spike, epic, or dev work) on a
 
 These are the ticket conventions for every application-software repo. The repo's own `.github/ISSUE_TEMPLATE` holds only the fields (`gh api repos/<owner>/<repo>/contents/.github/ISSUE_TEMPLATE/<file> -q .content | base64 -d`); follow each field's description.
 
-First load the project's `ticket-conventions` skill (from the project's plugin) for its repo, area labels, vocabulary, and diagrams. If none is enabled, ask which repo.
+First load the project's `ticket-conventions` skill (inherited from the project's `workspace-inherit/`) for its repo, area labels, vocabulary, and diagrams. If none is enabled, ask which repo.
 
 ## Workflow
 

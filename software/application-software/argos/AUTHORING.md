@@ -12,8 +12,9 @@ full model; this is the Argos-specific short version.
 
 Don't edit `.delphi/`, `.github/workflows/delphi.yml`, or `.claude/settings.json`: Delphi manages
 them (`.delphi/` comes from main's root and sync resets it; `settings.json` is generated from
-`workspace.yml`'s `plugins:`, where CI lists the `app` and `argos` defaults; add other sets below them). Personal settings go in
-`.claude/settings.local.json`.
+`workspace.yml`'s `plugins:`, where CI lists any folder's `default` plugin set; add other sets below them), nor the skills
+inherited from `workspace-inherit/` (sync overwrites them: change them on `main`, or list one under `opt-out:` to keep your own).
+Personal settings go in `.claude/settings.local.json`.
 
 ## Create a new Argos workspace
 
@@ -24,23 +25,25 @@ a PR to `main`. Trim what the new workspace doesn't need before merging.
 ## Change the defaults or this folder
 
 Edit on a branch of `main` and open a PR to `main` (from a workspace: `bash .delphi/switch.sh main`;
-`linked/main/` is read-only). Defaults only
-affect workspaces created afterwards; to change existing ones, PR each workspace too.
+`linked/main/` is read-only). `workspace-defaults/`
+only affects workspaces created afterwards; to change existing ones, PR each workspace too. `workspace-inherit/` reaches
+every Argos workspace on the next sync.
 
 ## Writing good workspace context
 
 - Keep the Delphi section of `CLAUDE.md` as generated; put project rules below it.
 - One skill per repeatable workflow, with a `description` that says when to use it.
 - Agent context (glossary, conventions, skills) lives in the workspace; the glossary goes in `docs/`.
-  Context every Argos workspace needs goes in the `argos` plugin (`plugins/claude/default/` here), and
-  context shared with other application-software projects in the `app` plugin. Context
-  only some workspaces need goes in another set (`plugins/claude/<set>/`) that they list under
-  `plugins:`. Change them like the defaults, by PR to `main`, and run `ci/plugins.sh` in it.
-  Workspaces keep only Delphi's own skills (`new-worktree`, `journal`, `setup-workspace`,
-  `switch-workspace`), plus skills too tied to one app or one workspace for a plugin (`run-local` and
-  `verify-telemetry` in the Argos workspaces; the `workflow`, `review` and `to-tickets` trial in the
-  experimental ones); `commit`, `open-pr`, `update-pr`, `address-pr-comments` and `create-ticket` are in
-  `app`, and the Argos ones in `argos`.
+  Skills every Argos workspace needs go in `workspace-inherit/` here (`implement`, `run-local`,
+  `verify-graph`, `verify-telemetry`, `pr-conventions`, `ticket-conventions`), and those shared with
+  other application-software projects in `software/application-software/workspace-inherit/`
+  (`commit`, `open-pr`, `update-pr`, `address-pr-comments`, `create-ticket`); Delphi's own
+  (`new-worktree`, `journal`, `setup-workspace`, `switch-workspace`) come from
+  `software/workspace-inherit/`. Sync puts them all on every Argos workspace's branch; change them by
+  PR to `main`. Context only some workspaces need goes in the workspace, or in a plugin set
+  (`plugins/claude/<set>/`) they list under `plugins:` (run `ci/plugins.sh`). Workspaces keep only
+  skills tied to that workspace (the `workflow`, `review` and `to-tickets` trial in the experimental
+  ones).
   ADRs about a code repo live in that repo, so `docs/` holds only ADRs about the workspace itself.
   Avoid file paths and code in specs and tickets.
 - Make new branches as worktrees (`new-worktree` skill) unless told otherwise.
