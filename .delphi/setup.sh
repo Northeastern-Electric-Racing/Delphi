@@ -13,7 +13,8 @@
 # to another workspace or main parks them. First
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
 # is `git config delphi.<name>.version`, 0.0.0 if unset), stopping at one that fails, and warns if
-# .delphi/ isn't exactly the version it says (.delphi/version.sh). Safe to re-run. Keep it bash 3.2
+# .delphi/ isn't exactly the version it says (.delphi/version.sh). Last, it warns about plugins the workspace
+# enables that this machine hasn't installed (.delphi/plugins.sh). Safe to re-run. Keep it bash 3.2
 # (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -118,3 +119,4 @@ EOF3
 else
   echo "setup: $hook is another hook; not installing .delphi/park.sh, so checkouts won't park repos/" >&2
 fi
+bash .delphi/plugins.sh >&2 || true # a warning, never a failure
