@@ -29,7 +29,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
   `.github/workflows/delphi.yml` every workspace carries unchanged. The general `new-worktree`,
   `switch-workspace`, `setup-workspace`, and `journal` skills are in `software/workspace-inherit/`.
 - `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws` pane switches
-  workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`).
+  workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
+  `/ws --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
 - `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
   (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the

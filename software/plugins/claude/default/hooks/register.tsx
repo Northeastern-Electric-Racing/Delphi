@@ -3,6 +3,8 @@
 // runs switch.sh; /ws <name> switches straight away. A switch changes CLAUDE.md and the skills on
 // disk, but this session keeps the ones it loaded, so after one the pane and the line under the
 // prompt ask for a restart. All the git work is switch.sh's; outside a Delphi clone /ws says so.
+// /ws --web (or the pane's Open in browser) starts web/server.py for the session: the same cards in
+// a browser tab, served on 127.0.0.1; a switch made there shows up here too.
 import type { EngineInterface, Register } from 'claude-code'
 
 // One Delphi workspace, or main: its name (switch.sh takes it), last part, and the folders above it
@@ -16,6 +18,9 @@ let isDirty = false // tracked files have changes, so switch.sh would refuse
 let selected = ''
 let phase: Phase = 'pick'
 let message = ''
+let webUrl = '' // the browser view's address while web/server.py runs
+let webError = '' // why it isn't running, when it failed to
+let webStart: Promise<string> | null = null
 
 function toWs(name: string): Ws {
   if (name === 'main') return { name, leaf: 'main', group: 'project folders, templates, CI' }
@@ -76,6 +81,60 @@ async function doSwitch($: EngineInterface) {
   await load($)
 }
 
+// A switch made in the browser view: the pane and the line under the prompt say so too
+async function switchedInBrowser($: EngineInterface, name: string) {
+  phase = 'done'
+  message = ''
+  await $.ui.status('switched to ' + leafOf(name) + '; restart Claude Code in this folder')
+  await load($)
+}
+
+// Starts web/server.py for the rest of the session, once; resolves its URL, or '' with webError set.
+// The loop is the server's life: it ends with the server, or kills it when the module unloads.
+function startWeb($: EngineInterface): Promise<string> {
+  if (webStart) return webStart
+  webError = ''
+  webStart = new Promise<string>(resolve => {
+    void (async () => {
+      let pending = ''
+      try {
+        const server = $.process.spawn({ argv: ['python3', $.plugin.root + '/web/server.py', root], cwd: root })
+        for await (const { stream, text } of server) {
+          if (stream === 'stderr') {
+            $.ui.log(text.trimEnd(), { to: 'debug' })
+            webError = 'The browser view stopped: ' + (text.trim().split('\n').pop() ?? '')
+            continue
+          }
+          const lines = (pending + text).split('\n')
+          pending = lines.pop() ?? ''
+          for (const line of lines) {
+            if (!webUrl && line.startsWith('http://')) {
+              webUrl = line
+              resolve(line)
+              $.ui.invalidate('ui.render')
+            } else if (line.startsWith('switched ')) await switchedInBrowser($, line.slice('switched '.length))
+          }
+        }
+      } catch (err) {
+        webError = 'No browser view (it needs python3): ' + String((err as Error)?.message ?? err)
+      }
+      webUrl = ''
+      webStart = null
+      resolve('')
+      $.ui.invalidate('ui.render')
+    })()
+  })
+  return webStart
+}
+
+// Starts the browser view if it isn't running and opens it in the default browser
+async function openWeb($: EngineInterface): Promise<string> {
+  const url = await startWeb($)
+  if (url) await run($, ['python3', '-m', 'webbrowser', '-t', url], 30_000)
+  $.ui.invalidate('ui.render')
+  return url
+}
+
 const PANE = 'delphi-workspaces'
 
 export const register: Register = on => {
@@ -84,7 +143,7 @@ export const register: Register = on => {
       await $.command.register({
         name: 'ws',
         description: 'Delphi: open the workspace switcher, or switch this clone to a workspace',
-        argumentHint: '[workspace]',
+        argumentHint: '[workspace | --web]',
       })
     } catch (err) {
       await $.ui.log('/ws not added: ' + String((err as Error)?.message ?? err))
@@ -97,6 +156,10 @@ export const register: Register = on => {
     phase = 'pick'
     message = ''
     const name = (e.args ?? '').trim()
+    if (name === '--web') {
+      const url = await openWeb($)
+      return { text: url ? 'Browser view: ' + url + ' (it runs until this session ends)' : webError }
+    }
     if (name) {
       await load($)
       selected = name
@@ -111,7 +174,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Link } = $.ui.resolve(e)
     const cur = toWs(here)
     const sel = all.find(w => w.name === selected)
     const groups = [...new Set(all.map(w => w.group))]
@@ -162,6 +225,9 @@ export const register: Register = on => {
                 <Button key="refresh" onPress={() => load($)}>
                   Refresh
                 </Button>
+                <Button key="web" onPress={() => openWeb($)}>
+                  Open in browser
+                </Button>
               </Box>
             </Box>
           )}
@@ -184,6 +250,13 @@ export const register: Register = on => {
             </Box>
           )}
         </Box>
+        {webUrl && (
+          <Box flexDirection="row" columnGap={1}>
+            <Text dimColor>Browser view</Text>
+            <Link href={webUrl} />
+          </Box>
+        )}
+        {!webUrl && webError && <Text color="error">{webError}</Text>}
       </Box>
     )
   })

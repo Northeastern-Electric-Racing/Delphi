@@ -43,7 +43,7 @@ histories stay joined and edits on either side meet in normal three-way merges.
 git clone -b ws/software/application-software/argos/argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git delphi
 cd delphi && .delphi/setup.sh           # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
 .delphi/switch.sh nero-experimental    # switch freely (or to main; the full name works too): the hook parks them in .delphi/parked/
-claude plugin install delphi@delphi --scope user   # then /ws in Claude Code: a pane to keep open that switches workspaces
+claude plugin install delphi@delphi --scope user   # then /ws in Claude Code: a pane to keep open that switches workspaces (/ws --web: in a browser)
 git switch -c my-change                 # edit, commit, push, open a PR into ws/software/application-software/argos/argos-dev
 git fetch origin && git merge origin/ws/software/application-software/argos/argos-dev   # update your branch any time
 ```

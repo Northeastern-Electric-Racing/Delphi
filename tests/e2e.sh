@@ -608,6 +608,31 @@ else
   echo "skip - the delphi mod's tests: no claude on PATH"
 fi
 
+# --- 12d. the mod's browser view (web/server.py): serves the page and the list only with its token and a local
+# Host, switches only on a JSON POST, through switch.sh, and says so on stdout for the mod
+if command -v python3 >/dev/null && command -v curl >/dev/null; then
+  python3 "$mod/web/server.py" "$w" >"$t/web.out" 2>"$t/web.err" &
+  web=$!
+  for _ in $(seq 50); do [ -s "$t/web.out" ] && break; sleep 0.1; done
+  url=$(head -1 "$t/web.out") port=${url#http://127.0.0.1:} port=${port%%/*}
+  get() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+  { [ "$(get "$url")" = 200 ] && curl -s "$url" | grep -q "<title>Delphi workspaces</title>" &&
+    [ "$(get "http://127.0.0.1:$port/")" = 404 ] && [ "$(get "http://127.0.0.1:$port/wrong/api/state")" = 404 ] &&
+    [ "$(get -H "Host: evil.example:$port" "${url}api/state")" = 403 ]; } || fail "web/server.py let a request without its token or a local Host through"
+  curl -s "${url}api/state" | python3 -c 'import json, sys; s = json.load(sys.stdin); sys.exit(not (s["here"] == sys.argv[1] and s["workspaces"] == ["main", sys.argv[1], sys.argv[2]] and not s["isDirty"]))' "$AN" "$BN" ||
+    fail "web/server.py api/state: $(curl -s "${url}api/state")"
+  { [ "$(get -X POST -d '{"name":"bms-dev"}' "${url}api/switch")" = 415 ] && [ "$(git -C "$w" branch --show-current)" = "ws/$AN" ]; } ||
+    fail "web/server.py switched without a JSON body"
+  { curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"bms-dev"}' "${url}api/switch" | grep -q '"ok": true' &&
+    [ "$(git -C "$w" branch --show-current)" = "ws/$BN" ] && grep -qx "switched bms-dev" "$t/web.out"; } ||
+    fail "web/server.py switch to bms-dev: $(cat "$t/web.out" "$t/web.err")"
+  kill "$web" && wait "$web" 2>/dev/null || true
+  git -C "$w" switch -q "ws/$AN"
+  ok "the browser view answers only its own page and switches through switch.sh, printing what it switched to"
+else
+  echo "skip - the delphi mod's browser view: no python3 or curl"
+fi
+
 # --- 14. named by path: a workspace's old ws/<leaf> branch carries over into ws/<name>; moving a clone onto the
 # renamed branch moves nothing; 0.1.0 renames what the clone keeps under old names
 C=software/electrical/workspaces/vcu-dev CN=software/electrical/vcu-dev D=software/electrical/workspaces/hv-dev DN=software/electrical/hv-dev

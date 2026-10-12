@@ -232,7 +232,12 @@ marked current, with a warning when tracked files have changed; pressing a card 
 **Switch workspace** runs `switch.sh` (`/ws <name>` skips the pane); since a session keeps the `CLAUDE.md` and skills it loaded, it then asks for a restart. All
 the git work stays in `switch.sh`, which `tests/e2e.sh` covers; the mod's own tests
 (`tests/ws.test.ts`, `claude plugin test`) stub its processes, and `tests/e2e.sh` runs them when a
-real `claude` is installed. The inherited `switch-workspace` skill makes it
+real `claude` is installed. Optionally the same cards open in a browser tab: `/ws --web`, or the pane's
+**Open in browser**, starts `web/server.py` (Python 3 stdlib) for the session on `127.0.0.1` at a
+random port; it answers only requests carrying the token in its URL with a local `Host`, switches
+only on a JSON `POST` (so no other page the browser has open can switch the clone), runs the same
+`switch.sh`, and prints each switch, which the mod reads to update its pane. `tests/e2e.sh` runs the
+real server against a sandbox clone. The inherited `switch-workspace` skill makes it
 the way to work in another workspace; its `setup-workspace` skill covers `workspace.yml` (repos,
 references, links) and re-running setup.
 
