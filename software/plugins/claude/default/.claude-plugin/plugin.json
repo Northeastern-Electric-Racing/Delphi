@@ -1,0 +1,7 @@
+{
+  "name": "delphi",
+  "description": "Delphi's mod for every workspace: /ws opens a pane that lists main and the workspaces and switches this clone to the one you pick (.delphi/switch.sh).",
+  "author": {
+    "name": "Northeastern Electric Racing"
+  }
+}

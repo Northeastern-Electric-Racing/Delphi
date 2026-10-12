@@ -5,5 +5,10 @@
   },
   "description": "Delphi's Claude Code plugins: context shared by the workspaces under a folder.",
   "plugins": [
+    {
+      "name": "delphi",
+      "source": "./software/plugins/claude/default",
+      "description": "Delphi's mod for every workspace: /ws opens a pane that lists main and the workspaces and switches this clone to the one you pick (.delphi/switch.sh)."
+    }
   ]
 }

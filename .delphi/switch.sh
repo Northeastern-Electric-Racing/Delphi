@@ -6,9 +6,19 @@
 # local branch, else a new one tracking origin), fast-forwards it to origin, then runs the new
 # workspace's .delphi/setup.sh (none for main). The post-checkout hook (.delphi/park.sh) parks this workspace's
 # repos/, worktrees/, references/ and linked/ and restores the new one's. Runs on bash 3.2 and Git Bash.
+# .delphi/switch.sh --list: fetch the ws/* branches, then print main and each workspace's name, one a
+# line, `* ` before this clone's and two spaces before the others (the delphi mod's /ws pane reads it).
 set -euo pipefail
 { # one block, so bash has read all of it before the switch replaces this file
   cd "$(dirname "$0")/.."
+  if [ "${1:-}" = --list ]; then
+    git fetch -q --prune origin '+refs/heads/ws/*:refs/remotes/origin/ws/*' ||
+      echo "switch: could not fetch the ws/* branches; listing the ones last fetched" >&2
+    { echo main && git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ws/; } |
+      awk -v here="$(git branch --show-current)" '$0 == "main" || /^ws\/.*\// { # not ws/<leaf>: an old name
+        n = $0; sub(/^ws\//, "", n); print ($0 == here ? "* " : "  ") n }'
+    exit
+  fi
   name=${1:?usage: switch.sh <workspace>|main}
   name=${name#ws/} ref=ws/${name#ws/}
   case "$name" in main) ref=main ;; "" | [-/]* | */ | *//* | *[!a-z0-9/-]*) echo "switch: bad workspace name '$1'" >&2 && exit 1 ;; esac

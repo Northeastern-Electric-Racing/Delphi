@@ -11,6 +11,7 @@ bash .delphi/switch.sh argos-dev     # its last part alone, if only one workspac
 bash .delphi/switch.sh main          # Delphi's main: project folders, templates, CI
 ```
 
+- The user can also switch from the `/ws` pane (the `delphi` plugin's mod), which lists them (`bash .delphi/switch.sh --list`) and switches to the one picked; `/ws <name>` switches straight away.
 - List workspaces: `git branch -r --list 'origin/ws/*'`. A workspace's name is its folder path on main without `workspaces/`.
 - It refuses while tracked files have changes: commit them on a branch (and PR them) first. Then it fetches, switches, fast-forwards, and runs the new workspace's `.delphi/setup.sh`.
 - The post-checkout hook parks this workspace's `repos/`, `worktrees/`, `references/` and `linked/` in `.delphi/parked/<name>/` (git-ignored; `<name>` as in its `workspace.yml`) and brings the other's back at the same paths, so worktrees and the work in them return as they were. Switch back the same way. Never run `git clean -X` or `git stash --all` at the workspace root: they take ignored files, parked work included.
