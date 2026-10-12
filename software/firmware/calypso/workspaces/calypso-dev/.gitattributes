@@ -1,0 +1,2 @@
+# LF everywhere, so .delphi/setup.sh runs in Git Bash even with core.autocrlf=true
+* text=auto eol=lf
