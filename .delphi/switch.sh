@@ -7,7 +7,7 @@
 # workspace's .delphi/setup.sh (none for main). The post-checkout hook (.delphi/park.sh) parks this workspace's
 # repos/, worktrees/, references/ and linked/ and restores the new one's. Runs on bash 3.2 and Git Bash.
 # .delphi/switch.sh --list: fetch the ws/* branches, then print main and each workspace's name, one a
-# line, `* ` before this clone's and two spaces before the others (the delphi mod's /ws pane reads it).
+# line, `* ` before this clone's and two spaces before the others (the delphi mod's /ws-delphi pane reads it).
 set -euo pipefail
 { # one block, so bash has read all of it before the switch replaces this file
   cd "$(dirname "$0")/.."
