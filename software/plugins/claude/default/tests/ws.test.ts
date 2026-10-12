@@ -60,46 +60,50 @@ test('/ws is registered at session start', async ($, on) => {
   expect(names).toEqual(['ws'])
 })
 
-test('/ws opens a pane listing main and the workspaces, this one marked', async ($, on) => {
+test('/ws opens a pane of cards grouped by project, this one marked current', async ($, on) => {
   fakeClone(on)
   expect(await $.command.run({ command: 'ws', args: '' })).toEqual({})
   const ui = await $.ui.mount(PANE)
-  expect((await ui.find({ key: 'ws:main' }))?.props.label).toBe('main')
-  expect((await ui.find({ key: 'ws:' + ARGOS }))?.props.label).toBe(ARGOS + ' (here)')
-  expect((await ui.find({ key: 'ws:' + BMS }))?.props.hotkey).toBe('3')
-  expect(await ui.find({ type: 'Text', text: 'On ' + ARGOS })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'APPLICATION-SOFTWARE / ARGOS' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'ELECTRICAL' })).toBeDefined()
+  expect(await ui.find({ key: 'ws:main' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: ' · current' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Tracked files have changes/ })).toBeUndefined()
 })
 
-test('picking a workspace switches to it and asks for a restart', async ($, on) => {
+test('pressing a card only selects it; Switch workspace switches and asks for a restart', async ($, on) => {
   const c = fakeClone(on)
   await $.command.run({ command: 'ws', args: '' })
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'ws:' + BMS })
+  expect(c.switches).toEqual([])
+  expect(await ui.find({ type: 'Text', text: '› bms-dev' })).toBeDefined()
+  await ui.press({ key: 'switch' })
   expect(c.switches).toEqual([{ name: BMS, timeoutMs: 600_000 }])
-  expect(c.status).toEqual(['switched to ' + BMS + '; restart Claude Code here'])
-  expect(await ui.find({ type: 'Text', text: /^On software\/electrical\/bms-dev: restart Claude Code/ })).toBeDefined()
-  expect((await ui.find({ key: 'ws:' + BMS }))?.props.label).toBe(BMS + ' (here)')
-  await ui.press({ key: 'ws:' + BMS })
-  expect(c.switches.length).toBe(1)
-  expect(await ui.find({ type: 'Text', text: 'Already on ' + BMS + '.' })).toBeDefined()
+  expect(c.status).toEqual(['switched to bms-dev; restart Claude Code in this folder'])
+  expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Restart Claude Code in this folder/ })).toBeDefined()
+  expect(await ui.find({ key: 'close' })).toBeDefined()
 })
 
-test('with tracked changes the pane warns, and a refused switch says why', async ($, on) => {
+test('with tracked changes the pane warns, a refused switch says why, and Back returns', async ($, on) => {
   const c = fakeClone(on, ARGOS, true)
   await $.command.run({ command: 'ws', args: '' })
   const ui = await $.ui.mount(PANE)
-  expect(await ui.find({ type: 'Text', text: /^Tracked files have changes/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^⚠ Tracked files have changes/ })).toBeDefined()
   await ui.press({ key: 'ws:main' })
+  await ui.press({ key: 'switch' })
   expect(c.here).toBe(ARGOS)
   expect(c.status).toEqual([])
-  expect(await ui.find({ type: 'Text', text: 'Not switched: switch: commit or set aside your changes first (git status)' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '✗ Not switched: switch: commit or set aside your changes first (git status)' })).toBeDefined()
+  await ui.press({ key: 'back' })
+  expect(await ui.find({ key: 'switch' })).toBeDefined()
 })
 
 test('/ws <name> switches without the pane', async ($, on) => {
   const c = fakeClone(on)
   const answer = await $.command.run({ command: 'ws', args: 'bms-dev' })
-  expect(c.switches.map((s) => s.name)).toEqual(['bms-dev'])
+  expect(c.switches.map(s => s.name)).toEqual(['bms-dev'])
   expect(answer.text).toMatch(/^On bms-dev: restart Claude Code in this folder/)
 })
 

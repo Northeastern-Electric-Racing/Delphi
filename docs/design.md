@@ -227,9 +227,9 @@ variable, so another harness needs only its own settings to set `DELPHI_ROOT`.
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
 to origin, and runs the new workspace's `setup.sh`. `switch.sh --list` prints `main` and the workspaces, `*` before this clone's. The `delphi` mod
-(`software/plugins/claude/default/`) puts that in a pane to keep open: `/ws` lists them, with a
-warning when tracked files have changed, and picking one runs `switch.sh` (`/ws <name>` skips the
-pane); since a session keeps the `CLAUDE.md` and skills it loaded, it then asks for a restart. All
+(`software/plugins/claude/default/`) puts that in a pane to keep open: `/ws` shows them as cards grouped by project, this clone's
+marked current, with a warning when tracked files have changed; pressing a card selects it, and
+**Switch workspace** runs `switch.sh` (`/ws <name>` skips the pane); since a session keeps the `CLAUDE.md` and skills it loaded, it then asks for a restart. All
 the git work stays in `switch.sh`, which `tests/e2e.sh` covers; the mod's own tests
 (`tests/ws.test.ts`, `claude plugin test`) stub its processes, and `tests/e2e.sh` runs them when a
 real `claude` is installed. The inherited `switch-workspace` skill makes it
