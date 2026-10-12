@@ -20,7 +20,7 @@ let message = ''
 function toWs(name: string): Ws {
   if (name === 'main') return { name, leaf: 'main', group: 'project folders, templates, CI' }
   const parts = name.split('/')
-  return { name, leaf: parts[parts.length - 1], group: parts.slice(1, -1).join(' / ') }
+  return { name, leaf: parts[parts.length - 1] ?? name, group: parts.slice(1, -1).join(' / ') }
 }
 
 function leafOf(name: string): string {
@@ -101,8 +101,9 @@ export const register: Register = on => {
       await load($)
       selected = name
       await doSwitch($)
-      if (phase === 'done') return { text: 'On ' + name + ': restart Claude Code in this folder to load its CLAUDE.md and skills.' }
-      return { text: phase === 'failed' ? 'Not switched: ' + message : 'Already on ' + name + '.' }
+      const after = phase as Phase // doSwitch changed it
+      if (after === 'done') return { text: 'On ' + name + ': restart Claude Code in this folder to load its CLAUDE.md and skills.' }
+      return { text: after === 'failed' ? 'Not switched: ' + message : 'Already on ' + name + '.' }
     }
     await $.ui.open({ id: PANE, title: 'Workspaces', focus: true, closeOnEscape: true })
     await load($)
