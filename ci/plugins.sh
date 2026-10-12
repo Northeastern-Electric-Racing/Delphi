@@ -89,6 +89,11 @@ settings() { # <folder> <workspace.yml>
   done < <(awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$2")
   printf '{\n  "attribution": {\n    "sessionUrl": false\n  }'
+  # every shell (the model's, subagents', skill scripts') gets $DELPHI_ROOT and the layout from paths.sh
+  printf ',\n  "hooks": {\n    "SessionStart": [\n      {\n        "hooks": [\n          {\n            "type": "command",\n'
+  # shellcheck disable=SC2016 # the hook expands them, not this script
+  printf '            "command": "bash \\"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\\" >> \\"$CLAUDE_ENV_FILE\\""\n'
+  printf '          }\n        ]\n      }\n    ]\n  }'
   if [ -n "${list// /}" ]; then
     printf ',\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n'
     printf '        "repo": "%s"\n      },\n      "autoUpdate": true\n    }\n  },\n  "enabledPlugins": {' "$repo"

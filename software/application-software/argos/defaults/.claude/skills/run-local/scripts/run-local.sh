@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# run-local.sh [<branch>|<argos-worktree>...]: bring up the local Argos stack for those worktrees and
-# print one line per piece. A branch gets its worktree via .delphi/new-worktree.sh (it must exist
-# locally or on origin). The backend (first listener on 8000-8090, step 10) is started if down:
+# run-local.sh [<branch>...]: bring up the local Argos stack for those branches'
+# worktrees (worktrees/argos/<branch>, made beforehand with new-worktree) and print one line per
+# piece. The backend (first listener on 8000-8090, step 10) is started if down:
 # ./argos.sh client-dev when no target changes scylla-server/, else scylla-dev plus `cargo run` in the
 # one worktree that does. Each target's client is then served by serve.sh on its own port. With no
-# arguments, only reports what is running. Run from inside a Delphi workspace (its root is the nearest
-# folder up with a workspace.yml); paths resolve from that root.
+# branches, reports what is running.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-root=$PWD
-while [ ! -f "$root/workspace.yml" ] && [ "$root" != / ]; do root=$(dirname "$root"); done
-[ -f "$root/workspace.yml" ] || { echo "run-local: run from inside a Delphi workspace" >&2 && exit 1; }
+# shellcheck source=/dev/null
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 state=${TMPDIR:-/tmp}; state=${state%/}/argos-run-local
 up() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null || (exec 3<>"/dev/tcp/::1/$1") 2>/dev/null; } # ng serve binds ::1
 backend() { for p in $(seq 8000 10 8090); do up "$p" && echo "http://localhost:$p" && return; done; echo none; }
@@ -27,18 +25,15 @@ if [ $# = 0 ]; then
   exit 0
 fi
 
-git -C "$root/repos/argos" fetch -q origin
 wts=() rust=()
-for t in "$@"; do
-  if [ -d "$t" ]; then wt=$(cd "$t" && pwd)
-  elif [ -d "$root/$t" ]; then wt=$(cd "$root/$t" && pwd)
-  elif git -C "$root/repos/argos" rev-parse -q --verify "refs/heads/$t" >/dev/null ||
-    git -C "$root/repos/argos" rev-parse -q --verify "refs/remotes/origin/$t" >/dev/null; then
-    wt=$(bash "$root/.delphi/new-worktree.sh" argos "$t")
-  else
-    echo "run-local: '$t' is neither a worktree nor an Argos branch" >&2 && exit 1
-  fi
+for b in "$@"; do
+  wt=$DELPHI_WORKTREES/argos/$b
+  [ -f "$wt/argos.sh" ] && [ -d "$wt/angular-client" ] ||
+    { echo "run-local: no Argos worktree for '$b' at $wt (make it with new-worktree)" >&2 && exit 1; }
   wts+=("$wt")
+done
+git -C "${wts[0]}" fetch -q origin # the worktrees share one store
+for wt in "${wts[@]}"; do
   if ! git -C "$wt" diff --quiet origin/develop... -- scylla-server || ! git -C "$wt" diff --quiet HEAD -- scylla-server; then
     rust+=("$wt")
   fi

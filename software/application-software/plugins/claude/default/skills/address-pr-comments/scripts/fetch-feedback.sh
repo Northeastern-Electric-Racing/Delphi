@@ -1,23 +1,25 @@
 #!/usr/bin/env bash
-# fetch-feedback.sh [--all] <repo> [<pr-number>|<branch>]: print a PR's review feedback as one JSON
-# object after creating or reusing the PR head's worktree (worktrees/<repo>/<head>). The PR defaults
-# to the current branch's. Default output keeps unresolved threads (first + latest message, bots
-# tagged), conversation comments, and reviews with text; --all keeps everything. Exits 3 on any
+# fetch-feedback.sh [--all] <repo> <pr-number>|<branch>: print a PR's review
+# feedback as one JSON object after creating or reusing the PR head's worktree
+# (worktrees/<repo>/<head>). Default output keeps unresolved threads (first + latest message,
+# bots tagged), conversation comments, and reviews with text; --all keeps everything. Exits 3 on any
 # GitHub failure (see github.sh).
 # shellcheck source-path=SCRIPTDIR source=github.sh
 set -euo pipefail
 . "$(dirname "$0")/github.sh"
 all=false
 [ "${1:-}" = --all ] && all=true && shift
-repo=${1:?usage: fetch-feedback.sh [--all] <repo> [<pr-number>|<branch>]} ref=${2:-$(git branch --show-current 2>/dev/null || true)}
-[ -n "$ref" ] || { echo "fetch-feedback: pass a PR number or branch" >&2; exit 2; }
-gh_init fetch-feedback "$repo"
+usage="usage: fetch-feedback.sh [--all] <repo> <pr-number>|<branch>"
+repo=${1:?$usage} ref=${2:?$usage}
+# shellcheck source=/dev/null
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
+gh_init fetch-feedback "$DELPHI_REPOS/$repo"
 
 case "$ref" in *[!0-9]*) get "repos/$SLUG/pulls?state=all&head=${SLUG%%/*}:$ref" | jq '.[0] // error("no PR")' ;;
   *) get "repos/$SLUG/pulls/$ref" ;; esac >"$TMP/pr"
 num=$(jq .number "$TMP/pr")
 wt=""
-[ "$(jq -r .head.repo.full_name "$TMP/pr")" != "$SLUG" ] || wt=$(bash "$ROOT/.delphi/new-worktree.sh" "$repo" "$(jq -r .head.ref "$TMP/pr")")
+[ "$(jq -r .head.repo.full_name "$TMP/pr")" != "$SLUG" ] || wt=$(bash "$DELPHI_ROOT/.delphi/new-worktree.sh" "$repo" "$(jq -r .head.ref "$TMP/pr")")
 
 if [ "$MODE" = gh ]; then # thread state is GraphQL-only; reshape it like the proxy's ccr/review_threads
   # shellcheck disable=SC2016 # GraphQL variables

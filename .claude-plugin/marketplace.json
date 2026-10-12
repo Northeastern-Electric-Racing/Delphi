@@ -8,7 +8,7 @@
     {
       "name": "argos",
       "source": "./software/application-software/argos/plugins/claude/default",
-      "description": "Argos context for every Argos workspace: ticket and PR conventions, and the run-local, verify-graph, verify-telemetry, and implement skills."
+      "description": "Argos context for every Argos workspace: ticket and PR conventions, and the verify-graph and implement skills."
     },
     {
       "name": "nero",
@@ -18,7 +18,7 @@
     {
       "name": "app",
       "source": "./software/application-software/plugins/claude/default",
-      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments) and the spec, design, execute workflow (workflow, review, to-tickets)."
+      "description": "Shared context for every application-software project: the ticket and PR conventions (create-ticket, commit, open-pr, update-pr, address-pr-comments)."
     }
   ]
 }

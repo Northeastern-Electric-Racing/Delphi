@@ -2,7 +2,7 @@
 
 You're in Delphi workspace `software/application-software/argos/argos-dev` (branch `ws/software/application-software/argos/argos-dev`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Delphi workspaces (or `main`) under `workspaces:` in `workspace.yml` (`- ws/<name>`, a workspace's place in the tree, or `- main`) are read-only copies at `linked/<branch>/` for reading their context; change what's checked out with the `setup-workspace` skill. To work in another workspace, switch this clone to it (`switch-workspace` skill). Park rough notes with the `journal` skill. Work here unless the task clearly belongs to another project.
 
-Always work from the workspace root (this clone's top, where `workspace.yml` is); the layout exists so one session can reach every worktree from there. Name worktrees by path: `git -C worktrees/argos/<branch> …` runs git there without moving, and a one-off subshell like `(cd worktrees/argos/<branch>/angular-client && npx ng lint)` runs anything else. If you `cd` into a worktree to look closely at something, `cd` back to the root as soon as you're done. Skills and their scripts take branches or worktree paths from the root.
+Always work from the workspace root (this clone's top, where `workspace.yml` is); the layout exists so one session can reach every worktree from there. Name worktrees by path: `git -C worktrees/argos/<branch> …` runs git there without moving, and a one-off subshell like `(cd worktrees/argos/<branch>/angular-client && npx ng lint)` runs anything else. If you `cd` into a worktree to look closely at something, `cd` back to the root as soon as you're done. Skill scripts take only names (repo, branch) and find the rest from `$DELPHI_ROOT`, which a session hook sets in every shell (`$DELPHI_WORKTREES` and the other `.delphi/paths.sh` folders too).
 
 # NER Software conventions
 
@@ -31,7 +31,7 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Repo pa
 
 ## Local Development
 
-- Run the app with the `run-local` skill, passing the branches or worktrees you're looking at (a PR's or ticket's, not `develop` unless asked). It starts the backend if it's down, on the right compose profile (`client-dev` runs everything in Docker; `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each worktree's client on its own port.
+- Run the app with the `run-local` skill, passing the branches you're looking at (a PR's or ticket's, with a worktree from `new-worktree`; not `develop` unless asked). It starts the backend if it's down, on the right compose profile (`client-dev` runs everything in Docker; `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each worktree's client on its own port.
 - The shell workflow (`argos.sh`, the `run-local`/`verify-*` skills, and helpers like `lsof`/`pkill`) assumes a Unix shell. On Windows, run everything from WSL or Git Bash, not `cmd`/PowerShell.
 
 ## Testing

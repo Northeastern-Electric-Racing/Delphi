@@ -182,6 +182,18 @@ overwrites: a folder in the way is reported and the other copy stays parked.
 from that store: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
 The template's `new-worktree` skill makes worktrees the default way to start a branch.
 
+`.delphi/paths.sh` is the layout in one place: sourced, it sets and exports `DELPHI_ROOT` (from the
+file's own place) and `DELPHI_REPOS`, `DELPHI_WORKTREES`, `DELPHI_REFERENCES`, `DELPHI_LINKED`; run,
+it prints them as an export line. Each harness's generated settings put that line into every shell
+at session start: for Claude Code, a SessionStart hook in `.claude/settings.json` (from
+`ci/plugins.sh`) appends it to `$CLAUDE_ENV_FILE`, which reaches the model's commands, subagents' and
+skill scripts'. In a terminal, `. .delphi/paths.sh` from the root. `new-worktree.sh` sources it from
+its own folder; every skill script, plugin or workspace, sources `$DELPHI_ROOT/.delphi/paths.sh` and
+takes only names (repo, branch), never a searched-for path, so the model types only the names.
+Skills themselves stay harness-neutral (SKILL.md is the shared Agent Skills format): they call
+scripts by their path in the skill's folder (`bash scripts/<script>.sh …`) and name no harness
+variable, so another harness needs only its own settings to set `DELPHI_ROOT`.
+
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
 to origin, and runs the new workspace's `setup.sh`. The template's `switch-workspace` skill makes it
