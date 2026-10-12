@@ -142,6 +142,9 @@ for p in app argos; do
   o show "ws/$AN:.claude/settings.json" | grep -q "\"$p@delphi\": true" || fail "argos-dev lacks the $p default set"
 done
 ! o show "ws/$BN:.claude/settings.json" | grep -q enabledPlugins || fail "bms-dev enables plugins with none above it"
+# shellcheck disable=SC2016 # the hook expands them
+o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\" >> \"$CLAUDE_ENV_FILE\""' ||
+  fail "bms-dev's settings.json lacks the SessionStart hook that sets DELPHI_ROOT"
 ok "each workspace's settings.json enables the default set of every folder above it"
 for p in app argos; do
   o show "ws/$AN:workspace.yml" | grep -Eq "^  - $p +# default, from " || fail "argos-dev's workspace.yml doesn't list the $p default"
@@ -440,15 +443,18 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
 [ "$(nw code feat)" = "$w/worktrees/code/feat" ] || fail "rerun did not reuse"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
-# skill scripts take the root and get every folder from .delphi/paths.sh, wherever they are run from
+# skill scripts read the workspace from $DELPHI_ROOT (the session hook evals paths.sh's export line) and every folder from paths.sh
 (. "$w/.delphi/paths.sh" && [ "$DELPHI_ROOT" = "$w" ] && [ "$DELPHI_REPOS" = "$w/repos" ] &&
   [ "$DELPHI_WORKTREES" = "$w/worktrees" ] && [ "$DELPHI_REFERENCES" = "$w/references" ] && [ "$DELPHI_LINKED" = "$w/linked" ]) ||
   fail "paths.sh layout"
+[ "$(cd "$t" && eval "$(bash "$w/.delphi/paths.sh")" && echo "$(printenv DELPHI_ROOT) $(printenv DELPHI_LINKED)")" = "$w $w/linked" ] ||
+  fail "paths.sh's export line doesn't reach child processes"
 cap=$src/templates/workspace/.claude/skills/journal/scripts/capture.sh
-{ e=$(cd "$t" && bash "$cap" "$w" -c ideas "a note") && [ "${e#"$w/.journal/ideas/"}" != "$e" ] && grep -q "a note" "$e"; } ||
-  fail "capture.sh with the root: $e"
-! bash "$cap" "$t" "a note" >/dev/null 2>&1 || fail "capture.sh accepted a folder that is not a workspace root"
-ok "paths.sh gives the layout from the root; capture.sh takes the root, refusing other folders"
+{ e=$(cd "$t" && DELPHI_ROOT=$w bash "$cap" -c ideas "a note") && [ "${e#"$w/.journal/ideas/"}" != "$e" ] && grep -q "a note" "$e"; } ||
+  fail "capture.sh from \$DELPHI_ROOT: $e"
+! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
+! DELPHI_ROOT=$t bash "$cap" "a note" >/dev/null 2>&1 || fail "capture.sh accepted a DELPHI_ROOT that is not a workspace root"
+ok "paths.sh gives the layout, sourced or as an export line; capture.sh reads \$DELPHI_ROOT, refusing it unset or not a root"
 
 # --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<branch>, refreshed on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely

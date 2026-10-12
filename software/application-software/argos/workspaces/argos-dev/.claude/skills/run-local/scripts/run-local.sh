@@ -1,16 +1,14 @@
 #!/usr/bin/env bash
-# run-local.sh <workspace-root> [<branch>...]: bring up the local Argos stack for those branches'
+# run-local.sh [<branch>...]: bring up the local Argos stack for those branches'
 # worktrees (worktrees/argos/<branch>, made beforehand with new-worktree) and print one line per
 # piece. The backend (first listener on 8000-8090, step 10) is started if down:
 # ./argos.sh client-dev when no target changes scylla-server/, else scylla-dev plus `cargo run` in the
-# one worktree that does. Each target's client is then served by serve.sh on its own port. With only
-# the root, reports what is running.
+# one worktree that does. Each target's client is then served by serve.sh on its own port. With no
+# branches, reports what is running.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-root=${1:?usage: run-local.sh <workspace-root> [<branch>...]} && shift
-[ -f "$root/.delphi/paths.sh" ] || { echo "run-local: '$root' is not a Delphi workspace root" >&2 && exit 2; }
 # shellcheck source=/dev/null
-. "$root/.delphi/paths.sh"
+. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
 state=${TMPDIR:-/tmp}; state=${state%/}/argos-run-local
 up() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null || (exec 3<>"/dev/tcp/::1/$1") 2>/dev/null; } # ng serve binds ::1
 backend() { for p in $(seq 8000 10 8090); do up "$p" && echo "http://localhost:$p" && return; done; echo none; }

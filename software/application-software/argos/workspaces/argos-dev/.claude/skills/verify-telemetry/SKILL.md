@@ -9,7 +9,7 @@ Work from the workspace root against the ticket's worktree, `worktrees/argos/<br
 2. **Check the topic end to end:**
 
    ```bash
-   bash ${CLAUDE_SKILL_DIR}/scripts/check-topic.sh ${CLAUDE_PROJECT_DIR} <TOPIC>
+   bash scripts/check-topic.sh <TOPIC>
    ```
 
    It prints the CAN definition (unit, value points; exit 1 if the topic isn't defined), refreshes the Calypso image (if it changed, restart with `(cd worktrees/argos/<branch> && ./argos.sh client-dev down)` then `run-local <branch>`), and shows the topic's last scylla-server log lines. Confirm the unit and value index match the UI; no log lines means it isn't being published.

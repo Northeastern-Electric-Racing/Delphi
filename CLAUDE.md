@@ -16,7 +16,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its name or
   its `plugins/scope`), each workspace's `workspace.yml` `plugins:` defaults (the
-  `default` set of every folder above), and its `.claude/settings.json` (never edit
+  `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
   it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
 - `.delphi/{setup,new-worktree,switch,park}.sh`: the scripts every workspace runs; `.delphi/paths.sh`
   is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source. Only here: sync
@@ -37,11 +37,12 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - Keep it small: fewest lines that implement the design; a short header comment per script.
   Prefer deleting to adapting. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
-- Skill scripts (plugins and workspaces) take the workspace root as their first argument, which the
-  SKILL.md fills with `${CLAUDE_PROJECT_DIR}`, then branch or repo names; they source
-  `<root>/.delphi/paths.sh` for every folder. Never search for the root or default to the cwd's branch.
-  The call is always `bash ${CLAUDE_SKILL_DIR}/scripts/<script>.sh ${CLAUDE_PROJECT_DIR} …`, so those two
-  tokens are all another harness replaces.
+- Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
+  their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
+  way. Skill scripts (plugins and workspaces) take only names (repo, branch) and read the workspace
+  from `$DELPHI_ROOT`, sourcing `$DELPHI_ROOT/.delphi/paths.sh` for every folder; each harness's
+  generated settings set it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
+  `ci/plugins.sh`). Never search for the root or default to the cwd's branch.
 - `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
   features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
 - Changing the workflow: update the template, `.github/`, and every workspace copy in the same PR,

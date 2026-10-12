@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# fetch-feedback.sh [--all] <workspace-root> <repo> <pr-number>|<branch>: print a PR's review
+# fetch-feedback.sh [--all] <repo> <pr-number>|<branch>: print a PR's review
 # feedback as one JSON object after creating or reusing the PR head's worktree
 # (worktrees/<repo>/<head>). Default output keeps unresolved threads (first + latest message,
 # bots tagged), conversation comments, and reviews with text; --all keeps everything. Exits 3 on any
@@ -9,11 +9,10 @@ set -euo pipefail
 . "$(dirname "$0")/github.sh"
 all=false
 [ "${1:-}" = --all ] && all=true && shift
-usage="usage: fetch-feedback.sh [--all] <workspace-root> <repo> <pr-number>|<branch>"
-root=${1:?$usage} repo=${2:?$usage} ref=${3:?$usage}
-[ -f "$root/.delphi/paths.sh" ] || { echo "fetch-feedback: '$root' is not a Delphi workspace root" >&2 && exit 2; }
+usage="usage: fetch-feedback.sh [--all] <repo> <pr-number>|<branch>"
+repo=${1:?$usage} ref=${2:?$usage}
 # shellcheck source=/dev/null
-. "$root/.delphi/paths.sh"
+. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
 gh_init fetch-feedback "$DELPHI_REPOS/$repo"
 
 case "$ref" in *[!0-9]*) get "repos/$SLUG/pulls?state=all&head=${SLUG%%/*}:$ref" | jq '.[0] // error("no PR")' ;;

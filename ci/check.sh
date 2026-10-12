@@ -17,6 +17,8 @@
 # optional `plugins:` list of `- <scope>[.<set>]` without duplicates. A project's
 # defaults/workspace.yml is the same without `name:`. The files ci/plugins.sh generates
 # (.claude-plugin/marketplace.json, each workspace's plugins: defaults and .claude/settings.json) are up to date.
+# No SKILL.md body names a harness variable (${CLAUDE_…}): skills call scripts by their path in the
+# skill's folder, and scripts read $DELPHI_ROOT.
 # Lists every problem; exits 1 if any.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
@@ -79,6 +81,10 @@ fi
 [ ! -e $tpl/.delphi ] || bad "$tpl/.delphi: scripts live only in the root .delphi/"
 while IFS= read -r f; do bad "$f: symlinks are not allowed under software/"; done \
   < <(find software -type l 2>/dev/null)
+while IFS= read -r at; do bad "$at: names a harness variable; call scripts as \`bash scripts/<script>.sh\` (they read \$DELPHI_ROOT)"; done < <(
+  git ls-files '*SKILL.md' | while IFS= read -r f; do # frontmatter is harness metadata; the body is shared
+    awk 'NR == 1 && /^---$/ { f = 1; next } f && /^---$/ { f = 0; next } !f && /\$\{CLAUDE_/ { print FILENAME ":" FNR; exit }' "$f"
+  done)
 while IFS= read -r msg; do bad "${msg#plugins: }"; done < <(bash "$here/plugins.sh" --check . 2>&1 >/dev/null || true)
 
 manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), `name:` is not allowed

@@ -5,7 +5,7 @@ description: Run pre-PR checks, push the branch, and open a draft pull request o
 
 First load the project's `pr-conventions` skill (from the project's plugin) for its base branch, commit format, checks, labels, and screenshots.
 
-1. **Check:** `bash ${CLAUDE_SKILL_DIR}/scripts/pr-checks.sh ${CLAUDE_PROJECT_DIR} <repo> <branch> origin/<base> '<commit format>'` (clean tree, commit subjects match the project's format, merges cleanly into the base), then the project's own checks. Stop and fix on any FAIL.
+1. **Check:** `bash scripts/pr-checks.sh <repo> <branch> origin/<base> '<commit format>'` (clean tree, commit subjects match the project's format, merges cleanly into the base), then the project's own checks. Stop and fix on any FAIL.
 2. **Open:** push (`git -C worktrees/<repo>/<branch> push -u origin <branch>`), then run `(cd worktrees/<repo>/<branch> && gh pr create --draft --base <base> --head <branch> --title "<title>" --body-file /tmp/<branch>-pr-body.md --assignee @me)` with the project's labels (`--label`), and report the URL.
 
 ## PR body

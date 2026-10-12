@@ -6,9 +6,9 @@ description: Bring up the local Argos environment for running or testing — Doc
 Run the branches the user is asking about: a PR or ticket means its branch (make its worktree with `new-worktree` first), and `develop` only when they want current `develop` (fast-forward `worktrees/argos/develop/` first):
 
 ```
-bash ${CLAUDE_SKILL_DIR}/scripts/run-local.sh ${CLAUDE_PROJECT_DIR} <branch>...
+bash scripts/run-local.sh <branch>...
 ```
 
-It starts the backend if it's down (`client-dev`, or `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each target's client on the next free port. With only the root it reports what's running.
+It starts the backend if it's down (`client-dev`, or `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each target's client on the next free port. With no branches it reports what's running.
 
 Report each branch's client URL and the backend. A failed compile or a stale-backend warning is a finding: show it to the user. Stop a client with `kill <pid>` from its line.
