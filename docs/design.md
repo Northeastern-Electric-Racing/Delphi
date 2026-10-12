@@ -12,8 +12,9 @@ for `software/application-software/argos/workspaces/argos-dev`). For each worksp
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
-only on main. Otherwise nothing is shared or generated between workspaces: a project's `defaults/` is
-copied once at creation, `workspaces:` only checks out other branches to read, and context shared by
+only on main. Likewise each `workspace-inherit/` folder: sync writes its files onto the `ws/*`
+root of every workspace below its folder and never proposes them back. Otherwise nothing is shared
+or generated between workspaces: a project's `workspace-defaults/` is copied once at creation, `workspaces:` only checks out other branches to read, and context shared by
 the workspaces under a folder ships as harness plugins (section 2). The one generated workspace file
 is `.claude/settings.json`, which enables those plugins.
 
@@ -46,7 +47,8 @@ is `.claude/settings.json`, which enables those plugins.
 ## 2. Repository (main)
 
 ```
-software/<org>/…/<project>/           README.md  AUTHORING.md  defaults/   (optional, main only)
+software/<org>/…/<project>/           README.md  AUTHORING.md  workspace-defaults/   (optional, main only)
+software/[<org>/…/]workspace-inherit/  files every workspace below gets on its ws/* root (optional, main only)
 software/<org>/…/plugins/<harness>/<set>/   a plugin set for the workspaces under that folder (optional, main only)
 software/<org>/…/plugins/scope        the folder's short name in plugin names (optional; default: its name)
 .claude-plugin/marketplace.json       every Claude Code plugin set under software/ (generated)
@@ -77,9 +79,22 @@ clones.
 `.github/CODEOWNERS` assigns reviewers per org folder.
 
 The folder holding a `workspaces/` directory is a project folder. It may hold shared context
-(`README.md`), a guide to its workspaces (`AUTHORING.md`), and `defaults/`: files a new workspace
-there starts with. These live only on `main`; workspaces read them by listing `main` under `workspaces:`. A
-`defaults/workspace.yml` is checked as a manifest (without `name:`) but is not a workspace.
+(`README.md`), a guide to its workspaces (`AUTHORING.md`), and `workspace-defaults/`: files a new
+workspace directly in its `workspaces/` starts with, copied once and then its own. These live only on
+`main`; workspaces read them by listing `main` under `workspaces:`. A `workspace-defaults/workspace.yml`
+is checked as a manifest (without `name:`) but is not a workspace.
+
+Any folder from `software/` down to a project folder may hold `workspace-inherit/`: files laid out as
+in a workspace root (`.claude/skills/<skill>/…`) that every workspace below it gets, at any depth.
+They are never copied into the workspace folder on main; refresh writes them onto `ws/<name>` and
+propose drops them, so they stay one copy, edited on main, and a workspace's own edit to one is
+undone on refresh. A workspace that wants its own copy lists the path (or a folder above it) under
+`opt-out:` in its `workspace.yml`; refresh then leaves that path alone and propose carries it like
+any workspace file. `ci/check.sh` fails on a path inherited from two folders, a workspace file at an
+inherited path it hasn't opted out of, an `opt-out:` that matches nothing, and a workspace's own
+files in `workspace-inherit/` (`CLAUDE.md`, `workspace.yml`, `.delphi/`, `.claude/settings.json`,
+the workflow). The general skills (`new-worktree`, `switch-workspace`,
+`setup-workspace`, `journal`) live in `software/workspace-inherit/`.
 
 Context that the workspaces under an org or project folder share (a skill, its conventions) goes in
 a plugin set of that folder, `plugins/<harness>/<set>/` (`plugins/claude/` for Claude Code; a sister
@@ -118,7 +133,10 @@ For every workspace on `origin/main` (or just `<name>`):
    folder plus main's `.delphi/`, parent = main, so no unrelated histories. Otherwise merge
    `origin/main` into `ws/<name>` with `--no-ff -Xsubtree=<folder>`, then, if its `.delphi/` differs
    from main's, commit main's over it ("delphi: sync .delphi/ from main", built in a temporary
-   index), and push if the tree changed. (`--no-ff` matters: once ws commits are in main, a
+   index). Then write over it the files it inherits from main (every `workspace-inherit/` from
+   `software/` down to its project folder, less its `opt-out:` paths) and remove those it
+   inherited from the main it last merged (the merge base) but no longer does ("delphi: sync
+   inherited files from main"; a new branch gets them in its one commit), and push if the tree changed. (`--no-ff` matters: once ws commits are in main, a
    fast-forward would put main's whole tree on the ws branch.) A `.delphi/` edit made on `ws/<name>`
    is undone here. Then, for a `claude-code` workspace, list main's default sets above it under the
    branch's `workspace.yml` `plugins:` and regenerate `.claude/settings.json` from that
@@ -128,7 +146,7 @@ For every workspace on `origin/main` (or just `<name>`):
    workspace is skipped.
 2. **Propose** (`ws/<name>` → PR to main). Build `propose/<name>` = `origin/main` +
    `git merge --no-ff -Xsubtree=<folder> ws/<name>`, with `<folder>/.delphi/` dropped from the result
-   (it is main's, never a workspace's). Stop if its tree equals main's or the current
+   (it is main's, never a workspace's) and its inherited paths put back to main's. Stop if its tree equals main's or the current
    `propose/<name>`'s (nothing new). Otherwise run `ci/check.sh` on it, force-push it, and create or
    update the PR `ws/<name> → main` with `gh` (body: changed files, ws commit subjects and authors).
 
@@ -180,7 +198,7 @@ overwrites: a folder in the way is reported and the other copy stays parked.
 
 `.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `worktrees/<repo>/<branch>`
 from that store: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
-The template's `new-worktree` skill makes worktrees the default way to start a branch.
+The inherited `new-worktree` skill makes worktrees the default way to start a branch.
 
 `.delphi/paths.sh` is the layout in one place: sourced, it sets and exports `DELPHI_ROOT` (from the
 file's own place) and `DELPHI_REPOS`, `DELPHI_WORKTREES`, `DELPHI_REFERENCES`, `DELPHI_LINKED`; run,
@@ -196,11 +214,11 @@ variable, so another harness needs only its own settings to set `DELPHI_ROOT`.
 
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
-to origin, and runs the new workspace's `setup.sh`. The template's `switch-workspace` skill makes it
+to origin, and runs the new workspace's `setup.sh`. The inherited `switch-workspace` skill makes it
 the way to work in another workspace; its `setup-workspace` skill covers `workspace.yml` (repos,
 references, links) and re-running setup.
 
-The template's `journal` skill parks rough notes in `.journal/` at the workspace root (its
+The inherited `journal` skill parks rough notes in `.journal/` at the workspace root (its
 `capture.sh` adds `/.journal/` to `.git/info/exclude`) and exports them through other skills.
 
 ## 5b. Versions and migrations
@@ -230,7 +248,7 @@ also warns when `.delphi/` isn't exactly the version it says (edited in the clon
 ## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
 
 Validates the name (format, not on main, no leftover `ws/<name>` or `ws/<leaf>`), copies `templates/workspace/`
-and then `software/<org-path>/defaults/` if present (its `CLAUDE.md` appended to the template's)
+and then `software/<org-path>/workspace-defaults/` if present (its `CLAUDE.md` appended to the template's)
 into `software/<org-path>/workspaces/<name>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
 temporary worktree, sets `name: software/<org-path>/<leaf>`, generates its `.claude/settings.json`, runs `ci/check.sh`, pushes branch
 `new-workspace/<org-path>/<leaf>`, and opens a PR. Sync creates `ws/<name>` once it merges.

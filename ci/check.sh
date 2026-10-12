@@ -14,8 +14,12 @@
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
 # `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself, and an
-# optional `plugins:` list of `- <scope>[.<set>]` without duplicates. A project's
-# defaults/workspace.yml is the same without `name:`. The files ci/plugins.sh generates
+# optional `plugins:` list of `- <scope>[.<set>]` without duplicates, and an optional `opt-out:` list
+# of `- <path>` it inherits, each matching something. A project's workspace-defaults/workspace.yml is
+# the same without `name:` (and a project has no old defaults/). A workspace-inherit/ folder sits in
+# an org or project folder, never holds a workspace's own files (CLAUDE.md, workspace.yml, .delphi/,
+# .claude/settings.json, the workflow), and no workspace inherits a path from two of them or has a
+# file at an inherited path it hasn't opted out of. The files ci/plugins.sh generates
 # (.claude-plugin/marketplace.json, each workspace's plugins: defaults and .claude/settings.json) are up to date.
 # No SKILL.md body names a harness variable (${CLAUDE_…}): skills call scripts by their path in the
 # skill's folder, and scripts read $DELPHI_ROOT.
@@ -87,7 +91,7 @@ while IFS= read -r at; do bad "$at: names a harness variable; call scripts as \`
   done)
 while IFS= read -r msg; do bad "${msg#plugins: }"; done < <(bash "$here/plugins.sh" --check . 2>&1 >/dev/null || true)
 
-manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), `name:` is not allowed
+manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ manifest), `name:` is not allowed
   while IFS= read -r msg; do bad "$1: $msg"; done < <(awk -v want="${2:-}" '
     /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     want != "" && /^name:/ { v = $0; sub(/^name:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
@@ -100,6 +104,13 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
     /^links:/ { print "links: is now workspaces: (entries `  - ws/<name>` or `  - main`)"; r = 3; next }
     /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
     /^plugins:[[:space:]]*(#.*)?$/ { r = 4; next }
+    /^opt-out:[[:space:]]*(#.*)?$/ { r = 5; next }
+    r == 5 && /^[[:space:]]/ {
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._][A-Za-z0-9._\/-]*[[:space:]]*(#.*)?$/ || $0 ~ /(^|[[:space:]\/])\.\.(\/|[[:space:]]|$)/) {
+        print "bad opt-out entry (want `  - <path it inherits>`, e.g. .claude/skills/journal): " $0; next }
+      v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+      if (opt[v]++) print "duplicate opt-out: " v
+      next }
     r == 4 && /^[[:space:]]/ {
       if ($0 !~ /^[[:space:]]+-[[:space:]]+[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)?[[:space:]]*(#.*)?$/) {
         print "bad plugins entry (want `  - <scope>[.<set>]`, e.g. argos.testing): " $0; next }
@@ -128,6 +139,34 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a defaults/ manifest), 
     s && /^[[:space:]]+-[[:space:]]+ws\// { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$1")
 }
 
+levels() { # <workspace folder>: software/ and each folder down to its project folder, top first
+  echo "${1%/workspaces/*}" | awk -F/ '{ p = $1; print p; for (i = 2; i <= NF; i++) { p = p "/" $i; print p } }'
+}
+inherits() { # <workspace folder> <workspace.yml>: what it inherits, against what it has and opts out of
+  local level p o opted seen="" used="" out
+  out=$(awk '/^opt-out:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
+    s && /^[[:space:]]+-[[:space:]]+/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); sub(/\/$/, ""); print }' "$2")
+  for level in $(levels "$1"); do
+    [ -d "$level/workspace-inherit" ] || continue
+    for p in $(cd "$level/workspace-inherit" && find . -type f | sed 's#^\./##' | sort); do
+      case " $seen " in *" $p "*) bad "$level/workspace-inherit/$p: $1 also inherits it from a folder above; keep one" ;; esac
+      seen="$seen $p" opted=""
+      for o in $out; do case "$p/" in "$o"/*) opted=1 used="$used $o" ;; esac; done
+      [ -n "$opted" ] || [ ! -e "$1/$p" ] || bad "$1/$p: inherited from $level/workspace-inherit/; remove it, or list it under opt-out: in workspace.yml"
+    done
+  done
+  for o in $out; do case " $used " in *" $o "*) ;; *) bad "$2: opt-out: $o is nothing it inherits" ;; esac; done
+}
+while IFS= read -r d; do
+  case "$d" in */workspaces/*) bad "$d: belongs in an org or project folder, not under workspaces/" ;; esac
+  for f in CLAUDE.md workspace.yml .delphi .claude/settings.json $managed; do
+    [ ! -e "$d/$f" ] || bad "$d/$f: each workspace has its own; it can't be inherited"
+  done
+done < <(find software -type d -name workspace-inherit 2>/dev/null | sort)
+while IFS= read -r d; do
+  [ ! -d "${d%/workspaces}/defaults" ] || bad "${d%/workspaces}/defaults: renamed workspace-defaults/"
+done < <(find software -type d -name workspaces 2>/dev/null)
+
 folders="" names="" listed=""
 while IFS= read -r f; do
   folder=${f%/workspace.yml}
@@ -150,9 +189,10 @@ while IFS= read -r f; do
   [ ! -e "$folder/.delphi" ] || bad "$folder/.delphi: managed in the root .delphi/ on main; remove it"
   for m in $managed; do cmp -s "$tpl/$m" "$folder/$m" || bad "$folder/$m: differs from $tpl/$m"; done
   manifest "$f" "$name"
-done < <(find software -name workspace.yml -type f \( ! -path '*/defaults/workspace.yml' -o -path '*/workspaces/defaults/*' \) 2>/dev/null | sort)
+  inherits "$folder" "$f"
+done < <(find software -name workspace.yml -type f ! -path '*/workspace-inherit/*' \( ! -path '*/workspace-defaults/workspace.yml' -o -path '*/workspaces/workspace-defaults/*' \) 2>/dev/null | sort)
 while IFS= read -r f; do manifest "$f"; done \
-  < <(find software -path '*/defaults/workspace.yml' ! -path '*/workspaces/defaults/*' -type f 2>/dev/null)
+  < <(find software -path '*/workspace-defaults/workspace.yml' ! -path '*/workspaces/workspace-defaults/*' -type f 2>/dev/null)
 for l in $listed; do
   case " $names " in *" ${l#*|} "*) ;; *) bad "${l%%|*}: workspaces: lists ws/${l#*|}, which isn't a workspace on main" ;; esac
 done

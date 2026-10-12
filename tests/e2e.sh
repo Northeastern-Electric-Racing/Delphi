@@ -26,6 +26,8 @@ fail() { echo "FAIL - $*" >&2 && exit 1; }
 A=software/application-software/argos/workspaces/argos-dev
 B=software/electrical/workspaces/bms-dev
 AN=software/application-software/argos/argos-dev BN=software/electrical/bms-dev # their names: folder path without workspaces/
+V=$(awk '/^version:/ { print $2 }' "$src/.delphi/manifest.yml") # the current version; VN, the patch after it, is what the test releases
+VN=${V%.*}.$((${V##*.} + 1))
 
 # --- sandbox: seed repo -> bare origin; "ci" is the clone CI runs in, "dev" a person's clone
 git init -q "$t/seed"
@@ -34,7 +36,7 @@ mkdir -p "$t/seed/$A" "$t/seed/$B"
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
 sed -i.bak "s|{{name}}|$BN|" "$t/seed/$B/workspace.yml" && rm "$t/seed/$B/workspace.yml.bak"
-FD=software/electrical/firmware/defaults # project defaults for new workspaces under electrical/firmware
+FD=software/electrical/firmware/workspace-defaults # project defaults for new workspaces under electrical/firmware
 mkdir -p "$t/seed/$FD/.claude/skills/fw"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
 printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
@@ -122,9 +124,9 @@ ok "unrelated main changes leave other ws branches' trees alone"
 
 # --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
 (cd "$t/dev" && git fetch -q && git checkout -q -B release origin/main && echo "# main edit" >>.delphi/new-worktree.sh &&
-  sed -i.bak 's/^version: .*/version: 0.2.1/' .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
-  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release 0.2.1" &&
-  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing 0.2.1 failed"
+  sed -i.bak "s/^version: .*/version: $VN/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak &&
+  echo "$(bash .delphi/version.sh) a main edit" >>.delphi/versions && git commit -qam "release $VN" &&
+  ci/check.sh . origin/main >/dev/null && git push -q origin HEAD:main) || fail "releasing $VN failed"
 sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out")"
 for n in "$AN" "$BN"; do
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
@@ -176,6 +178,38 @@ grep -q "ws/$AN: plugins: .* lists argos.nope, which isn't a plugin set" "$t/err
 sync "$AN" >/dev/null 2>&1 || fail "sync after dropping the unknown set failed"
 ok "an unknown set under plugins: is reported, exit 1, until fixed"
 
+# --- 4d. workspace-inherit/: every workspace below a folder gets its files on refresh, never proposes them, and can opt out
+on_main() { # <message> <command...>: a change on main, pushed
+  local m=$1 && shift
+  (cd "$t/dev" && git fetch -q && git checkout -q -B tmp-main origin/main && "$@" && git add -A && git commit -qm "$m" && git push -q origin HEAD:main)
+}
+TI=software/workspace-inherit/.claude/skills/top AI=software/application-software/workspace-inherit/notes
+on_main "inherit" sh -c "mkdir -p $TI $AI && echo 'top v1' >$TI/SKILL.md && echo 'app v1' >$AI/app.md"
+sync >"$t/out" 2>&1 || fail "sync after adding workspace-inherit/ failed: $(cat "$t/out")"
+for n in "$AN" "$BN"; do o show "ws/$n:.claude/skills/top/SKILL.md" | grep -qx "top v1" || fail "ws/$n lacks software/workspace-inherit/"; done
+o show "ws/$AN:notes/app.md" | grep -qx "app v1" || fail "ws/$AN lacks application-software/workspace-inherit/"
+! o cat-file -e "ws/$BN:notes/app.md" 2>/dev/null || fail "ws/$BN inherited from a folder it isn't under"
+[ "$(o log -1 --format=%s ws/$BN)" = "delphi: sync inherited files from main" ] || fail "no inherit commit on ws/$BN"
+! o cat-file -e "propose/$AN:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "inherited file proposed"
+ok "refresh writes every workspace-inherit/ folder above a workspace onto ws/<name>, and only those"
+commit_on ws/$AN .claude/skills/top/SKILL.md "ws edit"
+sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws edit to an inherited file failed: $(cat "$t/out")"
+[ "$(o show "ws/$AN:.claude/skills/top/SKILL.md")" = "top v1" ] || fail "ws edit to an inherited file not reset"
+! o cat-file -e "propose/$AN:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "ws edit to an inherited file proposed"
+on_main "inherit v2, drop app.md" sh -c "echo 'top v2' >$TI/SKILL.md && git rm -q $AI/app.md"
+sync >"$t/out" 2>&1 || fail "sync after changing workspace-inherit/ failed: $(cat "$t/out")"
+o show "ws/$AN:.claude/skills/top/SKILL.md" | grep -qx "top v2" || fail "inherited change not refreshed"
+! o cat-file -e "ws/$AN:notes/app.md" 2>/dev/null || fail "a file no longer inherited stayed on ws/$AN"
+ok "a ws edit to an inherited file is reset and never proposed; main's changes and removals reach ws/<name>"
+commit_on ws/$BN workspace.yml "$(printf 'opt-out:\n  - .claude/skills/top')"
+commit_on ws/$BN .claude/skills/top/SKILL.md "bms own"
+on_main "inherit v3" sh -c "echo 'top v3' >$TI/SKILL.md"
+sync >"$t/out" 2>&1 || fail "sync after an opt-out failed: $(cat "$t/out")"
+[ "$(o show "ws/$BN:.claude/skills/top/SKILL.md")" = "$(printf 'top v2\nbms own')" ] || fail "opted-out file overwritten: $(o show "ws/$BN:.claude/skills/top/SKILL.md")"
+o show "propose/$BN:$B/.claude/skills/top/SKILL.md" | grep -qx "bms own" || fail "opted-out copy not proposed as the workspace's own"
+o show "ws/$AN:.claude/skills/top/SKILL.md" | grep -qx "top v3" || fail "argos-dev lost the inherited file"
+ok "a workspace that lists a path under opt-out: keeps and proposes its own copy, and refresh leaves it alone"
+
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/$BN CLAUDE.md "ws side"
 commit_on main "$B/CLAUDE.md" "main side"
@@ -222,7 +256,7 @@ expect_bad reference-repo-clash "duplicate repo: argos" sh -c "printf 'reference
 expect_bad bad-key "unexpected line" sh -c "printf 'color: x\n' >>$A/workspace.yml"
 expect_bad wrong-name "the folder path without workspaces/" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad no-name "name is missing" sh -c "sed -i.bak '/^name:/d' $A/workspace.yml && rm $A/workspace.yml.bak"
-expect_bad defaults-name "defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/defaults/workspace.yml"
+expect_bad defaults-name "workspace-defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
 expect_bad folder-delphi "$A/.delphi: managed in the root" sh -c "mkdir $A/.delphi && cp .delphi/park.sh $A/.delphi/"
 expect_bad ref-clash "can't be a branch while ws/$AN is" sh -c "mkdir -p software/application-software/workspaces && cp -R $A software/application-software/workspaces/argos &&
   sed -i.bak 's|^name:.*|name: software/application-software/argos|' software/application-software/workspaces/argos/workspace.yml"
@@ -241,23 +275,35 @@ expect_bad plugins-duplicate "duplicate plugin set" sh -c "printf 'plugins:\n  -
 expect_bad root-script-missing ".delphi/switch.sh: listed in .delphi/manifest.yml but missing" rm .delphi/switch.sh
 expect_bad unlisted ".delphi/extra.sh: in .delphi/ but not listed" touch .delphi/extra.sh
 expect_bad manifest-not-self "must list itself" sed -i.bak '/- .delphi\/manifest.yml/d' .delphi/manifest.yml
-expect_bad not-bumped "changed since 0.2.0: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
-expect_bad bumped-no-line "add \`0.2.1 " sed -i.bak 's/^version: .*/version: 0.2.1/' .delphi/manifest.yml
+expect_bad not-bumped "changed since $V: bump version" sh -c "echo '# x' >>.delphi/setup.sh"
+expect_bad bumped-no-line "add \`$VN " sed -i.bak "s/^version: .*/version: $VN/" .delphi/manifest.yml
 release() { # <version> [<migration slug>]: bump to <version> (with an empty migration) and add its line, as a release would
   [ -z "${2:-}" ] || printf '#!/usr/bin/env bash\nset -euo pipefail\n' >".delphi/migrations/$1-$2.sh"
   sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
     echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
 }
-expect_bad migration-patch "0.2.1 has a migration, so it must bump MINOR" release 0.2.1 x
-expect_bad version-down "0.0.9 is not above 0.2.0" release 0.0.9
+expect_bad migration-patch "$VN has a migration, so it must bump MINOR" release "$VN" x
+expect_bad version-down "0.0.9 is not above $V" release 0.0.9
 expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
 expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
-expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/0.2.0-x.sh"
+expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migrations/$V-x.sh"
 expect_bad history-rewritten "only add lines" sed -i.bak 's/linked/LINKED/' .delphi/versions
 expect_bad released-migration-changed "add a new version's migration instead" sh -c "echo '# x' >>.delphi/migrations/0.0.1-linked-worktrees-to-clones.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
-expect_bad defaults-manifest "defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/defaults/workspace.yml"
-expect_bad defaults-named-workspace "defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/defaults/.delphi && cp -R $A/. software/x/workspaces/defaults/"
+expect_bad defaults-manifest "workspace-defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
+expect_bad defaults-named-workspace "workspace-defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/workspace-defaults/.delphi && cp -R $A/. software/x/workspaces/workspace-defaults/"
+expect_bad old-defaults "defaults: renamed workspace-defaults/" mkdir -p "${A%/workspaces/*}/defaults"
+expect_bad inherited-file-kept "$A/.claude/skills/journal/SKILL.md: inherited from software/workspace-inherit/" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
+expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
+expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "echo x >software/workspace-inherit/CLAUDE.md"
+expect_bad inherit-in-workspace "belongs in an org or project folder" sh -c "mkdir -p $A/workspace-inherit && echo x >$A/workspace-inherit/f"
+expect_bad bad-opt-out "bad opt-out entry" sh -c "printf 'opt-out:\n  - ../x\n' >>$A/workspace.yml"
+expect_bad opt-out-nothing "opt-out: nope is nothing it inherits" sh -c "printf 'opt-out:\n  - nope\n' >>$A/workspace.yml"
+d=$t/chk-opt-out && rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
+(cd "$d" && git init -q && mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md &&
+  printf 'opt-out:\n  - .claude/skills/journal/\n' >>$A/workspace.yml && git add -A && git commit -qm base)
+"$src/ci/check.sh" "$d" >/dev/null 2>&1 || fail "check fails on a workspace keeping an inherited path it opts out of"
+ok "a workspace may keep its own copy of an inherited path it lists under opt-out:"
 expect_bad links-renamed "links: is now workspaces:" sh -c "sed -i.bak 's/^workspaces:/links:/' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad bad-workspaces-entry "bad workspaces entry" sh -c "printf '  - argos-dev\n' >>$A/workspace.yml"
 expect_bad duplicate-workspace "duplicate workspace: main" sh -c "printf '  - main\n' >>$A/workspace.yml"
@@ -392,15 +438,14 @@ o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -qx "# Fir
   fail "defaults workspace.yml not used, or name: not set"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/settings.json" || fail "new workspace has no generated settings.json"
-o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/switch-workspace/SKILL.md" || fail "template skill lost"
-o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/journal/scripts/capture.sh" || fail "template journal skill lost"
+! o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/top/SKILL.md" 2>/dev/null || fail "an inherited skill was copied into the folder"
 grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
 (cd "$t/dev" && ! tools/new-workspace.sh application-software/argos argos-dev 2>/dev/null) || fail "duplicate workspace accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh x Bad 2>/dev/null) || fail "bad name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh ../x ok 2>/dev/null) || fail "bad org path accepted"
 [ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "new-workspace touched the checkout"
 ok "new-workspace.sh opens a PR with the templated folder; rejects duplicates and bad input"
-ok "new-workspace.sh adds the project's defaults/ (CLAUDE.md appended, placeholders filled)"
+ok "new-workspace.sh adds the project's workspace-defaults/ (CLAUDE.md appended, placeholders filled), not inherited files"
 ok "new-workspace.sh works when a local new-workspace/<name> branch is left over"
 
 # --- 10. one direction at a time: `sync refresh` only updates ws/, `sync propose` only updates propose/
@@ -449,7 +494,7 @@ ok "new-worktree.sh makes new branches from the default or <base>, checks out ex
   fail "paths.sh layout"
 [ "$(cd "$t" && eval "$(bash "$w/.delphi/paths.sh")" && echo "$(printenv DELPHI_ROOT) $(printenv DELPHI_LINKED)")" = "$w $w/linked" ] ||
   fail "paths.sh's export line doesn't reach child processes"
-cap=$src/templates/workspace/.claude/skills/journal/scripts/capture.sh
+cap=$src/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh
 { e=$(cd "$t" && DELPHI_ROOT=$w bash "$cap" -c ideas "a note") && [ "${e#"$w/.journal/ideas/"}" != "$e" ] && grep -q "a note" "$e"; } ||
   fail "capture.sh from \$DELPHI_ROOT: $e"
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
@@ -470,7 +515,7 @@ commit_on ws/$AN docs/CONTEXT.md "linked update"
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
 ok "setup.sh checks out workspaces: read-only at linked/<branch>, skips itself and bad entries, refreshes on re-run"
-[ "$(git -C "$w" config delphi.$BN.version)" = 0.2.1 ] || fail "setup.sh did not record the version"
+[ "$(git -C "$w" config delphi.$BN.version)" = "$VN" ] || fail "setup.sh did not record the version"
 old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
 old_link && echo x >>"$w/linked/main/README.md"
 { ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has uncommitted changes" "$t/err" &&
@@ -488,10 +533,10 @@ ok "a recorded version's migrations don't run again; setup.sh never writes into 
 git -C "$w" config --unset delphi.$BN.version
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
   [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
-  [ "$(git -C "$w" config delphi.$BN.version)" = 0.2.1 ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
+  [ "$(git -C "$w" config delphi.$BN.version)" = "$VN" ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
 ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a read-only copy) and records the version"
 echo "# local" >>"$w/.delphi/switch.sh"
-{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi 0.2.1 as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi $VN as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
 ok "setup.sh warns when .delphi/ isn't the version it says"
 
@@ -544,7 +589,7 @@ mkdir -p "$w/.delphi/parked/argos-dev/linked/vcu-dev" "$w/.git/delphi/hv-dev/rep
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed running 0.1.0: $(cat "$t/out")"
 { [ -d "$w/.delphi/parked/$AN/linked/ws/$CN" ] && [ -d "$w/.delphi/parked/$DN/repos/r" ] && [ ! -e "$w/.git/delphi" ] &&
   [ -d "$w/linked/ws/$AN" ] && [ ! -e "$w/linked/argos-dev" ] && ! git -C "$w" config delphi.argos-dev.version >/dev/null &&
-  [ "$(git -C "$w" config "delphi.$CN.version")" = 0.2.1 ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
+  [ "$(git -C "$w" config "delphi.$CN.version")" = "$VN" ]; } || fail "0.1.0 did not rename by path: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked")"
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "setup.sh re-ran 0.1.0"
 { git -C "$w" config --unset "delphi.$CN.version" && /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q moved "$t/out"; } || fail "0.1.0 is not safe to re-run"
 ok "0.1.0 moves parked slots (.delphi/parked/<leaf>, .git/delphi/<leaf>), old copies in linked/ and old version records to path names, once"

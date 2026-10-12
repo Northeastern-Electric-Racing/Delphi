@@ -18,7 +18,7 @@ them (`.delphi/` comes from main's root and sync resets it; `settings.json` is g
 ## Create a new Argos workspace
 
 From a Delphi checkout: `tools/new-workspace.sh application-software/argos <name>`. It copies
-Delphi's template, then `defaults/` (its `CLAUDE.md` is appended after the Delphi section), and opens
+Delphi's template, then `workspace-defaults/` (its `CLAUDE.md` is appended after the Delphi section), and opens
 a PR to `main`. Trim what the new workspace doesn't need before merging.
 
 ## Change the defaults or this folder
