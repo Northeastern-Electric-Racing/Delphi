@@ -596,17 +596,48 @@ git -C "$w" branch -q -f ws/old-leaf origin/ws/$AN && git -C "$w" push -q origin
 git -C "$w" push -q origin :ws/old-leaf && git -C "$w" branch -q -D ws/old-leaf
 ok "switch.sh --list prints main and each workspace (not old ws/<leaf> names), marking this clone's"
 
-# --- 12c. the delphi mod (software/plugins/claude/default): /ws, a pane that switches through switch.sh.
+# --- 12c. the delphi mod (software/plugins/claude/default): /ws-delphi, a pane that switches through switch.sh.
 # Its own tests stub every process; they need a real claude, which CI doesn't have.
 mod=$src/software/plugins/claude/default
 real() { PATH=$real_path HOME=$real_home "$@"; } # a claude wrapper may look itself up on PATH
 if real command -v claude >/dev/null; then
-  { out=$(real claude plugin validate "$mod" 2>&1) && echo "$out" | grep -q "hooks: session.start, command.run{command=ws}"; } ||
+  { out=$(real claude plugin validate "$mod" 2>&1) && echo "$out" | grep -q "hooks: session.start, prompt.submit, command.run{command=ws-delphi}"; } ||
     fail "the delphi mod doesn't validate: $out"
   out=$(cd "$mod" && real claude plugin test 2>&1) || fail "the delphi mod's tests failed: $out"
   ok "the delphi mod validates and its tests pass ($(echo "$out" | grep -E '^ *[0-9]+ pass$' | sed 's/^ *//'))"
 else
   echo "skip - the delphi mod's tests: no claude on PATH"
+fi
+
+# --- 12d. the mod's browser view (web/server.py): serves the page and the list only with its token and a local
+# Host, pulls and switches only on a JSON POST, through switch.sh, and says so on stdout for the mod
+if command -v python3 >/dev/null && command -v curl >/dev/null; then
+  python3 "$mod/web/server.py" "$w" >"$t/web.out" 2>"$t/web.err" &
+  web=$!
+  for _ in $(seq 50); do [ -s "$t/web.out" ] && break; sleep 0.1; done
+  url=$(head -1 "$t/web.out") port=${url#http://127.0.0.1:} port=${port%%/*}
+  get() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+  { [ "$(get "$url")" = 200 ] && curl -s "$url" | grep -q "<title>Delphi workspaces</title>" &&
+    [ "$(get "http://127.0.0.1:$port/")" = 404 ] && [ "$(get "http://127.0.0.1:$port/wrong/api/state")" = 404 ] &&
+    [ "$(get -H "Host: evil.example:$port" "${url}api/state")" = 403 ]; } || fail "web/server.py let a request without its token or a local Host through"
+  curl -s "${url}api/state" | python3 -c 'import json, sys; s = json.load(sys.stdin); sys.exit(not (s["here"] == sys.argv[1] and s["workspaces"] == ["main", sys.argv[1], sys.argv[2]] and not s["isDirty"]))' "$AN" "$BN" ||
+    fail "web/server.py api/state: $(curl -s "${url}api/state")"
+  commit_on ws/$AN docs/CONTEXT.md "for the browser's pull"
+  { [ "$(get -X POST -d '{}' "${url}api/pull")" = 415 ] &&
+    curl -s -X POST -H 'Content-Type: application/json' -d '{}' "${url}api/pull" | grep -Eq '"Pulled [0-9]+ commits? into argos-dev"' &&
+    [ "$(git -C "$w" rev-parse HEAD)" = "$(git -C "$t/origin.git" rev-parse "ws/$AN")" ] && grep -Eqx "pulled Pulled [0-9]+ commits? into argos-dev" "$t/web.out" &&
+    curl -s -X POST -H 'Content-Type: application/json' -d '{}' "${url}api/pull" | grep -q '"argos-dev is up to date with origin"'; } ||
+    fail "web/server.py pull: $(cat "$t/web.out" "$t/web.err")"
+  { [ "$(get -X POST -d '{"name":"bms-dev"}' "${url}api/switch")" = 415 ] && [ "$(git -C "$w" branch --show-current)" = "ws/$AN" ]; } ||
+    fail "web/server.py switched without a JSON body"
+  { curl -s -X POST -H 'Content-Type: application/json' -d '{"name":"bms-dev"}' "${url}api/switch" | grep -q '"ok": true' &&
+    [ "$(git -C "$w" branch --show-current)" = "ws/$BN" ] && grep -qx "switched bms-dev" "$t/web.out"; } ||
+    fail "web/server.py switch to bms-dev: $(cat "$t/web.out" "$t/web.err")"
+  kill "$web" && wait "$web" 2>/dev/null || true
+  git -C "$w" switch -q "ws/$AN"
+  ok "the browser view answers only its own page, pulls and switches through switch.sh, printing what it did"
+else
+  echo "skip - the delphi mod's browser view: no python3 or curl"
 fi
 
 # --- 14. named by path: a workspace's old ws/<leaf> branch carries over into ws/<name>; moving a clone onto the

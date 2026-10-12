@@ -1,0 +1,225 @@
+<!doctype html>
+<!-- The delphi mod's browser view of /ws-delphi (web/server.py serves it): every workspace and main as
+     cards grouped by project; press one to select it, then Switch workspace. Same states as the
+     pane: pick, switching, done, failed (Back). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Delphi workspaces</title>
+<style>
+  :root {
+    --bg: #faf9f7; --card: #fff; --ink: #1f1e1c; --dim: #76736d; --line: #e4e1db;
+    --accent: #d97757; --accent-ink: #fff; --ok: #2f8a4c; --warn: #b7791f; --err: #c4423a;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #1b1a18; --card: #252421; --ink: #ecebe8; --dim: #9a968e; --line: #3a3834; --ok: #5cbf7a; --warn: #e0a43e; --err: #ec6a61; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 32px 24px 160px; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 20px; margin: 0; font-weight: 650; }
+  .here { display: flex; align-items: baseline; gap: 8px; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--card); }
+  .here .dot { color: var(--ok); }
+  .dim { color: var(--dim); }
+  .spacer { flex: 1; }
+  input[type=search] { font: inherit; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 220px; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); padding: 7px 14px; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button:disabled { opacity: .5; cursor: default; }
+  .banner { padding: 10px 14px; border-radius: 10px; margin-bottom: 16px; border: 1px solid; }
+  .banner.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .banner.err { color: var(--err); border-color: color-mix(in srgb, var(--err) 40%, transparent); background: color-mix(in srgb, var(--err) 8%, transparent); }
+  #groups { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 24px 20px; align-items: start; }
+  h2 { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--dim); font-weight: 600; margin: 0 0 8px; }
+  .stack { display: flex; flex-direction: column; gap: 8px; }
+  .card { text-align: left; padding: 12px 14px; border-radius: 12px; display: flex; flex-direction: column; gap: 2px; transition: border-color .12s, box-shadow .12s; }
+  .card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+  .card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
+  .card .leaf { font-weight: 600; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  .card .name { font: 12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; direction: rtl; text-align: left; }
+  .badge { font-size: 11px; font-weight: 600; color: var(--ok); border: 1px solid currentColor; border-radius: 999px; padding: 0 7px; }
+  .empty { color: var(--dim); padding: 24px 0; grid-column: 1 / -1; }
+  .bar { position: fixed; left: 0; right: 0; bottom: 0; padding: 16px 24px; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-top: 1px solid var(--line); }
+  .bar .inner { max-width: 980px; margin: 0 auto; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .bar .what { flex: 1; min-width: 240px; }
+  .bar .tools { display: flex; align-items: center; gap: 10px; padding-left: 16px; border-left: 1px solid var(--line); font-size: 13px; }
+  .ok { color: var(--ok); } .err { color: var(--err); }
+  .bar.done { border-top-color: var(--ok); } .bar.done .what { color: var(--ok); }
+  .bar.failed { border-top-color: var(--err); } .bar.failed .what { color: var(--err); }
+  .bar.switching { border-top-color: var(--warn); }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--warn); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 8px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Delphi workspaces</h1>
+    <div class="here" id="here"></div>
+    <span class="spacer"></span>
+    <input type="search" id="filter" placeholder="Filter" aria-label="Filter workspaces">
+  </header>
+  <div id="banners"></div>
+  <div id="groups"><p class="empty">Loading…</p></div>
+</main>
+<div class="bar" id="bar"><div class="inner" id="action"></div></div>
+<script>
+'use strict'
+let all = [], here = '', isDirty = false, error = '', selected = '', phase = 'pick', message = '', isGone = false
+let isRefreshing = false, fetchedAt = '' // the list is being fetched; when it last was, HH:MM
+let isPulling = false, pullNote = '', isPullOk = true // a pull is running; what the last one did
+
+const MAIN_GROUP = 'project folders, templates, CI'
+function toWs(name) {
+  if (name === 'main') return { name, leaf: 'main', group: MAIN_GROUP }
+  const parts = name.split('/')
+  return { name, leaf: parts[parts.length - 1], group: parts.slice(1, -1).join(' / ') }
+}
+
+// el('div', { class: 'x', onclick }, child, ...): children are elements or text (never parsed as HTML)
+function el(tag, attrs, ...children) {
+  const node = document.createElement(tag)
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k.startsWith('on')) node.addEventListener(k.slice(2), v)
+    else if (v !== false && v != null) node.setAttribute(k, v === true ? '' : v)
+  }
+  for (const c of children.flat()) if (c != null && c !== false) node.append(c)
+  return node
+}
+
+async function load() {
+  if (isRefreshing) return
+  isRefreshing = true
+  draw()
+  try {
+    const r = await fetch('api/state', { cache: 'no-store' })
+    if (!r.ok) throw new Error('HTTP ' + r.status)
+    const s = await r.json()
+    isGone = false
+    if (!s.error || !all.length) { all = s.workspaces.map(toWs); here = s.here } // a failed refresh keeps the last list
+    isDirty = s.isDirty; error = s.error
+    if (s.switching) { phase = 'switching'; selected = s.switching }
+    else if (phase === 'switching') phase = 'pick'
+    if (!all.some(w => w.name === selected) || (selected === here && phase === 'pick')) {
+      selected = (all.find(w => w.name !== here) || {}).name || ''
+    }
+    fetchedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  } catch {
+    isGone = true
+  }
+  isRefreshing = false
+  draw()
+}
+
+async function doSwitch() {
+  if (phase === 'switching' || !selected || selected === here) return
+  phase = 'switching'; message = ''
+  draw()
+  try {
+    const r = await fetch('api/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: selected }) })
+    const answer = await r.json()
+    phase = answer.ok ? 'done' : 'failed'
+    message = answer.message
+  } catch {
+    phase = 'failed'; message = 'the server stopped answering (its Claude Code session may have ended)'
+  }
+  await load()
+}
+
+async function doPull() {
+  if (isPulling || phase === 'switching' || !here) return
+  isPulling = true; pullNote = ''
+  draw()
+  try {
+    const r = await fetch('api/pull', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    const answer = await r.json()
+    isPullOk = answer.ok; pullNote = answer.message
+  } catch {
+    isPullOk = false; pullNote = 'the server stopped answering (its Claude Code session may have ended)'
+  }
+  isPulling = false
+  await load()
+}
+
+function refresh() {
+  pullNote = ''
+  load()
+}
+
+function pick(name) {
+  selected = name
+  if (phase !== 'switching') phase = 'pick'
+  draw()
+}
+
+// Redraws, keeping the keyboard focus on the element that had it (by id or card)
+function draw() {
+  const had = document.activeElement
+  const focusId = had && had.id, focusWs = had && had.dataset && had.dataset.ws
+  render()
+  const again = (focusId && document.getElementById(focusId)) || (focusWs && document.querySelector('[data-ws="' + CSS.escape(focusWs) + '"]'))
+  if (again && again !== document.activeElement) again.focus()
+}
+
+function render() {
+  const cur = toWs(here)
+  document.getElementById('here').replaceChildren(
+    el('span', { class: 'dot' }, '●'), el('strong', {}, cur.leaf || 'not on a workspace'), el('span', { class: 'dim' }, cur.group))
+
+  const banners = []
+  if (isGone) banners.push(el('div', { class: 'banner err' }, 'This page’s server is gone: its Claude Code session ended. Run /ws-delphi --web again for a new one.'))
+  else if (error) banners.push(el('div', { class: 'banner err' }, error))
+  if (isDirty && !isGone) banners.push(el('div', { class: 'banner warn' }, '⚠ Tracked files have changes: commit them before switching.'))
+  document.getElementById('banners').replaceChildren(...banners)
+
+  const q = document.getElementById('filter').value.trim().toLowerCase()
+  const shown = all.filter(w => !q || w.name.toLowerCase().includes(q))
+  const groups = [...new Set(shown.map(w => w.group))]
+  document.getElementById('groups').replaceChildren(...(groups.length ? groups.map(g => el('section', {},
+    el('h2', {}, g),
+    el('div', { class: 'stack' }, shown.filter(w => w.group === g).map(w =>
+      el('button', { type: 'button', class: 'card' + (w.name === selected ? ' selected' : ''), 'aria-pressed': String(w.name === selected), 'data-ws': w.name, title: w.name, onclick: () => pick(w.name) },
+        el('span', { class: 'leaf' }, w.leaf, w.name === here && el('span', { class: 'badge' }, 'current')),
+        el('span', { class: 'name' }, '\u200e' + w.name)))))) : [el('p', { class: 'empty' }, all.length ? 'No workspace matches.' : 'No workspaces listed.')]))
+
+  const bar = document.getElementById('bar')
+  bar.className = 'bar ' + phase
+  const sel = all.find(w => w.name === selected)
+  const action = []
+  if (phase === 'pick' && (!sel || sel.name === here)) action.push(el('span', { class: 'what dim' }, 'Pick a workspace above.'))
+  if (phase === 'pick' && sel && sel.name !== here) {
+    action.push(el('span', { class: 'what' }, 'Switch this clone to ', el('strong', {}, sel.leaf), ' ', el('span', { class: 'dim' }, '(' + sel.group + ')')))
+    action.push(el('button', { type: 'button', class: 'primary', id: 'switch', disabled: isGone, onclick: doSwitch }, 'Switch workspace'))
+  }
+  if (phase === 'switching') action.push(el('span', { class: 'what' }, el('span', { class: 'spin' }), 'Switching to ' + toWs(selected).leaf + '… fetching, parking worktrees, running setup.sh'))
+  if (phase === 'done') {
+    action.push(el('span', { class: 'what' }, '✓ Now on ' + cur.leaf + '. Claude reads its CLAUDE.md with your next message.'))
+    action.push(el('button', { type: 'button', onclick: () => pick(selected) }, 'OK'))
+  }
+  if (phase === 'failed') {
+    action.push(el('span', { class: 'what' }, '✗ Not switched: ' + message))
+    action.push(el('button', { type: 'button', id: 'back', onclick: () => pick(selected) }, 'Back'))
+  }
+  if (phase !== 'switching') {
+    const note = isPulling ? el('span', {}, el('span', { class: 'spin' }), 'Pulling ' + cur.leaf + '… fetching, fast-forwarding, running setup.sh')
+      : isRefreshing ? el('span', { class: 'dim' }, 'Fetching from origin…')
+      : pullNote ? el('span', { class: isPullOk ? 'ok' : 'err' }, pullNote)
+      : el('span', { class: 'dim' }, fetchedAt && 'Fetched at ' + fetchedAt)
+    action.push(el('span', { class: 'tools' },
+      el('button', { type: 'button', id: 'refresh', 'aria-busy': String(isRefreshing), onclick: refresh }, 'Refresh'),
+      here && el('button', { type: 'button', id: 'pull', 'aria-busy': String(isPulling), onclick: doPull }, 'Pull'),
+      note))
+  }
+  document.getElementById('action').replaceChildren(...action)
+}
+
+document.getElementById('filter').addEventListener('input', draw)
+document.addEventListener('visibilitychange', () => { if (!document.hidden && phase !== 'switching') load() })
+load()
+</script>
+</body>
+</html>
