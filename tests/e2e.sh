@@ -600,7 +600,7 @@ ok "switch.sh --list prints main and each workspace (not old ws/<leaf> names), m
 mod=$src/software/plugins/claude/default
 real() { PATH=$real_path HOME=$real_home "$@"; } # a claude wrapper may look itself up on PATH
 if real command -v claude >/dev/null; then
-  { out=$(real claude plugin validate "$mod" 2>&1) && echo "$out" | grep -q "hooks: session.start, command.run{command=ws}"; } ||
+  { out=$(real claude plugin validate "$mod" 2>&1) && echo "$out" | grep -q "hooks: session.start, prompt.submit, command.run{command=ws}"; } ||
     fail "the delphi mod doesn't validate: $out"
   out=$(cd "$mod" && real claude plugin test 2>&1) || fail "the delphi mod's tests failed: $out"
   ok "the delphi mod validates and its tests pass ($(echo "$out" | grep -E '^ *[0-9]+ pass$' | sed 's/^ *//'))"

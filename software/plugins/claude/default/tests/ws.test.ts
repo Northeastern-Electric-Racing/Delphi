@@ -26,6 +26,9 @@ const ws = (args: string) => ({
   presentation: { isFullscreen: false, columns: 100 },
 })
 
+// A prompt as typed at the composer
+const typed = (text: string) => ({ text, wait: false, origin: { kind: 'composer' as const } })
+
 // What switch.sh would print and exit with
 const done = (exitCode: number, stdout = '', stderr = '') => ({
   value: { exitCode, stdout, stderr, isStdoutTruncated: false, isStderrTruncated: false },
@@ -59,15 +62,18 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
   on('command.register', ($, e) => ({ value: { command: e.name } }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.log', () => ({ value: undefined }))
+  on('prompt.submit', ($, e) => ({ text: e.text, ...(e.context ? { context: e.context } : {}) }))
   on('ui.status', ($, e) => {
     c.status.push(e.text ?? '')
     return { value: undefined }
   })
   on('fs.exists', ($, e) => ({ value: c.isDelphi && e.path === SWITCH }))
+  on('fs.read', ($, e) => (c.isDelphi && e.path === ROOT + '/CLAUDE.md' ? { value: '# Workspace ' + c.here + '\n' } : { deny: 'no such file: ' + e.path }))
   on('process.run', ($, e) => {
     const [cmd = '', a1 = '', a2 = ''] = e.argv
     if (cmd === 'git' && a1 === 'rev-parse' && a2 === 'HEAD') return done(0, 'c' + c.head + '\n')
     if (cmd === 'git' && a1 === 'rev-parse') return done(0, ROOT + '\n')
+    if (cmd === 'git' && a1 === 'branch') return done(0, (c.here === 'main' ? 'main' : 'ws/' + c.here) + '\n')
     if (cmd === 'git' && a1 === 'rev-list') {
       const [from = '', to = ''] = (e.argv[3] ?? '').split('..')
       return done(0, Number(to.slice(1)) - Number(from.slice(1)) + '\n')
@@ -133,7 +139,7 @@ test('/ws opens a pane of cards grouped by project, this one marked current', as
   expect(await ui.find({ type: 'Text', text: /Tracked files have changes/ })).toBeUndefined()
 })
 
-test('pressing a card only selects it; Switch workspace switches and asks for a restart', async ($, on) => {
+test('pressing a card only selects it; Switch workspace switches and says Claude reads the new CLAUDE.md next', async ($, on) => {
   const c = fakeClone(on)
   await $.command.run(ws(''))
   const ui = await $.ui.mount(PANE)
@@ -142,9 +148,9 @@ test('pressing a card only selects it; Switch workspace switches and asks for a 
   expect(await ui.find({ type: 'Text', text: '› bms-dev' })).toBeDefined()
   await ui.press({ key: 'switch' })
   expect(c.switches).toEqual([{ name: BMS, timeoutMs: 600_000 }])
-  expect(c.status).toEqual(['switched to bms-dev; restart Claude Code in this folder'])
+  expect(c.status).toEqual(['switched to bms-dev; Claude reads its CLAUDE.md with your next message'])
   expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Restart Claude Code in this folder/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Claude reads its CLAUDE.md with your next message/ })).toBeDefined()
   expect(await ui.find({ key: 'close' })).toBeDefined()
 })
 
@@ -166,7 +172,7 @@ test('/ws <name> switches without the pane', async ($, on) => {
   const c = fakeClone(on)
   const answer = await $.command.run(ws('bms-dev'))
   expect(c.switches.map(s => s.name)).toEqual(['bms-dev'])
-  expect(answer.text).toMatch(/^On bms-dev: restart Claude Code in this folder/)
+  expect(answer.text).toMatch(/^On bms-dev: Claude reads its CLAUDE.md with your next message/)
 })
 
 test('outside a Delphi clone, /ws says so and runs nothing', async ($, on) => {
@@ -199,7 +205,7 @@ test('a switch made in the browser view shows in the pane and under the prompt',
   await ui.press({ key: 'web' })
   c.browser(BMS)
   await c.seen
-  expect(c.status).toEqual(['switched to bms-dev; restart Claude Code in this folder'])
+  expect(c.status).toEqual(['switched to bms-dev; Claude reads its CLAUDE.md with your next message'])
   expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
 })
 
@@ -243,7 +249,7 @@ test('Pull runs switch.sh on this clone\'s workspace and says how many commits c
   await ui.press({ key: 'pull' })
   expect(c.switches).toEqual([{ name: ARGOS, timeoutMs: 600_000 }])
   expect(await ui.find({ type: 'Text', text: 'Pulled 3 commits into argos-dev' })).toBeDefined()
-  expect(c.status).toEqual(['pulled 3 commits; restart Claude Code if CLAUDE.md or skills changed'])
+  expect(c.status).toEqual(['pulled 3 commits into argos-dev'])
   await ui.press({ key: 'pull' })
   expect(await ui.find({ type: 'Text', text: 'argos-dev is up to date with origin' })).toBeDefined()
   await ui.press({ key: 'refresh' })
@@ -256,4 +262,18 @@ test('with tracked changes Pull says why it did not', async ($, on) => {
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'pull' })
   expect(await ui.find({ type: 'Text', text: 'Not pulled: switch: commit or set aside your changes first (git status)' })).toBeDefined()
+})
+
+test('the first prompt after a switch carries the new CLAUDE.md, once, saying it replaces the old', async ($, on) => {
+  const c = fakeClone(on)
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: ROOT })
+  expect((await $.prompt.submit(typed('hi'))).context ?? []).toEqual([])
+  await $.command.run(ws('bms-dev'))
+  expect(c.here).toBe(BMS)
+  const after = (await $.prompt.submit(typed('what now?'))).context ?? []
+  expect(after.length).toBe(1)
+  expect(after[0]).toMatch(/^Delphi: since this session started, this clone moved to ws\/software\/electrical\/bms-dev /)
+  expect(after[0]).toMatch(/It replaces the CLAUDE\.md you were given at the start/)
+  expect(after[0]).toMatch(/# Workspace software\/electrical\/bms-dev\n$/)
+  expect((await $.prompt.submit(typed('and then?'))).context ?? []).toEqual([])
 })

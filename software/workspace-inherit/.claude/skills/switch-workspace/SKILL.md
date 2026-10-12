@@ -16,6 +16,6 @@ bash .delphi/switch.sh main          # Delphi's main: project folders, templates
 - It refuses while tracked files have changes: commit them on a branch (and PR them) first. Then it fetches, switches, fast-forwards, and runs the new workspace's `.delphi/setup.sh`.
 - The post-checkout hook parks this workspace's `repos/`, `worktrees/`, `references/` and `linked/` in `.delphi/parked/<name>/` (git-ignored; `<name>` as in its `workspace.yml`) and brings the other's back at the same paths, so worktrees and the work in them return as they were. Switch back the same way. Never run `git clean -X` or `git stash --all` at the workspace root: they take ignored files, parked work included.
 - Before switching, stop anything running from `worktrees/` (dev servers, Docker builds): its folder moves.
-- This session keeps the old workspace's `CLAUDE.md` and skills. After switching, tell the user to restart Claude Code in the same folder, and don't start work in the new workspace until they have.
+- No restart needed: skills under `.claude/skills/` reload on their own, and the `delphi` mod sends the new workspace's `CLAUDE.md` with the next prompt. Without the mod installed, this session keeps the old `CLAUDE.md`: tell the user to restart Claude Code in the same folder before starting work in the new workspace.
 - To change the workspace you switched to: `git switch -c <branch>`, commit, push, and open a PR into `ws/<name>` (or `main`).
 - To only read another workspace or main without leaving this one, list it under `workspaces:` instead (`setup-workspace` skill).

@@ -1,7 +1,7 @@
 <!doctype html>
 <!-- The delphi mod's browser view of /ws (web/server.py serves it): every workspace and main as
      cards grouped by project; press one to select it, then Switch workspace. Same states as the
-     pane: pick, switching, done (restart Claude Code), failed (Back). -->
+     pane: pick, switching, done, failed (Back). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -197,7 +197,7 @@ function render() {
   }
   if (phase === 'switching') action.push(el('span', { class: 'what' }, el('span', { class: 'spin' }), 'Switching to ' + toWs(selected).leaf + '… fetching, parking worktrees, running setup.sh'))
   if (phase === 'done') {
-    action.push(el('span', { class: 'what' }, '✓ Now on ' + cur.leaf + '. Restart Claude Code in this folder to load its CLAUDE.md and skills.'))
+    action.push(el('span', { class: 'what' }, '✓ Now on ' + cur.leaf + '. Claude reads its CLAUDE.md with your next message.'))
     action.push(el('button', { type: 'button', onclick: () => pick(selected) }, 'OK'))
   }
   if (phase === 'failed') {

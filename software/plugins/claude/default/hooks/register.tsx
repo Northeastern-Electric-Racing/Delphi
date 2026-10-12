@@ -1,8 +1,9 @@
 // The delphi mod: /ws opens a pane to keep open, with every Delphi workspace and main as cards
 // grouped by project (.delphi/switch.sh --list). Press one to select it, then Switch workspace, which
-// runs switch.sh; /ws <name> switches straight away. A switch changes CLAUDE.md and the skills on
-// disk, but this session keeps the ones it loaded, so after one the pane and the line under the
-// prompt ask for a restart. All the git work is switch.sh's; outside a Delphi clone /ws says so.
+// runs switch.sh; /ws <name> switches straight away. A switch (or pull) changes CLAUDE.md and the
+// skills on disk: Claude Code reloads the skills itself but keeps the CLAUDE.md it started with, so
+// the next prompt after the root's CLAUDE.md changed (by /ws or anything else) carries the new one,
+// which says it replaces the old. All the git work is switch.sh's; outside a Delphi clone /ws says so.
 // /ws --web (or the pane's Open in browser) starts web/server.py for the session: the same cards in
 // a browser tab, served on 127.0.0.1; a switch made there shows up here too. Refresh fetches the
 // list again; Pull brings this clone's workspace up to date (switch.sh on the one it's on: fetch,
@@ -28,6 +29,7 @@ let listError = '' // why it couldn't, if it couldn't
 let isPulling = false
 let pullNote = '' // what the last pull did
 let isPullOk = true
+let toldMd: string | null = null // the root's CLAUDE.md as Claude last read it: at session start, or sent since
 let webUrl = '' // the browser view's address while web/server.py runs
 let webError = '' // why it isn't running, when it failed to
 let webStart: Promise<string> | null = null
@@ -97,7 +99,7 @@ async function notePull($: EngineInterface, name: string, before: string, r: { e
   if (r.exitCode !== 0) pullNote = 'Not pulled: ' + lastLine(r.stderr, 'switch.sh failed')
   else if (!isPullOk) pullNote = lastLine(r.stderr, 'diverged from origin')
   else pullNote = n === 0 ? leafOf(name) + ' is up to date with origin' : 'Pulled ' + commits(n) + ' into ' + leafOf(name)
-  if (n > 0) await $.ui.status('pulled ' + commits(n) + '; restart Claude Code if CLAUDE.md or skills changed')
+  if (n > 0) await $.ui.status('pulled ' + commits(n) + ' into ' + leafOf(name))
 }
 
 async function doPull($: EngineInterface) {
@@ -123,6 +125,15 @@ async function refresh($: EngineInterface) {
   }
 }
 
+async function readMd($: EngineInterface): Promise<string> {
+  try {
+    const md = await $.fs.read(root + '/CLAUDE.md')
+    return typeof md === 'string' ? md : ''
+  } catch {
+    return ''
+  }
+}
+
 async function doSwitch($: EngineInterface) {
   if (phase === 'switching' || !selected || selected === here) return
   phase = 'switching'
@@ -131,7 +142,7 @@ async function doSwitch($: EngineInterface) {
   const r = await run($, ['bash', root + '/.delphi/switch.sh', selected], 600_000)
   if (r.exitCode === 0) {
     phase = 'done'
-    await $.ui.status('switched to ' + leafOf(selected) + '; restart Claude Code in this folder')
+    await $.ui.status('switched to ' + leafOf(selected) + '; Claude reads its CLAUDE.md with your next message')
   } else {
     phase = 'failed'
     message = r.stderr.trim().split('\n').pop() || 'switch.sh failed'
@@ -143,7 +154,7 @@ async function doSwitch($: EngineInterface) {
 async function switchedInBrowser($: EngineInterface, name: string) {
   phase = 'done'
   message = ''
-  await $.ui.status('switched to ' + leafOf(name) + '; restart Claude Code in this folder')
+  await $.ui.status('switched to ' + leafOf(name) + '; Claude reads its CLAUDE.md with your next message')
   await load($)
 }
 
@@ -210,7 +221,21 @@ export const register: Register = on => {
     } catch (err) {
       await $.ui.log('/ws not added: ' + String((err as Error)?.message ?? err))
     }
+    if (await findRoot($)) toldMd = await readMd($)
     return next(e)
+  })
+
+  // The first prompt after the root's CLAUDE.md changed carries the new one, once
+  on('prompt.submit', async ($, e, next) => {
+    if (!root || toldMd === null) return next(e)
+    const md = await readMd($)
+    if (md === toldMd) return next(e)
+    toldMd = md
+    const branch = (await run($, ['git', 'branch', '--show-current'], 10_000)).stdout.trim()
+    const note =
+      'Delphi: since this session started, this clone moved to ' + (branch || 'another commit') + ' (a workspace switch or pull), so ' +
+      root + '/CLAUDE.md changed. It replaces the CLAUDE.md you were given at the start; follow this one. Skills under .claude/skills/ have reloaded on their own.\n\n' + md
+    return next({ ...e, context: [...(e.context ?? []), note] })
   })
 
   on('command.run', { command: 'ws' }, async ($, e) => {
@@ -227,7 +252,7 @@ export const register: Register = on => {
       selected = name
       await doSwitch($)
       const after = phase as Phase // doSwitch changed it
-      if (after === 'done') return { text: 'On ' + name + ': restart Claude Code in this folder to load its CLAUDE.md and skills.' }
+      if (after === 'done') return { text: 'On ' + name + ': Claude reads its CLAUDE.md with your next message.' }
       return { text: after === 'failed' ? 'Not switched: ' + message : 'Already on ' + name + '.' }
     }
     await $.ui.open({ id: PANE, title: 'Workspaces', focus: true, closeOnEscape: true })
@@ -291,7 +316,7 @@ export const register: Register = on => {
           {phase === 'done' && (
             <Box flexDirection="column" rowGap={1}>
               <Text color="success">✓ Now on {cur.leaf}</Text>
-              <Text>Restart Claude Code in this folder to load its CLAUDE.md and skills.</Text>
+              <Text>Claude reads its CLAUDE.md with your next message; its skills have reloaded.</Text>
               <Button key="close" onPress={() => $.ui.close({ id: PANE })}>
                 Close
               </Button>

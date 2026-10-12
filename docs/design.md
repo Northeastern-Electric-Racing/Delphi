@@ -229,7 +229,10 @@ tracked files have changes, fetches the branch, switches (the hook parks and res
 to origin, and runs the new workspace's `setup.sh`. `switch.sh --list` prints `main` and the workspaces, `*` before this clone's. The `delphi` mod
 (`software/plugins/claude/default/`) puts that in a pane to keep open: `/ws` shows them as cards grouped by project, this clone's
 marked current, with a warning when tracked files have changed; pressing a card selects it, and
-**Switch workspace** runs `switch.sh` (`/ws <name>` skips the pane); since a session keeps the `CLAUDE.md` and skills it loaded, it then asks for a restart. All
+**Switch workspace** runs `switch.sh` (`/ws <name>` skips the pane). No restart: Claude Code
+reloads skills from `.claude/skills/` itself, and the mod sends the root's new `CLAUDE.md` with the
+next prompt (once, after any change: a switch, a pull, `switch.sh` by hand), saying it replaces the
+one the session started with (a user mod can't rewrite the session's own `CLAUDE.md` block). All
 the git work stays in `switch.sh`, which `tests/e2e.sh` covers; the mod's own tests
 (`tests/ws.test.ts`, `claude plugin test`) stub its processes, and `tests/e2e.sh` runs them when a
 real `claude` is installed. Optionally the same cards open in a browser tab: `/ws --web`, or the pane's
