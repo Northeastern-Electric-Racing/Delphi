@@ -9,7 +9,7 @@ set -euo pipefail
 usage="usage: pr-checks.sh <repo> <branch> [<base> [<format>]]"
 repo=${1:?$usage} branch=${2:?$usage}
 # shellcheck source=/dev/null
-. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 cd "$DELPHI_WORKTREES/$repo/$branch"
 base=${3:-origin/develop} format=${4:-'^#[0-9]+ - '} fail=0
 res() { echo "$1 $2"; [ "$1" != FAIL ] || fail=1; }

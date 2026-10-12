@@ -6,7 +6,7 @@ set -euo pipefail
 usage="usage: lint.sh <branch> [<base>]"
 branch=${1:?$usage}
 # shellcheck source=/dev/null
-. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 cd "$DELPHI_WORKTREES/argos/$branch"
 base=${2:-origin/develop}
 if git diff --quiet "$base...HEAD" -- angular-client; then echo "SKIP frontend lint (no changes)"

@@ -8,7 +8,7 @@
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=/dev/null
-. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 state=${TMPDIR:-/tmp}; state=${state%/}/argos-run-local
 up() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null || (exec 3<>"/dev/tcp/::1/$1") 2>/dev/null; } # ng serve binds ::1
 backend() { for p in $(seq 8000 10 8090); do up "$p" && echo "http://localhost:$p" && return; done; echo none; }

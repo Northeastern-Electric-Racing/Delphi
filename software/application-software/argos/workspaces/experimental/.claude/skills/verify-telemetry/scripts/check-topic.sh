@@ -8,7 +8,7 @@ set -euo pipefail
 usage="usage: check-topic.sh <topic>"
 topic=${1:?$usage}
 # shellcheck source=/dev/null
-. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 defs=$DELPHI_WORKTREES/odyssey-definitions/main/can-messages
 [ -d "$defs" ] || { echo "no CAN definitions at $defs; add odyssey-definitions under repos: and run .delphi/setup.sh" >&2; exit 2; }
 

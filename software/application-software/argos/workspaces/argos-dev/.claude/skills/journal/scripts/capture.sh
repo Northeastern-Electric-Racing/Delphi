@@ -6,7 +6,7 @@
 set -euo pipefail
 usage="usage: capture.sh [-c <category>] [note text]"
 # shellcheck source=/dev/null
-. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 dir=$DELPHI_ROOT/.journal
 [ "${1:-}" = -c ] && dir=$dir/${2:?$usage} && shift 2
 exclude=$(git -C "$DELPHI_ROOT" rev-parse --path-format=absolute --git-path info/exclude 2>/dev/null || true)

@@ -12,7 +12,7 @@ all=false
 usage="usage: fetch-feedback.sh [--all] <repo> <pr-number>|<branch>"
 repo=${1:?$usage} ref=${2:?$usage}
 # shellcheck source=/dev/null
-. "${DELPHI_ROOT:?source <workspace-root>/.delphi/paths.sh first}/.delphi/paths.sh"
+. "${DELPHI_ROOT:?unset: start the session at the workspace root, on Delphi 0.2.0+ (pull its ws/ branch), or source <root>/.delphi/paths.sh}/.delphi/paths.sh"
 gh_init fetch-feedback "$DELPHI_REPOS/$repo"
 
 case "$ref" in *[!0-9]*) get "repos/$SLUG/pulls?state=all&head=${SLUG%%/*}:$ref" | jq '.[0] // error("no PR")' ;;

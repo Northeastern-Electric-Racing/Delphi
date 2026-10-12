@@ -5,7 +5,7 @@ description: Review changes since a fixed point (commit, branch, tag, or merge-b
 
 1. Fixed point: use the one given, else ask. Run `git add -N .` so new files show, then confirm `git diff <ref>` is non-empty.
 2. Spec: use a path given, else `.workflow/spec.md`, else the issue referenced in the commits. If there is none, skip the Spec axis.
-3. Standards: the workflow skill's standards (`../workflow/standards.md`), plus the CLAUDE.md files covering the touched paths.
+3. Standards: the `workflow` skill's `standards.md` (`../workflow/standards.md` from this skill's folder), plus the CLAUDE.md files covering the touched paths.
 4. Spawn read-only subagents in parallel. Give each the diff command, and ask each to stay under 400 words:
    - Bugs: correctness, edge cases, error handling.
    - Standards: violated rules by file, dead code, speculative abstraction, and comments that break the comment rule. Skip what formatters and linters enforce.
