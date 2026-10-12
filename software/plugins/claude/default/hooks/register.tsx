@@ -99,7 +99,6 @@ async function notePull($: EngineInterface, name: string, before: string, r: { e
   if (r.exitCode !== 0) pullNote = 'Not pulled: ' + lastLine(r.stderr, 'switch.sh failed')
   else if (!isPullOk) pullNote = lastLine(r.stderr, 'diverged from origin')
   else pullNote = n === 0 ? leafOf(name) + ' is up to date with origin' : 'Pulled ' + commits(n) + ' into ' + leafOf(name)
-  if (n > 0) await $.ui.status('pulled ' + commits(n) + ' into ' + leafOf(name))
 }
 
 async function doPull($: EngineInterface) {
@@ -142,7 +141,6 @@ async function doSwitch($: EngineInterface) {
   const r = await run($, ['bash', root + '/.delphi/switch.sh', selected], 600_000)
   if (r.exitCode === 0) {
     phase = 'done'
-    await $.ui.status('switched to ' + leafOf(selected) + '; Claude reads its CLAUDE.md with your next message')
   } else {
     phase = 'failed'
     message = r.stderr.trim().split('\n').pop() || 'switch.sh failed'
@@ -150,11 +148,10 @@ async function doSwitch($: EngineInterface) {
   await load($)
 }
 
-// A switch made in the browser view: the pane and the line under the prompt say so too
+// A switch made in the browser view: the pane says so too
 async function switchedInBrowser($: EngineInterface, name: string) {
   phase = 'done'
   message = ''
-  await $.ui.status('switched to ' + leafOf(name) + '; Claude reads its CLAUDE.md with your next message')
   await load($)
 }
 

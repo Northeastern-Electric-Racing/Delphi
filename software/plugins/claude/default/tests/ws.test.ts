@@ -148,7 +148,7 @@ test('pressing a card only selects it; Switch workspace switches and says Claude
   expect(await ui.find({ type: 'Text', text: '› bms-dev' })).toBeDefined()
   await ui.press({ key: 'switch' })
   expect(c.switches).toEqual([{ name: BMS, timeoutMs: 600_000 }])
-  expect(c.status).toEqual(['switched to bms-dev; Claude reads its CLAUDE.md with your next message'])
+  expect(c.status).toEqual([])
   expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^Claude reads its CLAUDE.md with your next message/ })).toBeDefined()
   expect(await ui.find({ key: 'close' })).toBeDefined()
@@ -198,14 +198,14 @@ test('Open in browser starts web/server.py once for the clone, opens it, and lin
   await c.seen
 })
 
-test('a switch made in the browser view shows in the pane and under the prompt', async ($, on) => {
+test('a switch made in the browser view shows in the pane', async ($, on) => {
   const c = fakeClone(on)
   await $.command.run(ws(''))
   const ui = await $.ui.mount(PANE)
   await ui.press({ key: 'web' })
   c.browser(BMS)
   await c.seen
-  expect(c.status).toEqual(['switched to bms-dev; Claude reads its CLAUDE.md with your next message'])
+  expect(c.status).toEqual([])
   expect(await ui.find({ type: 'Text', text: '✓ Now on bms-dev' })).toBeDefined()
 })
 
@@ -249,7 +249,7 @@ test('Pull runs switch.sh on this clone\'s workspace and says how many commits c
   await ui.press({ key: 'pull' })
   expect(c.switches).toEqual([{ name: ARGOS, timeoutMs: 600_000 }])
   expect(await ui.find({ type: 'Text', text: 'Pulled 3 commits into argos-dev' })).toBeDefined()
-  expect(c.status).toEqual(['pulled 3 commits into argos-dev'])
+  expect(c.status).toEqual([])
   await ui.press({ key: 'pull' })
   expect(await ui.find({ type: 'Text', text: 'argos-dev is up to date with origin' })).toBeDefined()
   await ui.press({ key: 'refresh' })
