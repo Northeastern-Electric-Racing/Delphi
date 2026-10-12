@@ -6,7 +6,7 @@ You're in Delphi workspace `software/firmware/calypso/calypso-dev` (branch `ws/s
 
 CAN ↔ telemetry bridge for NER's Odyssey car (Rust). Decodes CAN into protobuf `ServerData` published per topic to Siren (MQTT, or Zenoh with `-z`); encodes `CommandData` on `Calypso/Bidir/Command/#` back to CAN. The CAN spec is JSON in the `Odyssey-Definitions` submodule. `calypso-sim` publishes simulated `ServerData`; its `README.md` is the source of truth for its flags.
 
-- `worktrees/calypso/Develop/` mirrors `Develop` (capital D): run things there, never edit or commit. Make branches with `new-worktree` from `origin/Develop`, then `git -C worktrees/calypso/<branch> submodule update --init --recursive`.
-- Branches `{issue}-{kebab-title}`; commits `#{issue} - {description}`; draft PRs into `Develop`.
+- `worktrees/calypso/develop/` mirrors `develop`: run things there, never edit or commit. Make branches with `new-worktree` from `origin/develop`, then `git -C worktrees/calypso/<branch> submodule update --init --recursive`.
+- Branches `{issue}-{kebab-title}`; commits `#{issue} - {description}`; draft PRs into `develop`.
 - Check with `ci-local` (bare `cargo test` skips workspace members; on macOS the main crate doesn't compile).
-- On macOS, `develop` (a stale branch) can collide with `Develop` in `repos/calypso`. If `worktrees/calypso/Develop` isn't at GitHub's `Develop`: `git -C repos/calypso config --add remote.origin.fetch '^refs/heads/develop'`, `git -C repos/calypso update-ref -d refs/remotes/origin/Develop`, `git -C repos/calypso fetch origin`, `git -C worktrees/calypso/Develop reset --hard origin/Develop`.
+- On macOS, the old `Develop` branch (until it's deleted) can collide with `develop` in `repos/calypso`. If `worktrees/calypso/develop` isn't at GitHub's `develop`: `git -C repos/calypso config --add remote.origin.fetch '^refs/heads/Develop'`, `git -C repos/calypso update-ref -d refs/remotes/origin/develop`, `git -C repos/calypso fetch origin`, `git -C worktrees/calypso/develop reset --hard origin/develop`.
