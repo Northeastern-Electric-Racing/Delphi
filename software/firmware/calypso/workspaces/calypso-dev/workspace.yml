@@ -1,6 +1,9 @@
 name: software/firmware/calypso/calypso-dev            # its place in the tree, the folder path without workspaces/ (branch ws/<name>); checkouts park and restore repos/ by it
 harness: claude-code
 plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists the `default` set of every folder above first and generates .claude/settings.json
+  - delphi         # default, from software/
+opt-out:                  # `- <path>`: files from the workspace-inherit/ folders above that CI leaves alone here, so the workspace keeps its own copy (or none)
+  # - .claude/skills/journal
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   calypso: https://github.com/Northeastern-Electric-Racing/Calypso.git
