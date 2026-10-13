@@ -37,7 +37,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the
   `ws/*` root of every workspace below on each refresh, never proposed; `opt-out:` in a
   `workspace.yml` skips a path).
-- `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`.
+- `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
 
 ## Rules
