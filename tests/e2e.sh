@@ -512,8 +512,9 @@ cap=$src/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
 ! DELPHI_ROOT=$t bash "$cap" "a note" >/dev/null 2>&1 || fail "capture.sh accepted a DELPHI_ROOT that is not a workspace root"
 ok "paths.sh gives the layout, sourced or as an export line; capture.sh reads \$DELPHI_ROOT, refusing it unset or not a root"
-# plugins.sh: setup.sh installs the @delphi plugins this workspace enables but this machine hasn't (for
-# this root), uninstalls the ones the marketplace dropped, and only warns about other marketplaces' or offline
+# plugins.sh: setup.sh installs the @delphi plugins this workspace enables but this clone hasn't,
+# uninstalls this clone's local ones it doesn't enable and ones the marketplace dropped, leaves other
+# clones' and user-scope ones alone, and only warns about other marketplaces' or offline
 printf '{\n  "extraKnownMarketplaces": {\n    "delphi": {\n      "source": {\n        "source": "github",\n        "repo": "o/Delphi"\n      },\n      "autoUpdate": true\n    }\n  },\n  "enabledPlugins": {\n    "app@delphi": true,\n    "argos@delphi": true,\n    "x@other": true\n  }\n}\n' >"$w/.claude/settings.json"
 pl() { # <id> <scope> <projectPath or -> <gone 0/1>...: what `claude plugin list --json` reports
   local sep=""
@@ -536,17 +537,24 @@ rm "$t/offline"
 pl app@delphi user - 0 argos@delphi local "$t/elsewhere" 0 x@other user - 0 >"$t/plugins.json"
 { out=$(plugins) && [ "$out" = "delphi: plugins: installed argos@delphi; run /reload-plugins in Claude Code (or restart it) to load the change" ]; } ||
   fail "plugins.sh counted another clone's install: $out"
-pl app@delphi user - 0 argos@delphi local "$w" 0 x@other user - 0 old@delphi local "$w" 1 gone@other user - 1 >"$t/plugins.json"
-{ : >"$t/claude.log" && err=$(bash "$w/.delphi/setup.sh" 2>&1 >/dev/null) && echo "$err" | grep -qF "delphi: plugins: uninstalled old@delphi (gone from the Delphi marketplace)" &&
-  grep -qx "claude plugin uninstall old@delphi --scope local" "$t/claude.log" && ! grep -q "gone@other\|install a" "$t/claude.log"; } ||
-  fail "setup.sh doesn't uninstall a plugin the Delphi marketplace dropped: $err $(cat "$t/claude.log")"
+pl app@delphi user - 0 argos@delphi local "$w" 0 x@other user - 0 old@delphi user - 1 gone@other user - 1 \
+  extra@delphi local "$w" 0 theirs@delphi local "$t/elsewhere" 0 spare@delphi user - 0 >"$t/plugins.json"
+{ : >"$t/claude.log" && err=$(bash "$w/.delphi/setup.sh" 2>&1 >/dev/null) &&
+  echo "$err" | grep -qF "delphi: plugins: uninstalled old@delphi (gone from the Delphi marketplace); uninstalled extra@delphi (this workspace doesn't enable it)" &&
+  grep -qx "claude plugin uninstall old@delphi --scope user" "$t/claude.log" && grep -qx "claude plugin uninstall extra@delphi --scope local" "$t/claude.log" &&
+  ! grep -q "gone@other\|theirs@\|spare@\|install a" "$t/claude.log"; } ||
+  fail "setup.sh doesn't uninstall what the marketplace dropped and this workspace's unenabled local installs (only): $err $(cat "$t/claude.log")"
 touch "$t/offline"
-{ out=$(plugins) && echo "$out" | grep -qF "plugins old@delphi are gone from the Delphi marketplace; uninstall each with" && ! grep -q "uninstall old" "$t/claude.log"; } ||
-  fail "plugins.sh offline uninstalled or didn't warn: $out"
+{ out=$(plugins) && echo "$out" | grep -qF "plugins old@delphi are gone from the Delphi marketplace; uninstall each with" && ! grep -q "uninstall old" "$t/claude.log" &&
+  grep -qx "claude plugin uninstall extra@delphi --scope local" "$t/claude.log"; } ||
+  fail "plugins.sh offline uninstalled a dropped plugin, didn't warn, or kept an unenabled local install: $out $(cat "$t/claude.log")"
 rm "$t/offline"
+pl app@delphi user - 0 argos@delphi local "$w" 0 extra@delphi local "$w" 0 >"$t/plugins.json"
+{ out=$(plugins) && echo "$out" | grep -qF "uninstalled extra@delphi" && ! grep -q "marketplace update" "$t/claude.log"; } ||
+  fail "plugins.sh refreshed the marketplace just to uninstall a local plugin: $out $(cat "$t/claude.log")"
 pl app@delphi user - 0 argos@delphi local "$w" 0 x@other user - 0 >"$t/plugins.json"
 { [ -z "$(plugins)" ] && [ ! -s "$t/claude.log" ]; } || fail "plugins.sh did something with every plugin in order: $(cat "$t/claude.log")"
-ok "setup.sh (plugins.sh) installs the @delphi plugins this workspace enables and uninstalls ones the marketplace dropped; warns offline or for other marketplaces; quiet when all is in order"
+ok "setup.sh (plugins.sh) makes this clone's @delphi plugins what the workspace enables and uninstalls ones the marketplace dropped; warns offline or for other marketplaces; quiet when all is in order"
 
 # --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<branch>, refreshed on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely

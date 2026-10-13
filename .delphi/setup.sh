@@ -15,7 +15,7 @@
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
 # is `git config delphi.<name>.version`, 0.0.0 if unset), stopping at one that fails, and warns if
 # .delphi/ isn't exactly the version it says (.delphi/version.sh). Last, it brings this machine's Delphi plugins in
-# step with the workspace (.delphi/plugins.sh: installs what it enables, uninstalls what the marketplace dropped). Safe to re-run. Keep it bash 3.2
+# step with the workspace (.delphi/plugins.sh: installs what it enables, uninstalls local ones it doesn't and what the marketplace dropped). Safe to re-run. Keep it bash 3.2
 # (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
 set -euo pipefail
 cd "$(dirname "$0")/.."
