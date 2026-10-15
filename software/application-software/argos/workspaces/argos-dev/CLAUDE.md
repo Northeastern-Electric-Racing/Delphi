@@ -42,6 +42,8 @@ The checks (frontend tests, lint and format; backend build and tests) and how to
 
 Per ticket: `/implement` (worktree, test-first, `/commit`) → `/open-pr`.
 
+Improve the context as you go: `/new-skill` turns a workflow worth repeating into a skill, `/reflect` turns a session's corrections into edits to the skills it used. Both end with your feedback, then propose edits to themselves.
+
 ## PR Convention
 
 - The `/commit` skill applies the commit message format.
