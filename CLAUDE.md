@@ -1,65 +1,12 @@
-# Delphi — developing it
+# Delphi workspace
 
-Delphi stores NER's AI-harness context. Each workspace is a folder `software/**/workspaces/<leaf>/`
-on `main`, named by its place in the tree (the path without `workspaces/`:
-`software/application-software/argos/argos-dev`); branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
-subtree merges: **refresh** (main → `ws/<name>`) and **propose** (`ws/<name>` → PR to main via
-`propose/<name>`). There is no CLI, just a few shell scripts run by CI. `docs/design.md` is the
-source of truth; `docs/goals.md` lists what any change must keep.
+You're in Delphi workspace `software/firmware/calypso/calypso-dev` (branch `ws/software/firmware/calypso/calypso-dev`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Read-only dependency sources from `references-git:` are checked out under `references/<name>/` at the version the workspace pins: read them to learn how a dependency behaves (prefer them over web docs), and never edit, branch, or push them. Delphi workspaces (or `main`) under `workspaces:` in `workspace.yml` (`- ws/<name>`, a workspace's place in the tree, or `- main`) are read-only copies at `linked/<branch>/` for reading their context; change what's checked out with the `setup-workspace` skill. To work in another workspace, switch this clone to it (`switch-workspace` skill). Park rough notes with the `journal` skill. Work here unless the task clearly belongs to another project.
 
-## Layout
+# Calypso
 
-- `ci/sync.sh [refresh|propose] [<name>]`: refresh and/or propose each workspace (both by default).
-  Runs on pushes to main and `ws/**`.
-- `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
-- `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
-- `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
-  (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its name or
-  its `plugins/scope`), each workspace's `workspace.yml` `plugins:` defaults (the
-  `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
-  it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
-- `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
-  runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
-  uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
-  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source. Only here: sync
-  puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
-- `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
-  version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
-  cleanup, run by `setup.sh`).
-- `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
-  `.github/workflows/delphi.yml` every workspace carries unchanged. The general `new-worktree`,
-  `switch-workspace`, `setup-workspace`, and `journal` skills are in `software/workspace-inherit/`.
-- `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws-delphi` pane switches
-  workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
-  `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
-- `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
-  folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
-  (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the
-  `ws/*` root of every workspace below on each refresh, never proposed; `opt-out:` in a
-  `workspace.yml` skips a path).
-- `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
-- `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
+CAN ↔ telemetry bridge for NER's Odyssey car (Rust). Decodes CAN into protobuf `ServerData` published per topic to Siren (MQTT, or Zenoh with `-z`); encodes `CommandData` on `Calypso/Bidir/Command/#` back to CAN. The CAN spec is JSON in the `Odyssey-Definitions` submodule. `calypso-sim` publishes simulated `ServerData`; its `README.md` is the source of truth for its flags.
 
-## Rules
-
-- Keep it small: fewest lines that implement the design; a short header comment per script.
-  Prefer deleting to adapting. Runtime tools: bash, git, and `gh` (only to open or update PRs).
-- Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
-- Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
-  their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
-  way. Skill scripts (inherited, plugin or workspace) take only names (repo, branch) and read the workspace
-  from `$DELPHI_ROOT`, sourcing `$DELPHI_ROOT/.delphi/paths.sh` for every folder; each harness's
-  generated settings set it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
-  `ci/plugins.sh`). Never search for the root or default to the cwd's branch.
-- `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
-  features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
-- Changing the workflow: update the template, `.github/`, and every workspace copy in the same PR,
-  or `ci/check.sh` fails. `.delphi/*.sh` has one copy, at the root.
-- Changing any file `.delphi/manifest.yml` lists makes a new version: bump `version:` (PATCH for a
-  fix, MINOR for something new, MAJOR when clones need cleanup, MINOR while 0.x), then append
-  `<what bash .delphi/version.sh prints> <what changed>` to `.delphi/versions`. Only add lines there.
-- When people's clones need cleanup, ship a migration rather than instructions: safe to re-run, a no-op
-  on a fresh clone, run from the workspace root, deletes only what nothing is lost from and otherwise
-  exits 1 saying what to do. Never edit a released one.
-- `bash tests/e2e.sh` and `ci/check.sh` must pass. Add a test there for every behavior change.
-- Never test against real GitHub repos or this checkout's origin; use the sandbox in `tests/e2e.sh`.
+- `worktrees/calypso/develop/` mirrors `develop`: run things there, never edit or commit. Make branches with `new-worktree` from `origin/develop`, then `git -C worktrees/calypso/<branch> submodule update --init --recursive`.
+- Branches `{issue}-{kebab-title}`; commits `#{issue} - {description}`; draft PRs into `develop`.
+- Check with `ci-local` (bare `cargo test` skips workspace members; on macOS the main crate doesn't compile).
+- On macOS, the old `Develop` branch (until it's deleted) can collide with `develop` in `repos/calypso`. If `worktrees/calypso/develop` isn't at GitHub's `develop`: `git -C repos/calypso config --add remote.origin.fetch '^refs/heads/Develop'`, `git -C repos/calypso update-ref -d refs/remotes/origin/develop`, `git -C repos/calypso fetch origin`, `git -C worktrees/calypso/develop reset --hard origin/develop`.
