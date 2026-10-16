@@ -11,14 +11,14 @@ First load the project's `ticket-conventions` skill (inherited from the project'
 
 ## Workflow
 
-idea → spikes → epic → dev work
+idea → spikes → epic → dev work, or a standalone spike → dev work
 
 | Ticket | What it is | Issue type | Parent |
 |---|---|---|---|
-| Idea | What could be built and why, with open options to explore. | none | none |
-| Spike | One approach to an idea, or a small standalone improvement: what is explored and the hypothesis. Findings go in comments and draft PRs, not the ticket. | none | its idea, if any |
-| Epic | A settled idea: a new issue linking the idea in "From idea"; then offer to close the idea as completed. The approach and whole-epic outcomes, not a walkthrough of each ticket. | Feature | none |
-| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. | Feature, Bug, or Task | its epic, if any |
+| Idea | What could be built and why. Its approaches are areas (open questions), each with directions worth trying. | none | none |
+| Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
+| Epic | Work too large for one dev work ticket: the goal and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea or spike it came from in "From". | Feature | none |
+| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. Large work is cut into vertical slices (see Dev work below). | Feature, Bug, or Task | its epic, if any |
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes explore work, so they get no issue type; bug, feature, and task are issue types, never labels.
 
@@ -31,10 +31,24 @@ How every ticket reads, on any project:
 - No prescriptions on ideas and spikes. Ideas name open options to weigh, not a plan or a recommended pick; spikes state what to learn and leave the how to whoever picks it up.
 - Facts, not instructions: Notes and context transfer hold facts (where code lives, current behavior, constraints, links), not steps or a proposed solution. Context transfer (optional on spikes, epics, and dev work) starts with a short summary, then the raw context.
 - Unknowns stay open questions in Notes; don't guess.
-- Title: concise and imperative, no prefixes.
+- Title: concise and imperative, no prefixes (except a spike's area).
 - Requirements: clear, broad checkboxes, each a testable outcome rather than an implementation step; 3-5, never more than 7. If it needs more, split the ticket.
 - Backticks: at most three inline uses per body; name files and identifiers in plain text. Diagram and context-transfer blocks don't count.
 - Size: keep ideas short; one small enough to just try is a spike.
+
+## Dev work
+
+- One ticket by default. Split only when the work is too large for one PR or parts could run in parallel.
+- When split, cut vertical slices: each goes end to end through every part it touches (e.g. backend through UI), not one layer, and works and is testable on its own. Cut for the most parallel work; mark a slice that must wait as blocked by the one it waits on (see File).
+
+## Spikes
+
+- One direction, not a set to choose between. If a spike reads "X or Y", it is two spikes.
+- Prefer an idea with a few spikes (often 2-4) under it; a spike can also stand alone, or with siblings, to explore an area.
+- Title it `<area>: <direction>`, with the area a short kebab-case name its siblings share (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of an idea's bullets. A lone small improvement needs no prefix.
+- Sibling spikes share the context transfer's summary and common facts; each adds only the facts particular to its direction.
+- An idea needn't get all its spikes at once: file an area's spikes when someone is ready to try them.
+- Done: its findings are posted, review feedback is addressed, and the lead's latest review on its draft PR is an approval (GitHub's Approve), including when the recommendation is to drop the direction. A done spike stays open until `consolidate-spikes` closes it.
 
 ## Draft
 
@@ -49,4 +63,4 @@ How every ticket reads, on any project:
 
 Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file. File or edit only what the user OKs.
 
-Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (not on spikes, which stay unassigned), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
+Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (on a spike, whoever will run it; ask), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. If it waits on another issue, POST repos/<owner>/<repo>/issues/<n>/dependencies/blocked_by with the blocking issue's id. Report the URL.

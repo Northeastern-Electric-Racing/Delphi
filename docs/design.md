@@ -93,13 +93,11 @@ undone on refresh. A workspace that wants its own copy lists the path (or a fold
 any workspace file. `ci/check.sh` fails on a path inherited from two folders, a workspace file at an
 inherited path it hasn't opted out of, an `opt-out:` that matches nothing, and a workspace's own
 files in `workspace-inherit/` (`CLAUDE.md`, `workspace.yml`, `.delphi/`, `.claude/settings.json`,
-the workflow). The general skills (`new-worktree`, `switch-workspace`,
-`setup-workspace`, `journal`) live in `software/workspace-inherit/`, and the skills a folder's
-workspaces share live in its own: `application-software/` (`commit`, `open-pr`, `update-pr`,
-`address-pr-comments`, `create-ticket`), `argos/` (`implement`, `run-local`, `verify-graph`,
-`verify-telemetry`, `pr-conventions`, `ticket-conventions`) and `nero/` (`pr-conventions`,
-`ticket-conventions`). Shared skills go there rather than in a plugin: they're plain files on the
-workspace branch, with nothing to install.
+the workflow). The general skills (worktrees, switching, setup, the journal) live in
+`software/workspace-inherit/`, and the skills a folder's workspaces share live in its own (e.g.
+`application-software/` for PRs and tickets, `argos/` for running and verifying Argos). Shared
+skills go there rather than in a plugin: they're plain files on the workspace branch, with nothing
+to install.
 
 A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
 harness features beyond files (hooks, MCP servers). It lives in `plugins/<harness>/<set>/` of a
