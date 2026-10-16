@@ -7,7 +7,7 @@ body:
       value: |
         A spike lays out what to explore and what we expect. It does **not** hold answers: post findings as comments and link draft PRs.
         Don't prescribe a solution. Describe what to learn and leave the how to whoever picks it up.
-        One direction per spike, not a set to choose between. Under an idea, title it `<area>: <direction>` (the area shared by its sibling spikes) and add it as a sub-issue of the idea. A small improvement can be a standalone spike.
+        One direction per spike, not a set to choose between. Title it `<area>: <direction>`, the area shared by its siblings. Prefer filing it under an idea (as a sub-issue), but a spike can stand alone.
         After filing, add a written-by label (`by: human`, `by: ai`, `by: ai-assisted`).
   - type: textarea
     id: exploring

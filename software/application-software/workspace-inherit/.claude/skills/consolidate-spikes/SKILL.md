@@ -1,12 +1,12 @@
 ---
 name: consolidate-spikes
-description: Turn an idea whose spikes are done into an epic with one dev work ticket per area. Use when the user wants to wrap up, settle, or consolidate an idea or its spikes on an application-software repo (Argos, Nero).
+description: Turn reviewed spikes into implementation tickets, from an idea (an epic with one dev work ticket per area) or from spikes the user names. Use when the user wants to wrap up, settle, or consolidate an idea or spikes on an application-software repo (Argos, Nero).
 ---
 
-Drafts and files tickets by the `create-ticket` rules; load it and the project's `ticket-conventions` first.
+Drafts and files by the `create-ticket` rules; load it and the project's `ticket-conventions` first. Takes an idea, or the spikes the user names (numbers or an area prefix).
 
-1. **Gather:** the idea (`gh issue view <idea> --comments`), its sub-issues, and for each spike its findings comment, draft PR, and the PR's reviews.
-2. **Group** the spikes by area (the title prefix) and map the areas onto the idea's approaches. The idea is settled when every approach is covered by an area and every area has at least one reviewed spike with findings. If not, list what is missing (approaches with no area, spikes without findings or review) and stop; offer to file spikes for the gaps with `create-ticket`.
-3. **Choose:** for each area, propose the direction to build from its findings and the lead's review (one spike's, or a mix), with a one-line why. The user confirms or changes each pick.
-4. **Draft** one epic (From idea; Approach: each area's chosen direction, linking its spikes) and one dev work ticket per area (What: the chosen direction; Notes: links to the area's spikes and draft PRs, and the dropped directions with why; context transfer: the facts from the findings). Show them all, then file what the user OKs, each dev work ticket a sub-issue of the epic.
+1. **Gather** each spike's findings comment, draft PR, and the PR's reviews (and the idea, if any, with its sub-issues).
+2. **Group** the spikes by area (title prefix). Stop and list what's missing if a spike has no findings or review, or, from an idea, an approach has no area; offer spikes for the gaps.
+3. **Choose:** per area, propose the direction to build (one spike's, or a mix) with a one-line why, from the findings and the lead's review. The user confirms or changes each.
+4. **Draft** one dev work ticket per area (What: the chosen direction; Notes: links to its spikes and draft PRs, and the dropped directions with why; context transfer: the findings' facts). From an idea, also one epic (From idea; Approach: each area's direction) with the dev work as its sub-issues. Show all; file what the user OKs.
 5. **Close**, each with a one-line comment: the spikes as completed ("Consolidated into #<dev work>"), their draft PRs unless a dev work ticket builds on that branch, and the idea as completed ("Settled in #<epic>").

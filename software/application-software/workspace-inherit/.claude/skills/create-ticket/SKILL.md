@@ -17,8 +17,8 @@ idea → spikes → epic → dev work
 |---|---|---|---|
 | Idea | What could be built and why. Its approaches are areas (open questions), each with directions worth trying. | none | none |
 | Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
-| Epic | A settled idea, filed by `consolidate-spikes` once every area has a chosen direction: the approach and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea in "From idea". | Feature | none |
-| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. An idea's areas each become one, from their spikes (`consolidate-spikes`). | Feature, Bug, or Task | its epic, if any |
+| Epic | A settled idea, filed by `consolidate-spikes` once every area of an idea has a chosen direction: the approach and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea in "From idea". | Feature | none |
+| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. Each spike area becomes one (`consolidate-spikes`). | Feature, Bug, or Task | its epic, if any |
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes explore work, so they get no issue type; bug, feature, and task are issue types, never labels.
 
@@ -39,7 +39,8 @@ How every ticket reads, on any project:
 ## Spikes
 
 - One direction, not a set to choose between. If a spike reads "X or Y", it is two spikes.
-- Under an idea, title it `<area>: <direction>`, with the area a short kebab-case name shared by its sibling spikes (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of the idea's bullets. A standalone spike has no prefix.
+- Prefer an idea with a few spikes (often 2-4) under it; a spike can also stand alone, or with siblings, to explore an area.
+- Title it `<area>: <direction>`, with the area a short kebab-case name its siblings share (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of an idea's bullets. A lone small improvement needs no prefix.
 - Sibling spikes share the context transfer's summary and common facts; each adds only the facts particular to its direction.
 - An idea needn't get all its spikes at once: file an area's spikes when someone is ready to try them.
 
