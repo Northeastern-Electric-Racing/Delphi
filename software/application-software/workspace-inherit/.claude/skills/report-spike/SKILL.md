@@ -17,6 +17,6 @@ A spike runs like any ticket (branch, commits, a draft PR from `open-pr`); this 
    Draft PR: #<pr>
    ```
 3. **Show** it and ask who the lead is; on OK, post it (`gh issue comment <n> --body-file /tmp/<branch>-findings.md`).
-4. **Request review:** `(cd worktrees/<repo>/<branch> && gh pr edit <branch> --add-reviewer <lead>)`, keeping the PR a draft, and remind the user to ping the lead on Slack. The lead reviews the findings and recommendation, not code polish.
+4. **Request review:** `(cd worktrees/<repo>/<branch> && gh pr edit <branch> --add-reviewer <lead>)`, keeping the PR a draft, and remind the user to ping the lead on Slack.
 
-The spike stays open until `consolidate-spikes` closes it.
+Address review feedback on the branch as on any PR (`address-pr-comments`). The spike stays open until `consolidate-spikes` turns it into an implementation ticket.

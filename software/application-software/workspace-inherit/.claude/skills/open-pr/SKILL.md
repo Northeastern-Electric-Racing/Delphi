@@ -7,7 +7,7 @@ First load the project's `pr-conventions` skill (inherited from the project's `w
 
 1. **Check:** `bash scripts/pr-checks.sh <repo> <branch> origin/<base> '<commit format>'` (clean tree, commit subjects match the project's format, merges cleanly into the base), then the project's own checks. Stop and fix on any FAIL.
 2. **Open:** push (`git -C worktrees/<repo>/<branch> push -u origin <branch>`), then run `(cd worktrees/<repo>/<branch> && gh pr create --draft --base <base> --head <branch> --title "<title>" --body-file /tmp/<branch>-pr-body.md --assignee @me)` with the project's labels (`--label`), and report the URL.
-3. **Spike:** its PR stays a draft and is never merged; a dev work ticket may later build on its branch. Once the spike is tried, run `report-spike`.
+3. **Spike:** the PR stays a draft; getting it merged isn't the goal. Once it's checked and working, run `report-spike`.
 
 ## PR body
 
