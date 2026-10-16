@@ -1,32 +1,25 @@
 name: Epic
-description: A settled idea, broken into dev work tickets.
+description: Work too large for one ticket, broken into dev work tickets.
 type: Feature
 labels: [epic]
 body:
   - type: markdown
     attributes:
       value: |
-        An epic is a finished idea: the approach is decided. Link its dev work tickets as sub-issues.
-        If the idea came through spikes, link the idea below and close it as completed.
+        An epic groups dev work tickets; link them as sub-issues.
+        If it came from an idea or spike, link it below and close it as completed.
         After filing, add a written-by label (`by: human`, `by: ai`, `by: ai-assisted`).
   - type: input
-    id: from-idea
+    id: from
     attributes:
-      label: From idea
-      description: The idea issue this epic came from, if any.
+      label: From
+      description: The idea or spike this epic came from, if any.
       placeholder: "#123"
   - type: textarea
     id: goal
     attributes:
       label: Goal
       description: What this delivers, and for whom, in a few sentences.
-    validations:
-      required: true
-  - type: textarea
-    id: approach
-    attributes:
-      label: Approach
-      description: The chosen approach, and the spike or decision it came from.
     validations:
       required: true
   - type: textarea

@@ -17,7 +17,7 @@ idea → spikes → epic → dev work, or a standalone spike → dev work
 |---|---|---|---|
 | Idea | What could be built and why. Its approaches are areas (open questions), each with directions worth trying. | none | none |
 | Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
-| Epic | A settled idea, filed by `consolidate-spikes` once every area of an idea has a chosen direction: the approach and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea in "From idea". | Feature | none |
+| Epic | Work too large for one dev work ticket: the goal and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea or spike it came from in "From". | Feature | none |
 | Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. Large work is cut into vertical slices (see Dev work below). | Feature, Bug, or Task | its epic, if any |
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes explore work, so they get no issue type; bug, feature, and task are issue types, never labels.
