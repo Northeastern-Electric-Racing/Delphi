@@ -23,6 +23,11 @@ body:
     validations:
       required: true
   - type: textarea
+    id: approach
+    attributes:
+      label: Approach
+      description: Optional. The chosen approach, if one is decided.
+  - type: textarea
     id: diagram
     attributes:
       label: Diagram
