@@ -26,7 +26,7 @@ body:
     id: approach
     attributes:
       label: Approach
-      description: The chosen direction for each of the idea's areas, and the spikes or decision it came from.
+      description: The chosen approach, and the spike or decision it came from.
     validations:
       required: true
   - type: textarea
