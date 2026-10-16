@@ -37,7 +37,8 @@ every Argos workspace on the next sync.
   Skills every Argos workspace needs go in `workspace-inherit/` here (`implement`, `run-local`,
   `verify-graph`, `verify-telemetry`, `pr-conventions`, `ticket-conventions`), and those shared with
   other application-software projects in `software/application-software/workspace-inherit/`
-  (`commit`, `open-pr`, `update-pr`, `address-pr-comments`, `create-ticket`); Delphi's own
+  (`commit`, `open-pr`, `update-pr`, `address-pr-comments`, `create-ticket`, `report-spike`,
+  `consolidate-spikes`); Delphi's own
   (`new-worktree`, `journal`, `setup-workspace`, `switch-workspace`) come from
   `software/workspace-inherit/`. Sync puts them all on every Argos workspace's branch; change them by
   PR to `main`. Context only some workspaces need goes in the workspace, or in a plugin set

@@ -96,7 +96,7 @@ files in `workspace-inherit/` (`CLAUDE.md`, `workspace.yml`, `.delphi/`, `.claud
 the workflow). The general skills (`new-worktree`, `switch-workspace`,
 `setup-workspace`, `journal`) live in `software/workspace-inherit/`, and the skills a folder's
 workspaces share live in its own: `application-software/` (`commit`, `open-pr`, `update-pr`,
-`address-pr-comments`, `create-ticket`), `argos/` (`implement`, `run-local`, `verify-graph`,
+`address-pr-comments`, `create-ticket`, `report-spike`, `consolidate-spikes`), `argos/` (`implement`, `run-local`, `verify-graph`,
 `verify-telemetry`, `pr-conventions`, `ticket-conventions`) and `nero/` (`pr-conventions`,
 `ticket-conventions`). Shared skills go there rather than in a plugin: they're plain files on the
 workspace branch, with nothing to install.

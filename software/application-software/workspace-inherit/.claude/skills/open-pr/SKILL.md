@@ -7,6 +7,7 @@ First load the project's `pr-conventions` skill (inherited from the project's `w
 
 1. **Check:** `bash scripts/pr-checks.sh <repo> <branch> origin/<base> '<commit format>'` (clean tree, commit subjects match the project's format, merges cleanly into the base), then the project's own checks. Stop and fix on any FAIL.
 2. **Open:** push (`git -C worktrees/<repo>/<branch> push -u origin <branch>`), then run `(cd worktrees/<repo>/<branch> && gh pr create --draft --base <base> --head <branch> --title "<title>" --body-file /tmp/<branch>-pr-body.md --assignee @me)` with the project's labels (`--label`), and report the URL.
+3. **Spike:** its PR stays a draft and is never merged; a dev work ticket may later build on its branch. Once the spike is tried, run `report-spike`.
 
 ## PR body
 
@@ -16,5 +17,5 @@ Fill the worktree's `.github/pull_request_template.md` from the diff, following 
 - The Changes section (not the whole body): about 50 words (1–3 sentences) on what landed and the key design choice. Describe the change, not the file list: don't enumerate components, classes or files the diff already shows. Name a specific one only when its behaviour changes in a way a reviewer must know.
 - Delete the template's comments and any optional or non-applicable sections, and check off the Checklist.
 - At most three backtick uses in the body.
-- End with `Closes #{ticket}` (the branch's leading number).
+- End with `Closes #{ticket}` (the branch's leading number), or `Spike for #{ticket}` on a spike, which its PR never closes.
 - UI changes: put `_screenshot pending_` and remind the user to drag-drop the shots from the project's screenshot folder. Never commit screenshots.

@@ -15,10 +15,10 @@ idea → spikes → epic → dev work
 
 | Ticket | What it is | Issue type | Parent |
 |---|---|---|---|
-| Idea | What could be built and why, with open options to explore. | none | none |
-| Spike | One approach to an idea, or a small standalone improvement: what is explored and the hypothesis. Findings go in comments and draft PRs, not the ticket. | none | its idea, if any |
-| Epic | A settled idea: a new issue linking the idea in "From idea"; then offer to close the idea as completed. The approach and whole-epic outcomes, not a walkthrough of each ticket. | Feature | none |
-| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. | Feature, Bug, or Task | its epic, if any |
+| Idea | What could be built and why. Its approaches are areas (open questions), each with directions worth trying. | none | none |
+| Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
+| Epic | A settled idea, filed by `consolidate-spikes` once every area has a chosen direction: the approach and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea in "From idea". | Feature | none |
+| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. An idea's areas each become one, from their spikes (`consolidate-spikes`). | Feature, Bug, or Task | its epic, if any |
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes explore work, so they get no issue type; bug, feature, and task are issue types, never labels.
 
@@ -31,10 +31,17 @@ How every ticket reads, on any project:
 - No prescriptions on ideas and spikes. Ideas name open options to weigh, not a plan or a recommended pick; spikes state what to learn and leave the how to whoever picks it up.
 - Facts, not instructions: Notes and context transfer hold facts (where code lives, current behavior, constraints, links), not steps or a proposed solution. Context transfer (optional on spikes, epics, and dev work) starts with a short summary, then the raw context.
 - Unknowns stay open questions in Notes; don't guess.
-- Title: concise and imperative, no prefixes.
+- Title: concise and imperative, no prefixes (except a spike's area).
 - Requirements: clear, broad checkboxes, each a testable outcome rather than an implementation step; 3-5, never more than 7. If it needs more, split the ticket.
 - Backticks: at most three inline uses per body; name files and identifiers in plain text. Diagram and context-transfer blocks don't count.
 - Size: keep ideas short; one small enough to just try is a spike.
+
+## Spikes
+
+- One direction, not a set to choose between. If a spike reads "X or Y", it is two spikes.
+- Under an idea, title it `<area>: <direction>`, with the area a short kebab-case name shared by its sibling spikes (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of the idea's bullets. A standalone spike has no prefix.
+- Sibling spikes share the context transfer's summary and common facts; each adds only the facts particular to its direction.
+- An idea needn't get all its spikes at once: file an area's spikes when someone is ready to try them.
 
 ## Draft
 
@@ -49,4 +56,4 @@ How every ticket reads, on any project:
 
 Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file. File or edit only what the user OKs.
 
-Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (not on spikes, which stay unassigned), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
+Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (on a spike, whoever will run it; ask), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
