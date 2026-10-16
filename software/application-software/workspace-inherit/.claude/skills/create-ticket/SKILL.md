@@ -18,7 +18,7 @@ idea → spikes → epic → dev work
 | Idea | What could be built and why. Its approaches are areas (open questions), each with directions worth trying. | none | none |
 | Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
 | Epic | A settled idea, filed by `consolidate-spikes` once every area of an idea has a chosen direction: the approach and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea in "From idea". | Feature | none |
-| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. Once all of an idea's spikes are done, each area becomes one; a standalone spike becomes one (`consolidate-spikes`). | Feature, Bug, or Task | its epic, if any |
+| Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. A vertical slice (see Dev work below); an epic's are cut by `consolidate-spikes`. | Feature, Bug, or Task | its epic, if any |
 
 If unsure, a small, clear change is dev work, a small unknown is a spike, and a big unexplored thing is an idea. Ideas and spikes explore work, so they get no issue type; bug, feature, and task are issue types, never labels.
 
@@ -35,6 +35,11 @@ How every ticket reads, on any project:
 - Requirements: clear, broad checkboxes, each a testable outcome rather than an implementation step; 3-5, never more than 7. If it needs more, split the ticket.
 - Backticks: at most three inline uses per body; name files and identifiers in plain text. Diagram and context-transfer blocks don't count.
 - Size: keep ideas short; one small enough to just try is a spike.
+
+## Dev work
+
+- Cut implementation into thin vertical slices: each goes end to end through every part it touches (e.g. backend through UI), not one layer, and works and is testable on its own.
+- Cut for the most parallel work: as few slices as possible wait on another; note those as "Blocked by #<n>" in Notes.
 
 ## Spikes
 
