@@ -11,7 +11,7 @@ First load the project's `ticket-conventions` skill (inherited from the project'
 
 ## Workflow
 
-idea → spikes → epic → dev work
+idea → spikes → epic → dev work, or a standalone spike → dev work
 
 | Ticket | What it is | Issue type | Parent |
 |---|---|---|---|
@@ -48,6 +48,7 @@ How every ticket reads, on any project:
 - Title it `<area>: <direction>`, with the area a short kebab-case name its siblings share (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of an idea's bullets. A lone small improvement needs no prefix.
 - Sibling spikes share the context transfer's summary and common facts; each adds only the facts particular to its direction.
 - An idea needn't get all its spikes at once: file an area's spikes when someone is ready to try them.
+- Done: its findings are posted, review feedback is addressed, and the lead's latest review on its draft PR is an approval (GitHub's Approve), including when the recommendation is to drop the direction. A done spike stays open until `consolidate-spikes` closes it.
 
 ## Draft
 
