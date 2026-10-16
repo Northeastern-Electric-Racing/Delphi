@@ -9,4 +9,3 @@ CAN ↔ telemetry bridge for NER's Odyssey car (Rust). Decodes CAN into protobuf
 - `worktrees/calypso/develop/` mirrors `develop`: run things there, never edit or commit. Make branches with `new-worktree` from `origin/develop`, then `git -C worktrees/calypso/<branch> submodule update --init --recursive`.
 - Branches `{issue}-{kebab-title}`; commits `#{issue} - {description}`; draft PRs into `develop`.
 - Check with `ci-local` (bare `cargo test` skips workspace members; on macOS the main crate doesn't compile).
-- On macOS, the old `Develop` branch (until it's deleted) can collide with `develop` in `repos/calypso`. If `worktrees/calypso/develop` isn't at GitHub's `develop`: `git -C repos/calypso config --add remote.origin.fetch '^refs/heads/Develop'`, `git -C repos/calypso update-ref -d refs/remotes/origin/develop`, `git -C repos/calypso fetch origin`, `git -C worktrees/calypso/develop reset --hard origin/develop`.
