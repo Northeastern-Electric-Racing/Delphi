@@ -39,7 +39,7 @@ How every ticket reads, on any project:
 ## Dev work
 
 - One ticket by default. Split only when the work is too large for one PR or parts could run in parallel.
-- When split, cut vertical slices: each goes end to end through every part it touches (e.g. backend through UI), not one layer, and works and is testable on its own. Cut for the most parallel work; note any slice that must wait as "Blocked by #<n>" in Notes.
+- When split, cut vertical slices: each goes end to end through every part it touches (e.g. backend through UI), not one layer, and works and is testable on its own. Cut for the most parallel work; mark a slice that must wait as blocked by the one it waits on (see File).
 
 ## Spikes
 
@@ -62,4 +62,4 @@ How every ticket reads, on any project:
 
 Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file. File or edit only what the user OKs.
 
-Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (on a spike, whoever will run it; ask), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. Report the URL.
+Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (on a spike, whoever will run it; ask), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. If it waits on another issue, POST repos/<owner>/<repo>/issues/<n>/dependencies/blocked_by with the blocking issue's id. Report the URL.
