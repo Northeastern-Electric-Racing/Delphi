@@ -1,3 +1,7 @@
 # Delphi workspace
 
 You're in Delphi workspace `software/application-software/hub` (branch `ws/software/application-software/hub`); code repos are checked out as worktrees under `worktrees/<repo>/` (`.delphi/setup.sh` makes the default branch's). Make new branches as worktrees (`new-worktree` skill) unless the user says not to. Read-only dependency sources from `references-git:` are checked out under `references/<name>/` at the version the workspace pins: read them to learn how a dependency behaves (prefer them over web docs), and never edit, branch, or push them. Delphi workspaces (or `main`) under `workspaces:` in `workspace.yml` (`- ws/<name>`, a workspace's place in the tree, or `- main`) are read-only copies at `linked/<branch>/` for reading their context; change what's checked out with the `setup-workspace` skill. To work in another workspace, switch this clone to it (`switch-workspace` skill). Park rough notes with the `journal` skill. Work here unless the task clearly belongs to another project.
+
+# Hub
+
+This workspace has no code repos; it's for managing work across the application-software workspaces. Argos (`argos-dev`), Calypso (`calypso-dev`), and Nero (`nero-experimental`) are linked read-only under `linked/ws/…`: read their context there, and switch to one (`switch-workspace`) to change its code.

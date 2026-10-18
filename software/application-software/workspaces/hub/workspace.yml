@@ -11,4 +11,7 @@ repos:                    # `<name>: <git-url>`: code you change; bare store at 
 references-git:           # `<name>: <git-url> [<tag-or-branch>]`: dependency sources to read, never edit; shallow copy at references/<name>
   # name: https://github.com/<owner>/<repo>.git v1.2.3   # no tag or branch: its default branch
 workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
-  # - main                # recommended: this project's shared context, AUTHORING.md and workspace-defaults/
+  - main
+  - ws/software/application-software/argos/argos-dev
+  - ws/software/firmware/calypso/calypso-dev
+  - ws/software/application-software/nero/nero-experimental
