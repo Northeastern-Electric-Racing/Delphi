@@ -1,6 +1,6 @@
 ---
 name: switch-workspace
-description: Switch this clone to another Delphi workspace, or to Delphi's main, to work in it. Use when the user wants to check out, switch to, open, or work in another workspace or project, or to change another workspace's or main's files.
+description: Switch this clone to another Delphi workspace, or to Delphi's main, to work in it. Use when the user wants to switch this clone to another workspace or project, or to change another workspace's or main's files. Not for linking one (a read-only copy under linked/); that's setup-workspace, even when the user plans to work there.
 ---
 
 Run from the workspace root:
