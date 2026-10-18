@@ -1,0 +1,2 @@
+# LF, so these scripts run in Git Bash even with core.autocrlf=true
+* text eol=lf
