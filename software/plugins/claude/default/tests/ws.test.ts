@@ -7,8 +7,9 @@ import { expect, test } from 'claude-code/testing'
 
 const ROOT = '/work/delphi'
 const SWITCH = ROOT + '/.delphi/switch.sh'
-const ARGOS = 'software/application-software/argos/argos-dev'
-const BMS = 'software/electrical/bms-dev'
+const ARGOS = 's.app.argos.argos-dev'
+const BMS = 's.electrical.bms-dev'
+const FOLDER: Record<string, string> = { main: '', [ARGOS]: ' software/application-software/argos', [BMS]: ' software/electrical' }
 const PANE = {
   plugin: 'delphi',
   component: 'Pane',
@@ -82,7 +83,7 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
     if (cmd === 'bash' && a1 === SWITCH && a2 === '--list') {
       c.lists++
       if (c.isOffline) return done(128, '', 'fatal: unable to access origin\n')
-      const out = ['main', ARGOS, BMS].map((n) => (n === c.here ? '* ' : '  ') + n).join('\n') + '\n'
+      const out = ['main', ARGOS, BMS].map((n) => (n === c.here ? '* ' : '  ') + n + FOLDER[n]).join('\n') + '\n'
       return done(0, out)
     }
     if (cmd === 'python3' && a1 === '-m' && a2 === 'webbrowser') {
@@ -97,7 +98,7 @@ function fakeClone(on: On, here = ARGOS, isDirty = false, isDelphi = true, hasPy
         c.behind = 0
         return done(0, 'switch: on ws/' + c.here + '\n')
       }
-      c.here = a2.split('/').length > 1 || a2 === 'main' ? a2 : BMS
+      c.here = a2 in FOLDER ? a2 : BMS
       return done(0, 'switch: on ws/' + c.here + '\n')
     }
     return { deny: 'unexpected process: ' + e.argv.join(' ') }
@@ -170,9 +171,9 @@ test('with tracked changes the pane warns, a refused switch says why, and Back r
 
 test('/ws-delphi <name> switches without the pane', async ($, on) => {
   const c = fakeClone(on)
-  const answer = await $.command.run(ws('bms-dev'))
-  expect(c.switches.map(s => s.name)).toEqual(['bms-dev'])
-  expect(answer.text).toMatch(/^On bms-dev: Claude reads its CLAUDE.md with your next message/)
+  const answer = await $.command.run(ws(BMS))
+  expect(c.switches.map(s => s.name)).toEqual([BMS])
+  expect(answer.text).toMatch(/^On s\.electrical\.bms-dev: Claude reads its CLAUDE.md with your next message/)
 })
 
 test('outside a Delphi clone, /ws-delphi says so and runs nothing', async ($, on) => {
@@ -268,12 +269,12 @@ test('the first prompt after a switch carries the new CLAUDE.md, once, saying it
   const c = fakeClone(on)
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: ROOT })
   expect((await $.prompt.submit(typed('hi'))).context ?? []).toEqual([])
-  await $.command.run(ws('bms-dev'))
+  await $.command.run(ws(BMS))
   expect(c.here).toBe(BMS)
   const after = (await $.prompt.submit(typed('what now?'))).context ?? []
   expect(after.length).toBe(1)
-  expect(after[0]).toMatch(/^Delphi: since this session started, this clone moved to ws\/software\/electrical\/bms-dev /)
+  expect(after[0]).toMatch(/^Delphi: since this session started, this clone moved to ws\/s\.electrical\.bms-dev /)
   expect(after[0]).toMatch(/It replaces the CLAUDE\.md you were given at the start/)
-  expect(after[0]).toMatch(/# Workspace software\/electrical\/bms-dev\n$/)
+  expect(after[0]).toMatch(/# Workspace s\.electrical\.bms-dev\n$/)
   expect((await $.prompt.submit(typed('and then?'))).context ?? []).toEqual([])
 })

@@ -45,7 +45,7 @@ def state():
     listed = run(['bash', str(switch), '--list'], 60)
     lines = [line for line in listed.stdout.splitlines() if line.strip()]
     return {
-        'here': next((line[2:] for line in lines if line.startswith('* ')), ''),
+        'here': next((line[2:].split(' ')[0] for line in lines if line.startswith('* ')), ''),
         'workspaces': [line[2:] for line in lines],
         'isDirty': run(['git', 'diff', '--quiet', 'HEAD', '--'], 10).returncode != 0,
         'switching': switching,
@@ -76,7 +76,7 @@ def do_pull():
         return 400, {'ok': False, 'message': 'this clone is on no workspace'}
     if not busy.acquire(blocking=False):
         return 409, {'ok': False, 'message': 'a switch to ' + switching + ' is running'}
-    leaf = here.split('/')[-1]
+    leaf = here.split('.')[-1]
     try:
         switching = here
         before = run(['git', 'rev-parse', 'HEAD'], 10).stdout.strip()

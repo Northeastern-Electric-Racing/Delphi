@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ci/check.sh [<dir> [<base>]]: validate Delphi (CI runs it on PRs to main, against main; sync.sh on
 # each proposal). Rules: a workspace is software/**/workspaces/<leaf>/ with a workspace.yml; its name
-# is its folder's path without `workspaces/` (software/x/workspaces/y -> software/x/y; branch
-# ws/<name>), in lowercase letters, digits, '-' and '/', and no name is a folder of another's (git
-# can't have both ws/a and ws/a/b); workspaces never nest; no symlinks under
+# is the short names of its folders and <leaf>, joined by dots (.delphi/names.sh; branch ws/<name>),
+# and unique across the tree; a folder's `short-name` file is one line of lowercase letters, digits
+# and '-'; so is each <leaf>; workspaces never nest; no symlinks under
 # software/; no workspace (nor the template) has its own .delphi/ (sync puts main's on every ws/*
 # branch); .delphi/manifest.yml lists itself, every file in .delphi/ but `versions`, and only files
 # git tracks; its `version:` and the hash of those files (.delphi/version.sh) are the last line of
@@ -13,7 +13,7 @@
 # outside .delphi/ (the workflow) is the same in templates/workspace/ and every workspace; workspace.yml is `name: <its name>`,
 # `harness: <adapter>`, an optional `repos:` map of `<name>: <git-url>`, and an optional
 # `references-git:` map of `<name>: <git-url> [<ref>]`; names are unique across both; and an optional
-# `workspaces:` list of `- ws/<name>` (a workspace on main) or `- main`, without duplicates or the workspace itself, and an
+# `workspaces:` list of `- <name>` (a workspace on main) or `- main`, without duplicates or the workspace itself, and an
 # optional `plugins:` list of `- <scope>[.<set>]` without duplicates, and an optional `opt-out:` list
 # of `- <path>` it inherits, each matching something. A project's workspace-defaults/workspace.yml is
 # the same without `name:` (and a project has no old defaults/). A workspace-inherit/ folder sits in
@@ -95,13 +95,13 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
   while IFS= read -r msg; do bad "$1: $msg"; done < <(awk -v want="${2:-}" '
     /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     want != "" && /^name:/ { v = $0; sub(/^name:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
-                  if (v != want) print "name is \"" v "\", want \"" want "\" (the folder path without workspaces/)"
+                  if (v != want) print "name is \"" v "\", want \"" want "\" (.delphi/names.sh)"
                   if (nm++) print "duplicate name"; r = 0; next }
     /^harness:/ { v = $0; sub(/^harness:[[:space:]]*/, "", v); sub(/[[:space:]]*#.*$/, "", v)
                   if (v == "") print "harness is empty"; if (h++) print "duplicate harness"; r = 0; next }
     /^repos:[[:space:]]*(#.*)?$/ { r = 1; next }
     /^references-git:[[:space:]]*(#.*)?$/ { r = 2; next }
-    /^links:/ { print "links: is now workspaces: (entries `  - ws/<name>` or `  - main`)"; r = 3; next }
+    /^links:/ { print "links: is now workspaces: (entries `  - <name>` or `  - main`)"; r = 3; next }
     /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
     /^plugins:[[:space:]]*(#.*)?$/ { r = 4; next }
     /^opt-out:[[:space:]]*(#.*)?$/ { r = 5; next }
@@ -125,10 +125,10 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
       if (sets[v]++) print "duplicate plugin set: " v
       next }
     r == 3 && /^[[:space:]]/ {
-      if ($0 !~ /^[[:space:]]+-[[:space:]]+(main|ws\/[a-z0-9][a-z0-9\/-]*)[[:space:]]*(#.*)?$/ || $0 ~ /\/\/|\/[[:space:]]*(#.*)?$/) {
-        print "bad workspaces entry (want `  - ws/<name>` or `  - main`): " $0; next }
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[a-z0-9][a-z0-9-]*(\.[a-z0-9][a-z0-9-]*)*[[:space:]]*(#.*)?$/) {
+        print "bad workspaces entry (want `  - <name>`, e.g. s.app.argos.argos-dev, or `  - main`): " $0; next }
       v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
-      if (v == "ws/" want) print "lists itself: " v
+      if (v == want) print "lists itself: " v
       if (listed[v]++) print "duplicate workspace: " v
       next }
     r == 1 && /^[[:space:]]/ && $0 !~ /^[[:space:]]+[A-Za-z0-9._-]+:[[:space:]]+[^[:space:]"#]+[[:space:]]*(#.*)?$/ {
@@ -142,8 +142,8 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
       next }
     { print "unexpected line: " $0 }
     END { if (!h) print "harness is missing"; if (want != "" && !nm) print "name is missing" }' "$1")
-  while IFS= read -r v; do listed="$listed $1|${v#ws/}"; done < <(awk '/^workspaces:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
-    s && /^[[:space:]]+-[[:space:]]+ws\// { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' "$1")
+  while IFS= read -r v; do listed="$listed $1|$v"; done < <(awk '/^workspaces:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
+    s && /^[[:space:]]+-[[:space:]]+/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); if ($0 != "main") print }' "$1")
 }
 
 levels() { # <workspace folder>: software/ and each folder down to its project folder, top first
@@ -174,18 +174,22 @@ while IFS= read -r d; do
   [ ! -d "${d%/workspaces}/defaults" ] || bad "${d%/workspaces}/defaults: renamed workspace-defaults/"
 done < <(find software -type d -name workspaces 2>/dev/null)
 
+while IFS= read -r f; do
+  s=$(cat "$f")
+  case "$s" in "" | -* | *[!a-z0-9-]*) bad "$f: want one line of lowercase letters, digits and '-' (the folder's short name)" ;; esac
+done < <(find software -name short-name -type f 2>/dev/null | sort)
+all=$(bash .delphi/names.sh 2>/dev/null || true) # <name> <folder>
 folders="" names="" listed=""
 while IFS= read -r f; do
   folder=${f%/workspace.yml}
-  name=${folder%/workspaces/*}/${folder##*/}
   case "$(dirname "$folder")" in */workspaces) ;; *)
-    bad "$f: must be at software/**/workspaces/<name>/workspace.yml" && continue ;;
+    bad "$f: must be at software/**/workspaces/<leaf>/workspace.yml" && continue ;;
   esac
   case "$folder" in *[!A-Za-z0-9._/-]*) bad "$folder: path has unsafe characters" && continue ;; esac
-  case "$name" in */-* | *[!a-z0-9/-]*) bad "$folder: name $name must be lowercase letters, digits, '-' and '/'" ;; esac
+  case "${folder##*/}" in -* | *[!a-z0-9-]*) bad "$folder: its folder name must be lowercase letters, digits and '-'" ;; esac
+  name=$(echo "$all" | awk -v f="$folder" '$2 == f { print $1 }')
   for other in $names; do
-    case "$name/" in "$other"/*) bad "$folder: ws/$name can't be a branch while ws/$other is (git can't hold both); rename one" ;; esac
-    case "$other/" in "$name"/*) bad "$folder: ws/$name can't be a branch while ws/$other is (git can't hold both); rename one" ;; esac
+    [ "$other" != "$name" ] || bad "$folder: another workspace is named $name too (names are unique); change a short-name or rename a folder"
   done
   names="$names $name"
   for other in $folders; do
@@ -201,7 +205,7 @@ done < <(find software -name workspace.yml -type f ! -path '*/workspace-inherit/
 while IFS= read -r f; do manifest "$f"; done \
   < <(find software -path '*/workspace-defaults/workspace.yml' ! -path '*/workspaces/workspace-defaults/*' -type f 2>/dev/null)
 for l in $listed; do
-  case " $names " in *" ${l#*|} "*) ;; *) bad "${l%%|*}: workspaces: lists ws/${l#*|}, which isn't a workspace on main" ;; esac
+  case " $names " in *" ${l#*|} "*) ;; *) bad "${l%%|*}: workspaces: lists ${l#*|}, which isn't a workspace on main" ;; esac
 done
 
 [ "$problems" = 0 ] || { echo "check: $problems problem(s)" >&2 && exit 1; }

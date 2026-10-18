@@ -2,8 +2,9 @@
 # ci/plugins.sh [--check] [<dir>]: write the generated harness files of a main checkout <dir> (default .):
 #   .claude-plugin/marketplace.json: marketplace `delphi`, one plugin per set folder
 #     software/**/plugins/claude/<set>/ outside workspaces, named <scope>, or <scope>.<set> unless the
-#     set is `default`. A folder's scope is the one line in its plugins/scope, else its own name
-#     (software/application-software/plugins/scope says `app`: app, app.testing); scopes are
+#     set is `default`. A folder's scope is the one line in its plugins/scope, else its short-name
+#     file (as in workspace names, .delphi/names.sh), else its own name (software/application-software/
+#     short-name says `app`: app, app.testing); scopes are
 #     lowercase letters, digits and '-', and unique. Each plugin.json's description is copied, and its
 #     name must be that name.
 #   each `harness: claude-code` workspace's workspace.yml `plugins:`: the `default` set of every
@@ -24,7 +25,9 @@ sets() { # every set folder, sorted
 }
 
 scope_of() { # <folder holding plugins/>: its scope
-  if [ -f "$1/plugins/scope" ]; then tr -d '[:space:]' <"$1/plugins/scope" && echo; else echo "${1##*/}"; fi
+  if [ -f "$1/plugins/scope" ]; then tr -d '[:space:]' <"$1/plugins/scope" && echo
+  elif [ -f "$1/short-name" ]; then tr -d '[:space:]' <"$1/short-name" && echo
+  else echo "${1##*/}"; fi
 }
 
 name_of() { # <set folder>: the plugin's name in the marketplace
@@ -131,7 +134,7 @@ put() { # <file> <what's stale> <command...>: write <command>'s output to <file>
 folders=$(for s in $(sets); do echo "${s%/plugins/claude/*}"; done | uniq)
 for f in $folders; do
   case "$(scope_of "$f")" in "" | -* | *[!a-z0-9-]*)
-    echo "plugins: $f: scope '$(scope_of "$f")' must be lowercase letters, digits and '-' (set it in $f/plugins/scope)" >&2
+    echo "plugins: $f: scope '$(scope_of "$f")' must be lowercase letters, digits and '-' (set it in $f/plugins/scope or $f/short-name)" >&2
     problems=$((problems + 1)) ;;
   esac
 done

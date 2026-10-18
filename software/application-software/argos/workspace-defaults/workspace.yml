@@ -9,5 +9,5 @@ park:                     # `- <folder>`: root folders that park with this works
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
   odyssey-definitions: https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git   # CAN definitions for verify-telemetry
-workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
+workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name or main>
   - main

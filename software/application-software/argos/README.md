@@ -9,7 +9,7 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 
 | Path | What it is |
 |---|---|
-| `workspaces/<leaf>/` | One workspace per purpose; branch `ws/software/application-software/argos/<leaf>` is its root |
+| `workspaces/<leaf>/` | One workspace per purpose; branch `ws/s.app.argos.<leaf>` is its root |
 | `workspaces/argos-dev/` | Day-to-day Argos development: tickets, specs, PRs |
 | `workspace-defaults/` | What a new Argos workspace starts with (see `AUTHORING.md`) |
 | `workspace-inherit/` | Skills every Argos workspace gets on each sync: ticket and PR conventions, `implement`, `run-local`, `verify-graph`, `verify-telemetry` |
