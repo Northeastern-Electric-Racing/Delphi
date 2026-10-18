@@ -169,7 +169,9 @@ For every workspace on `origin/main` (or just `<name>`):
    `git merge --no-ff -Xsubtree=<folder> ws/<name>`, with `<folder>/.delphi/` dropped from the result
    (it is main's, never a workspace's) and its inherited paths put back to main's. Stop if its tree equals main's or the current
    `propose/<name>`'s (nothing new). Otherwise run `ci/check.sh` on it, force-push it, and create or
-   update the PR `ws/<name> → main` with `gh` (body: changed files, ws commit subjects and authors).
+   update the PR `ws/<name> → main` with `gh` (body: the PR template's sections, with the ws commit subjects
+   and authors under Changes; labelled `by: ai` when opened, and labels never touched after, so a
+   changed written-by label stays).
 
 A conflict or failed check is reported (conflicts with their files); that workspace is skipped, the
 others continue, and the script exits 1. A `ws/*` branch without a folder on main gets a notice and
@@ -281,13 +283,14 @@ it's switched back to (`switch.sh` runs setup). Migrations must be safe to re-ru
 fresh clone, and delete only what nothing is lost from, stopping with what to do otherwise. `setup.sh`
 also warns when `.delphi/` isn't exactly the version it says (edited in the clone).
 
-## 6. New workspaces (`tools/new-workspace.sh <org-path> <name>`)
+## 6. New workspaces (`tools/new-workspace.sh [--by <who>] <org-path> <name>`)
 
 Validates the name (format, not on main, no leftover `ws/<name>` or `ws/<leaf>`), copies `templates/workspace/`
 and then `software/<org-path>/workspace-defaults/` if present (its `CLAUDE.md` appended to the template's)
 into `software/<org-path>/workspaces/<name>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
 temporary worktree, sets `name: software/<org-path>/<leaf>`, generates its `.claude/settings.json`, runs `ci/check.sh`, pushes branch
-`new-workspace/<org-path>/<leaf>`, and opens a PR. Sync creates `ws/<name>` once it merges.
+`new-workspace/<org-path>/<leaf>`, and opens a PR in the PR template's sections, labelled `by: <who>` (`ai`,
+the default, `ai-assisted` or `human`). Sync creates `ws/<name>` once it merges.
 
 ## 7. CI (`.github/workflows/delphi.yml`)
 

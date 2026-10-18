@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# tools/new-workspace.sh <org-path under software/> <name>: propose a new workspace as a PR to main.
+# tools/new-workspace.sh [--by ai|ai-assisted|human] <org-path under software/> <name>: propose a new
+# workspace as a PR to main, labelled `by: <who>` (default ai: who wrote it, as the PR template asks).
 # In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
 # project's software/<org-path>/workspace-defaults/ (its CLAUDE.md appended to the template's) to
 # software/<org-path>/workspaces/<name>/, sets `name:` in its workspace.yml to its place in the tree
@@ -7,7 +8,10 @@
 # the PR with gh. Your checkout is untouched. After merge, ci/sync.sh creates ws/software/<org-path>/<name>.
 set -euo pipefail
 die() { echo "new-workspace: $*" >&2 && exit 1; }
-[ $# -eq 2 ] || die "usage: tools/new-workspace.sh <org-path under software/> <name>"
+by=ai
+[ "${1:-}" != --by ] || { by=${2:-} && shift 2; }
+case "$by" in ai | ai-assisted | human) ;; *) die "--by must be ai, ai-assisted or human" ;; esac
+[ $# -eq 2 ] || die "usage: tools/new-workspace.sh [--by ai|ai-assisted|human] <org-path under software/> <name>"
 org=${1%/}
 org=${org#software/}
 name=$2
@@ -44,4 +48,20 @@ bash "$wt/ci/plugins.sh" "$wt" >/dev/null # its plugins: defaults and .claude/se
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $id"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
-gh pr create --base main --head "$branch" --title "New workspace: $id" --body "Adds \`$folder/\` from templates/workspace (plus \`software/$org/workspace-defaults\` if present). Fill in \`workspace.yml\` repos (and list \`main\` under \`workspaces:\`, recommended, so it can read this project's shared context) and \`CLAUDE.md\` before merging; after merge, CI creates branch \`ws/$id\`."
+gh pr create --base main --head "$branch" --title "Add workspace $id" --label "by: $by" --body "## Changes
+
+Adds \`$folder/\` from templates/workspace (plus software/$org/workspace-defaults if present). After merge, CI creates branch ws/$id.
+
+## Testing
+
+- ci/check.sh on the new folder
+
+## Notes
+
+Before merging, fill in its workspace.yml repos (and list main under workspaces:, recommended, so it can read this project's shared context) and its CLAUDE.md.
+
+## Checklist
+
+- [x] \`ci/check.sh .\` passes
+- [x] No merge conflicts
+- [ ] Request reviewers & ping on Slack"

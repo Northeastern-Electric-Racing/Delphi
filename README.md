@@ -49,7 +49,8 @@ git fetch origin && git merge origin/ws/software/application-software/argos/argo
 ```
 
 After your PR merges into `ws/<name>`, CI proposes it: a PR `ws/<name> → main` from
-`propose/<name>`. Merge that with a merge commit or squash, never rebase. Never push to `ws/*` or
+`propose/<name>`, labelled `by: ai` (change the label if you wrote it; CI keeps it). Merge that with a
+merge commit or squash, never rebase. Never push to `ws/*` or
 `main` directly (protect them). Code changes go in a worktree, `worktrees/<repo>/<branch>` (`.delphi/new-worktree.sh`), through that repo's own PRs.
 
 **Conflicts.** If `main` and `ws/<name>` changed the same lines, CI lists the files and skips that
@@ -95,7 +96,8 @@ a version needs cleanup in people's clones, it ships `.delphi/migrations/<versio
 
 `tools/new-workspace.sh <org-path under software/> <name>` copies `templates/workspace/` into
 `software/<org-path>/workspaces/<name>/`, adds the project's `workspace-defaults/` if it has one, and
-opens a PR to `main`. Once it merges, CI creates `ws/software/<org-path>/<name>`.
+opens a PR to `main`, labelled `by: ai` (put `--by ai-assisted` or `--by human` first to change it).
+Once it merges, CI creates `ws/software/<org-path>/<name>`.
 
 **Project folders.** The folder above `workspaces/` (e.g. `software/application-software/argos/`)
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and

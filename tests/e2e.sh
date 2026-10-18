@@ -102,7 +102,10 @@ o show "propose/$AN:$A/docs/CONTEXT.md" | grep -qx "ws edit one" || fail "propos
 grep -q "gh pr create --base main --head propose/$AN --title ws/$AN → main" "$t/gh.log" ||
   fail "no PR created: $(cat "$t/gh.log")"
 grep -q -- "- edit docs/CONTEXT.md on ws/$AN (tester)" "$t/gh.log" || fail "PR body lacks ws commit"
+{ grep -q -- "--body ## Changes$" "$t/gh.log" && grep -qx "## Checklist" "$t/gh.log"; } || fail "propose PR body doesn't follow the PR template"
+grep -q -- "--label by: ai$" "$t/gh.log" || fail "propose PR not labelled by: ai"
 ok "ws edit -> propose/$AN with the change under the folder, PR opened with gh"
+ok "a propose PR's body follows the PR template, labelled by: ai when opened"
 prop=$(o rev-parse propose/$AN)
 sleep 1 # a re-built merge commit would get a new timestamp, hence a new id
 : >"$t/gh.log"
@@ -451,7 +454,11 @@ o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -qx "# Fir
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/settings.json" || fail "new workspace has no generated settings.json"
 ! o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/top/SKILL.md" 2>/dev/null || fail "an inherited skill was copied into the folder"
-grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-dev" "$t/gh.log" || fail "no PR for new workspace"
+grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-dev --title Add workspace software/electrical/firmware/fw-dev --label by: ai --body ## Changes" "$t/gh.log" ||
+  fail "no PR for new workspace, or not labelled by: ai with the template's sections: $(cat "$t/gh.log")"
+(cd "$t/dev" && tools/new-workspace.sh --by ai-assisted electrical/firmware fw-two >/dev/null) || fail "new-workspace.sh --by failed"
+grep -q "fw-two --label by: ai-assisted " "$t/gh.log" || fail "--by ai-assisted not used for the label"
+(cd "$t/dev" && ! tools/new-workspace.sh --by bot electrical/firmware fw-three 2>/dev/null) || fail "bad --by accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh application-software/argos argos-dev 2>/dev/null) || fail "duplicate workspace accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh x Bad 2>/dev/null) || fail "bad name accepted"
 (cd "$t/dev" && ! tools/new-workspace.sh ../x ok 2>/dev/null) || fail "bad org path accepted"
@@ -459,6 +466,7 @@ grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-de
 ok "new-workspace.sh opens a PR with the templated folder; rejects duplicates and bad input"
 ok "new-workspace.sh adds the project's workspace-defaults/ (CLAUDE.md appended, placeholders filled), not inherited files"
 ok "new-workspace.sh works when a local new-workspace/<name> branch is left over"
+ok "new-workspace.sh's PR follows the PR template, labelled by: ai unless --by says otherwise"
 
 # --- 10. one direction at a time: `sync refresh` only updates ws/, `sync propose` only updates propose/
 sync "$AN" >/dev/null || fail "settling sync failed"

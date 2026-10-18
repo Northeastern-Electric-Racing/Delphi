@@ -12,7 +12,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `ci/sync.sh [refresh|propose] [<name>]`: refresh and/or propose each workspace (both by default).
   Runs on pushes to main and `ws/**`.
 - `ci/check.sh [<dir>]`: validates the repo. Runs on PRs to main and on each proposal.
-- `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR.
+- `tools/new-workspace.sh`: new workspace folder from `templates/workspace/` as a PR. Its PR and
+  sync's propose PRs fill `.github/pull_request_template.md`'s sections (keep them in step) and are
+  labelled `by: ai` (new-workspace: `--by ai-assisted|human` when the user says so).
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its name or
   its `plugins/scope`), each workspace's `workspace.yml` `plugins:` defaults (the
