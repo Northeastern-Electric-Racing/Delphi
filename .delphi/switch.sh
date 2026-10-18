@@ -4,7 +4,7 @@
 # switch), fetches the branch, switches to it (the local branch, else a new one tracking origin),
 # fast-forwards it to origin, then runs the new workspace's .delphi/setup.sh (none for main). The
 # post-checkout hook (.delphi/park.sh) parks this workspace's repos/, worktrees/, references/ and
-# linked/ and restores the new one's. Runs on bash 3.2 and Git Bash.
+# workspaces/ and restores the new one's. Runs on bash 3.2 and Git Bash.
 # .delphi/switch.sh --list: fetch main and the ws/* branches, then print main and each workspace on
 # main that has its branch, one a line, as `<name> <its project folder>`, `* ` before this clone's
 # and two spaces before the others (the delphi mod's /ws-delphi pane reads it).

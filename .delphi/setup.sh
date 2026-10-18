@@ -6,9 +6,11 @@
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
 # run, with pushes disabled. Each entry under `workspaces:` (`- <name>`, a workspace's dotted name
-# from .delphi/names.sh, or `- main`) gets a full clone of this clone's origin (Delphi) at linked/<name>,
+# from .delphi/names.sh, or `- main`) gets a full clone of this clone's origin (Delphi) at workspaces/<name>,
 # on ws/<name> (or main) tracking origin; every run switches it back to that branch if it was switched
-# away (its own .delphi/switch.sh) and pulls it. By convention it's read from here, not edited. Adds the
+# away (its own .delphi/switch.sh), pulls it, then runs its own setup.sh, so its repos and references are
+# there too. A workspace that is itself one of those (<workspace>/workspaces/<name>) skips its own
+# workspaces:, so setups never chain. By convention they're read from here, not edited. Adds the
 # folders park.sh parks and macOS's .DS_Store to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
 # every branch) as just checked out in the worktree that checked out (unless another hook is there), so switching
 # to another workspace or main parks those folders. First
@@ -22,6 +24,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f workspace.yml ] || { echo "setup: no workspace.yml here (on main?); nothing to set up" >&2 && exit 0; }
 self=$(awk '/^name:/ { print $2; exit }' workspace.yml)
+inside= # set when this is another workspace's workspaces/<name>: its own workspaces: are skipped
+[ "$(basename "$(dirname "$PWD")")" != workspaces ] || [ ! -f ../../workspace.yml ] || [ ! -d ../../.delphi ] || inside=${PWD%/*/*}
 case "$self" in "" | [-.]* | *. | *..* | *[!a-z0-9.-]*) echo "setup: workspace.yml needs a valid name:" >&2 && exit 1 ;; esac
 
 older() { # <a> <b>: a is a lower MAJOR.MINOR.PATCH than b
@@ -69,11 +73,11 @@ readonly_copy() { # <dir> <url> [<ref>]: shallow, detached, push-disabled checko
   fi
 }
 
-link() { # <name>|main: a clone of Delphi on that workspace's branch (ws/<name>), or main, at linked/<name>
-  case "$1" in "$self") return ;; "" | [-.]* | *. | *..* | *[!a-z0-9.-]*)
+link() { # <name>|main: a clone of Delphi on that workspace's branch (ws/<name>), or main, at workspaces/<name>
+  case "$1" in "$self") return 0 ;; "" | [-.]* | *. | *..* | *[!a-z0-9.-]*)
     echo "setup: skipping bad workspaces: entry '$1' (want a workspace's name, like s.app.argos.argos-dev, or main)" >&2 && return ;;
   esac
-  local dir=linked/$1 ref=ws/$1
+  local dir=workspaces/$1 ref=ws/$1
   [ "$1" != main ] || ref=main
   [ ! -f "$dir/.git" ] || { echo "setup: $dir is a worktree, not a clone; skipping it" >&2 && return; }
   if [ ! -d "$dir/.git" ]; then
@@ -85,11 +89,14 @@ link() { # <name>|main: a clone of Delphi on that workspace's branch (ws/<name>)
   fi
   git -C "$dir" pull -q --ff-only origin "$ref" </dev/null || echo "setup: could not pull $ref into $dir (see git -C $dir status)" >&2
   echo "$dir: on $ref ($(git -C "$dir" rev-parse --short HEAD))"
+  [ ! -f "$dir/workspace.yml" ] || # its own setup, which skips its workspaces:
+    bash "$dir/.delphi/setup.sh" </dev/null >/dev/null || echo "setup: $dir's own setup failed (bash $dir/.delphi/setup.sh)" >&2
 }
 
+[ -z "$inside" ] || ! grep -q '^link ' <<<"$list" || echo "setup: in $inside's workspaces/, so this workspace's workspaces: are skipped"
 while read -r kind name url ref; do
   [ -n "$name" ] || continue
-  if [ "$kind" = link ]; then link "$name"; continue; fi
+  if [ "$kind" = link ]; then [ -n "$inside" ] || link "$name"; continue; fi
   case "$name" in . | .. | *[!A-Za-z0-9._-]*) echo "setup: skipping unsafe repo name '$name'" >&2 && continue ;; esac
   if [ "$kind" = ref ]; then readonly_copy "references/$name" "$url" ${ref:+"$ref"} && continue; fi
   store=repos/$name
@@ -118,7 +125,7 @@ EOF2
 
 exclude=$(git rev-parse --git-path info/exclude)
 mkdir -p "$(dirname "$exclude")"
-for d in /repos/ /worktrees/ /references/ /linked/ /.journal/ $(awk '/^[^[:space:]#]/ { s = /^park:/; next }
+for d in /repos/ /worktrees/ /references/ /workspaces/ /.journal/ $(awk '/^[^[:space:]#]/ { s = /^park:/; next }
   s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print "/" $0 "/" }' workspace.yml) .DS_Store; do
   grep -qxF "$d" "$exclude" 2>/dev/null || echo "$d" >>"$exclude"
 done
