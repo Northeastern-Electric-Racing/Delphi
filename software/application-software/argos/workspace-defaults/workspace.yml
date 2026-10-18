@@ -4,6 +4,7 @@ plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists
 park:                     # `- <folder>`: root folders that park with this workspace on a switch (.delphi/park.sh), besides the ones it always parks
   - pictures
   - .playwright-mcp
+  - .playwright-cli
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
