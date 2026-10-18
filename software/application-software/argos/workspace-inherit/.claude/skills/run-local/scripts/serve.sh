@@ -3,7 +3,7 @@
 # port in 4200-4210, in the background, and print `<branch> client=<url> pid=<pid> log=<file>` once
 # it has compiled. Re-running for a worktree that is still being served prints its existing client.
 # Runs `npm ci` first if node_modules lacks ng (missing or half-installed). Exits 1, with the log's
-# tail, if the build fails.
+# tail, if the build fails, or with what holds each port if none is free.
 set -euo pipefail
 wt=$(cd "${1:?usage: serve.sh <argos-worktree>}" && pwd)
 branch=$(git -C "$wt" rev-parse --abbrev-ref HEAD)
@@ -27,7 +27,14 @@ trap 'rmdir "$lock" 2>/dev/null || true' EXIT
 claimed() { for f in "$state"/*.port; do [ -f "$f" ] && [ "$(cat "$f")" = "$1" ] && kill -0 "$(cat "${f%.port}.pid")" 2>/dev/null && return; done; return 1; }
 port=
 for p in $(seq 4200 4210); do up "$p" || claimed "$p" || { port=$p && break; }; done
-[ -n "$port" ] || { echo "serve: no free port in 4200-4210" >&2 && exit 1; }
+# Name what holds each port, so a stale client from another checkout can be stopped (lsof, where there is one).
+holders() {
+  for p in $(seq 4200 4210); do
+    pid=$(lsof -nP -iTCP:"$p" -sTCP:LISTEN -t 2>/dev/null | head -1) || true
+    if [ -n "$pid" ]; then echo "  $p pid=$pid $(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"; fi
+  done
+}
+[ -n "$port" ] || { echo "serve: no free port in 4200-4210, held by:" >&2 && holders >&2 && exit 1; }
 echo $$ >"$key.pid" && echo "$port" >"$key.port" # claimed by this script until ng serve's pid replaces it
 rmdir "$lock" && trap - EXIT
 
