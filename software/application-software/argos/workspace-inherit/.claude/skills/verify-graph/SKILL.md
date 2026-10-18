@@ -4,20 +4,19 @@ description: Playwright CLI verification of the graph page — modes, controls, 
 user-invocable: true
 ---
 
-Get the ticket's branch running with `run-local <branch>`; that branch's client URL is `BASE_URL`. Then `RUN=$(bash scripts/seed.sh)`: the id of a 50-hour run spanning two midnights, made once in the local database and shared by parallel checks, so other sessions starting runs can't change which run you check. Screenshots go to `pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
+Get the branch's client running with `run-local <branch>`; its URL is `BASE_URL`. Then run the base checks:
 
-Drive the page with `playwright-cli` (`npm i -g @playwright/cli`): `bash scripts/open.sh <branch> "$BASE_URL/graph"` opens a session named after the branch, with its snapshot and console files in `pictures/<branch>/verify-graph/playwright-cli/`; then `P="playwright-cli -s=<branch>"`.
+```
+bash scripts/check.sh <branch> "$BASE_URL"
+```
 
-Per check: act with `$P click "button:has-text('Pause')"` (or `role=combobox[name='Quick Select']`, `role=option[name='5 minutes']`, or a ref from a snapshot) → assert with `$P find "<text>"` or `$P snapshot` → `$P screenshot --filename=pictures/<branch>/verify-graph/NN-<name>.png`. To pick the seeded run, click Select Run, then `bash scripts/select-run.sh <branch> $RUN`. Run the groups in order; stop and fix at the first failure. `$P close` at the end.
+It seeds a 50-hour run spanning two midnights (once, shared by parallel checks), opens a `playwright-cli` session named after the branch, and runs `scripts/check.js`. That covers: page loads in real time, a topic from the tree draws live, the seeded run, historical Quick Select, back to real time, and no console errors beyond develop's NG0100. It prints `[x]`/`[ ]` per check and exits 1 on a failure. Each `look:` line names a screenshot and what it should show: open it and judge it, since only a picture shows whether a chart is right.
 
-| # | Do | Assert |
-|---|---|---|
-| 1 | Open `{BASE_URL}/graph` | Header "Real Time"; Pause, Time Range, Select Run, Clear Graph; "X (sec):", Y Min/Max, "Historical:" Quick Select and Custom; no Realtime button |
-| 2 | Expand BMS › Segment_Total_Volt (click the tree toggles), click leaf "0", wait 3s | URL has `?topics=BMS%2FSegment_Total_Volt%2F0`; a series is drawn |
-| 3 | Pause↔Play; Time Range↔Point Range; Tog Sidebar twice | Labels flip ("X (points):" in point range); sidebar hides, then returns. Leave it playing, in time range |
-| 4 | Select Run, then select-run.sh, wait 3s | Header "Run #$RUN"; Realtime shown; no Pause or Time Range; Y Min/Max remain; x-axis spans the run's 50 hours, with a dated day-boundary line at each midnight |
-| 5 | Realtime; open Quick Select, pick "5 minutes" | 11 options (1, 2, 5, 10, 15, 30 min, 1, 2, 4, 8, 24 hours); header "Historical"; Realtime shown, no Pause; x-axis about 5 min, or since the data starts |
-| 6 | `$P console --clear`; cycle Realtime → Run → Realtime → "1 minute" → Realtime | Headers match each mode; no console errors in `$P console error` beyond develop's: NG0100 in `_MessagesPerSecondComponent` and, after mode switches, in `_GraphPageComponent` |
-| 7 | In real time, wait 10s | x-axis about 30s, not the whole session (historical auto-fit doesn't leak) |
+Go further where the diff points, by hand in the same session (`P="playwright-cli -s=<branch>"`): controls the diff touches (Pause↔Play, Time Range↔Point Range, Tog Sidebar, Tog Mult Yaxis, Y Min/Max, Custom range, Clear Graph), zoom, pan and hover, several topics, or mode switching for console errors. Reproduce a failed check the same way before fixing it; `check.js` has its steps.
 
-Report a checklist (one line per group, `[x]` or `[ ]` with the failure) and the screenshot folder.
+- Act: `$P click "button:has-text('Pause')"`, `role=combobox[name='Quick Select']`, `role=option[name='5 minutes']`, or a ref from `$P snapshot`.
+- Assert: `$P find "<text>"`, `$P snapshot`, `$P console error`; longer Playwright code with `$P run-code "async (page) => {…}"`.
+- The seeded run: click Select Run, then `bash scripts/select-run.sh <branch> $(bash scripts/seed.sh)`.
+- Screenshots: `$P screenshot --filename=pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
+
+When a hand check keeps coming back, add it to `check.js`. Report `check.sh`'s lines plus one line per hand check, and the screenshot folder. `$P close` at the end.
