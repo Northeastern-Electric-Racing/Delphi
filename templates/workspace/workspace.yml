@@ -1,4 +1,4 @@
-name: {{name}}            # its place in the tree, the folder path without workspaces/ (branch ws/<name>); checkouts park and restore repos/ by it
+name: {{name}}            # its dotted name (.delphi/names.sh, like s.app.argos.argos-dev; branch ws/<name>); checkouts park and restore repos/ by it
 harness: claude-code
 plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists the `default` set of every folder above first and generates .claude/settings.json
   # - argos.testing   # the set at software/application-software/argos/plugins/<harness>/testing/
@@ -11,5 +11,5 @@ repos:                    # `<name>: <git-url>`: code you change; bare store at 
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git
 references-git:           # `<name>: <git-url> [<tag-or-branch>]`: dependency sources to read, never edit; shallow copy at references/<name>
   # name: https://github.com/<owner>/<repo>.git v1.2.3   # no tag or branch: its default branch
-workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
+workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name or main>
   # - main                # recommended: this project's shared context, AUTHORING.md and workspace-defaults/

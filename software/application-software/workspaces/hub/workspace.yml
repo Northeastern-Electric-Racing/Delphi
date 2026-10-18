@@ -1,4 +1,4 @@
-name: software/application-software/hub
+name: s.app.hub
 harness: claude-code
 plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists the `default` set of every folder above first and generates .claude/settings.json
   - delphi         # default, from software/
@@ -10,8 +10,8 @@ repos:                    # `<name>: <git-url>`: code you change; bare store at 
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git
 references-git:           # `<name>: <git-url> [<tag-or-branch>]`: dependency sources to read, never edit; shallow copy at references/<name>
   # name: https://github.com/<owner>/<repo>.git v1.2.3   # no tag or branch: its default branch
-workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
+workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name or main>
   - main
-  - ws/software/application-software/argos/argos-dev
-  - ws/software/firmware/calypso/calypso-dev
-  - ws/software/application-software/nero/nero-experimental
+  - s.app.argos.argos-dev
+  - s.firmware.calypso.calypso-dev
+  - s.app.nero.nero-experimental

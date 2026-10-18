@@ -5,9 +5,13 @@ Goals: `docs/goals.md`. No CLI: plain git plus a few shell scripts run by GitHub
 ## 1. Model
 
 `main` holds every workspace as a folder, `software/**/workspaces/<leaf>/`, with its files at their
-normal harness paths (`CLAUDE.md`, `.claude/…`, `docs/…`). A workspace's `<name>` is its place in
-the tree: the folder's path without `workspaces/` (`software/application-software/argos/argos-dev`
-for `software/application-software/argos/workspaces/argos-dev`). For each workspace, branch
+normal harness paths (`CLAUDE.md`, `.claude/…`, `docs/…`). A workspace's `<name>` is the short name
+of each folder from `software/` down to its project folder, then `<leaf>`, joined by dots
+(`s.app.argos.argos-dev` for `software/application-software/argos/workspaces/argos-dev`). A folder's
+short name is the one line in its `short-name` file, else its own name; `.delphi/names.sh [<rev>]`
+prints every workspace's name and folder, and every script that names workspaces uses it. Short
+names and leaves are lowercase letters, digits and `-`, so a name is always a valid ref and a flat
+folder name (`linked/<name>`, `.delphi/parked/<name>`), and no branch can be a folder of another. For each workspace, branch
 **`ws/<name>`** has **that folder as its repo root**. Two directions keep them in sync, both subtree
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
@@ -50,9 +54,10 @@ harness plugins (section 2) carry what workspaces opt into. The one generated wo
 software/<org>/…/<project>/           README.md  AUTHORING.md  workspace-defaults/   (optional, main only)
 software/[<org>/…/]workspace-inherit/  files every workspace below gets on its ws/* root (optional, main only)
 software/<org>/…/plugins/<harness>/<set>/   a plugin set for the workspaces under that folder (optional, main only)
-software/<org>/…/plugins/scope        the folder's short name in plugin names (optional; default: its name)
+software/<org>/…/short-name           the folder's short name in workspace names (optional; default: its name)
+software/<org>/…/plugins/scope        its scope in plugin names (optional; default: its short name)
 .claude-plugin/marketplace.json       every Claude Code plugin set under software/ (generated)
-software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
+software/<org>/…/workspaces/<leaf>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
 .delphi/                              {setup,new-worktree,switch,park,plugins,version}.sh  manifest.yml  versions
                                       migrations/  .gitattributes  .gitignore: on every ws/* root
@@ -68,9 +73,8 @@ Org folders under `software/` are plain directories. `workspace.yml` is tiny YAM
 workspace's name, so a checkout of `ws/<name>` knows which workspace it is), `harness: <adapter>`, an
 optional `repos:` map of `<name>: <git-url>`, and an optional `references-git:` map of
 `<name>: <git-url> [<ref>]` (names unique across both maps), and an optional `workspaces:` list of
-`- ws/<name>` (a workspace on main) or `- main` (no duplicates, not itself). Names are lowercase
-letters, digits, `-` and `/`. Workspaces in different places may end in the same leaf, but no name
-may be a folder of another's (git can't hold both `ws/a` and `ws/a/b`). Workspaces never nest; no symlinks under
+`- <name>` (a workspace on main) or `- main` (no duplicates, not itself). `name:` must be the one
+`names.sh` gives, and names are unique (a clash is fixed with a `short-name`). Workspaces never nest; no symlinks under
 `software/`. The root `.delphi/` holds the scripts and the version files (section 5b), and no
 workspace folder (nor the template) has a `.delphi/` of its own. Each manifest file outside
 `.delphi/` (the workflow) is the same at main's root, in the template, and in every workspace. `ci/check.sh` enforces all of this and lists every problem.
@@ -111,8 +115,9 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
 
 - `.claude-plugin/marketplace.json` at main's root: marketplace `delphi`, one plugin per set, named
   `<scope>` for a folder's `default` set and `<scope>.<set>` for the others (`argos`,
-  `argos.testing`), so names stay short in Claude Code's `/` menu. A folder's scope is its own name,
-  or the one line in its `plugins/scope` (`application-software` has `app`). Scopes are lowercase
+  `argos.testing`), so names stay short in Claude Code's `/` menu. A folder's scope is the one line in
+  its `plugins/scope`, else its short name (`application-software`'s `short-name` is `app`), else its
+  own name. Scopes are lowercase
   letters, digits and `-`, unique across the tree, and each `plugin.json` uses its name. (Claude
   Code refuses `/` in plugin names; `.` works, though Claude.ai's marketplace sync wants kebab-case.)
 - Each `harness: claude-code` workspace's `.claude/settings.json`: the shared settings in
@@ -146,10 +151,11 @@ that touches a set is an update.
 
 For every workspace on `origin/main` (or just `<name>`):
 
-1. **Refresh** (main → `ws/<name>`). If `ws/<name>` is missing and `ws/<leaf>` (its name before
-   workspaces were named by path) exists, start from that, so its history and unproposed edits
-   carry over, and refresh as below ("created from ws/<leaf>, its old name"; the old branch is kept,
-   with a notice). Otherwise, if `ws/<name>` is missing, create it as one commit
+1. **Refresh** (main → `ws/<name>`). If `ws/<old>` (its name before dotted names, the folder's
+   path without `workspaces/`) exists and `ws/<name>` is missing or behind it, start from `ws/<old>`,
+   so its history and unproposed edits carry over, refresh as below, and push the result to both
+   (so clones still on `ws/<old>` pull the 0.8.0 migration that renames their branch; the old branch
+   is kept, with a notice to delete it once no clone is on it). Otherwise, if `ws/<name>` is missing, create it as one commit
    (`git commit-tree <main>:<folder> -p <main>`, "delphi: create ws/<name> from <folder>"): root =
    folder plus main's `.delphi/`, parent = main, so no unrelated histories. Otherwise merge
    `origin/main` into `ws/<name>` with `--no-ff -Xsubtree=<folder>`, then, if its `.delphi/` differs
@@ -197,9 +203,9 @@ and `.DS_Store` to the clone's `.git/info/exclude` once. For each repo under `re
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
-no store and no worktrees (`new-worktree.sh` refuses them). Each entry under `workspaces:` (`- ws/<name>`
-or `- main`; the workspace itself is skipped) gets the same kind of copy of that branch of the clone's
-own origin, at `linked/<branch>/`, also refreshed every run; `/linked/` is excluded too.
+no store and no worktrees (`new-worktree.sh` refuses them). Each entry under `workspaces:` (`- <name>`
+or `- main`; the workspace itself is skipped) gets the same kind of copy of that branch (`ws/<name>`
+or `main`) of the clone's own origin, at `linked/<name>/`, also refreshed every run; `/linked/` is excluded too.
 Links are separate clones, not worktrees of the Delphi clone, so two workspaces can both link `main`
 and each copy parks with its workspace. Writes the clone's `post-checkout` hook, a 3-line script that
 runs `.delphi/park.sh` from the worktree that checked out (replacing an older link to or copy of a
@@ -214,8 +220,8 @@ workspace's root folders to `.delphi/parked/<name>/`: the ones `.delphi/paths.sh
 and those under `park:` in the `workspace.yml` of the branch it leaves, so each workspace chooses its
 own (a project's `workspace-defaults/` can start the list). It moves back everything parked for the
 new one, whatever its list says now. Entries are folder names at the root, never `.git` or `.delphi`:
-`ci/check.sh` checks them and `park.sh` skips a bad one. A name from before workspaces were named by path (`argos-dev`) is the same
-workspace as the path ending in it, so moving a clone onto its renamed branch moves nothing.
+`ci/check.sh` checks them and `park.sh` skips a bad one. An old name (a folder path, from before dotted names) is the same
+workspace as the dotted name ending in its last part, so moving a clone onto its renamed branch moves nothing.
 `.delphi/.gitignore` ignores `parked/`; since `.delphi/` is on every branch, so is that rule. Parked
 work is ignored, not hidden: `git clean -X` or `git stash --all` at the root would take it. A move is a rename, so it is instant and every
 absolute path (worktree links, build caches) is the same again whenever its workspace is checked
@@ -240,7 +246,7 @@ variable, so another harness needs only its own settings to set `DELPHI_ROOT`.
 
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
-to origin, and runs the new workspace's `setup.sh`. `switch.sh --list` prints `main` and the workspaces, `*` before this clone's. The `delphi` mod
+to origin, and runs the new workspace's `setup.sh`. `switch.sh --list` prints `main` and each workspace with a branch, as `<name> <project folder>`, `*` before this clone's. The `delphi` mod
 (`software/plugins/claude/default/`) puts that in a pane to keep open: `/ws-delphi` shows them as cards grouped by project, this clone's
 marked current, with a warning when tracked files have changed; pressing a card selects it, and
 **Switch workspace** runs `switch.sh` (`/ws-delphi <name>` skips the pane). No restart: Claude Code
@@ -285,12 +291,12 @@ it's switched back to (`switch.sh` runs setup). Migrations must be safe to re-ru
 fresh clone, and delete only what nothing is lost from, stopping with what to do otherwise. `setup.sh`
 also warns when `.delphi/` isn't exactly the version it says (edited in the clone).
 
-## 6. New workspaces (`tools/new-workspace.sh [--by <who>] <org-path> <name>`)
+## 6. New workspaces (`tools/new-workspace.sh [--by <who>] <org-path> <leaf>`)
 
-Validates the name (format, not on main, no leftover `ws/<name>` or `ws/<leaf>`), copies `templates/workspace/`
+Validates the leaf and the dotted name it gets (format, unique, no leftover `ws/<name>` or `ws/<old>`), copies `templates/workspace/`
 and then `software/<org-path>/workspace-defaults/` if present (its `CLAUDE.md` appended to the template's)
-into `software/<org-path>/workspaces/<name>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
-temporary worktree, sets `name: software/<org-path>/<leaf>`, generates its `.claude/settings.json`, runs `ci/check.sh`, pushes branch
+into `software/<org-path>/workspaces/<leaf>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
+temporary worktree, sets `name: <name>`, generates its `.claude/settings.json`, runs `ci/check.sh`, pushes branch
 `new-workspace/<org-path>/<leaf>`, and opens a PR in the PR template's sections, labelled `by: <who>` (`ai`,
 the default, `ai-assisted` or `human`). Sync creates `ws/<name>` once it merges.
 

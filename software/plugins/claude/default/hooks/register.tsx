@@ -34,10 +34,11 @@ let webUrl = '' // the browser view's address while web/server.py runs
 let webError = '' // why it isn't running, when it failed to
 let webStart: Promise<string> | null = null
 
-function toWs(name: string): Ws {
+// A switch.sh --list line without its mark: `main`, or `<name> <its project folder>`
+function toWs(line: string): Ws {
+  const [name = '', folder = ''] = line.trim().split(' ')
   if (name === 'main') return { name, leaf: 'main', group: 'project folders, templates, CI' }
-  const parts = name.split('/')
-  return { name, leaf: parts[parts.length - 1] ?? name, group: parts.slice(1, -1).join(' / ') }
+  return { name, leaf: name.split('.').pop() ?? name, group: folder.split('/').slice(1).join(' / ') }
 }
 
 function leafOf(name: string): string {
@@ -76,7 +77,7 @@ async function load($: EngineInterface) {
   isRefreshing = false
   if (list.exitCode === 0 || all.length === 0) { // a failed refresh keeps the last list
     all = lines.map(l => toWs(l.slice(2)))
-    here = lines.find(l => l.startsWith('* '))?.slice(2) ?? ''
+    here = toWs(lines.find(l => l.startsWith('* '))?.slice(2) ?? '').name
   }
   isDirty = (await run($, ['git', 'diff', '--quiet', 'HEAD', '--'], 10_000)).exitCode !== 0
   if (!all.some(w => w.name === selected) || (selected === here && phase === 'pick')) {
@@ -259,7 +260,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
-    const cur = toWs(here)
+    const cur = all.find(w => w.name === here) ?? toWs(here)
     const sel = all.find(w => w.name === selected)
     const groups = [...new Set(all.map(w => w.group))]
     const redraw = () => $.ui.invalidate('ui.render')

@@ -1,8 +1,8 @@
 # Delphi — developing it
 
 Delphi stores NER's AI-harness context. Each workspace is a folder `software/**/workspaces/<leaf>/`
-on `main`, named by its place in the tree (the path without `workspaces/`:
-`software/application-software/argos/argos-dev`); branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
+on `main`, named by the short names of its folders and its leaf, joined by dots (`.delphi/names.sh`;
+a folder's short name is its `short-name` file, else its name: `s.app.argos.argos-dev`); branch `ws/<name>` has that folder as its repo root. `ci/sync.sh` keeps them in sync with
 subtree merges: **refresh** (main → `ws/<name>`) and **propose** (`ws/<name>` → PR to main via
 `propose/<name>`). There is no CLI, just a few shell scripts run by CI. `docs/design.md` is the
 source of truth; `docs/goals.md` lists what any change must keep.
@@ -16,14 +16,15 @@ source of truth; `docs/goals.md` lists what any change must keep.
   sync's propose PRs fill `.github/pull_request_template.md`'s sections (keep them in step) and are
   labelled `by: ai` (new-workspace: `--by ai-assisted|human` when the user says so).
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
-  (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its name or
-  its `plugins/scope`), each workspace's `workspace.yml` `plugins:` defaults (the
+  (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its
+  `plugins/scope`, else its `short-name`, else its name), each workspace's `workspace.yml` `plugins:` defaults (the
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
   it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
-  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source; park.sh also moves
+  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source; `.delphi/names.sh` names every
+  workspace (dotted short names; setup, switch, sync, check and the migration all use it); park.sh also moves
   the root folders under a workspace's `park:` in `workspace.yml` on a switch, and setup.sh excludes them. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
 - `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
@@ -35,7 +36,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws-delphi` pane switches
   workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
   `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
-- `software/…/workspaces/<name>/`: the workspaces. Org structure is plain directories. A project
+- `software/…/workspaces/<leaf>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
   (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the
   `ws/*` root of every workspace below on each refresh, never proposed; `opt-out:` in a

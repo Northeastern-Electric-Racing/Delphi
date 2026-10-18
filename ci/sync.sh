@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ci/sync.sh [refresh|propose] [<name>]: sync each workspace folder software/**/workspaces/<leaf>/ on
 # origin/main (or just <name>) with its branch ws/<name>, whose root is the folder. A workspace's
-# <name> is its place in the tree: the folder's path without `workspaces/`
-# (software/application-software/argos/workspaces/argos-dev -> software/application-software/argos/argos-dev).
-# CI runs it with no direction (both) on every push to main or ws/**.
+# <name> is .delphi/names.sh's: its folders' short names and <leaf>, joined by dots
+# (software/application-software/argos/workspaces/argos-dev -> s.app.argos.argos-dev). CI runs it
+# with no direction (both) on every push to main or ws/**.
 #   refresh: merge main into ws/<name> (-Xsubtree=<folder>), then make its .delphi/ main's root
 #            .delphi/ (a "delphi: sync" commit if that changed it), write over it the files it inherits
 #            from main (every workspace-inherit/ folder from software/ down to its project folder,
@@ -11,22 +11,24 @@
 #            last merged but no longer does (a "delphi: sync inherited" commit), list main's default plugin sets
 #            above it under its workspace.yml's plugins: and regenerate its .claude/settings.json from
 #            that (ci/plugins.sh; a "delphi: generate" commit if that changed either), and push if the
-#            tree changed. A
-#            missing ws/<name> starts from ws/<leaf>, the branch's name before workspaces were named
-#            by path, if that exists (so its history and unproposed edits carry over), else is created
-#            as one commit: tree = the folder plus main's .delphi/ and inherited files, parent = main.
+#            tree changed. While ws/<old> (the branch's name when workspaces were named by their
+#            folder's path, software/application-software/argos/argos-dev) is ahead of ws/<name> or
+#            ws/<name> is missing, it starts from ws/<old> (so its history and unproposed edits carry
+#            over) and pushes the result to both, so clones still on ws/<old> get the version that
+#            moves them. A missing ws/<name> with no ws/<old> is created as one commit: tree = the
+#            folder plus main's .delphi/ and inherited files, parent = main.
 #   propose: build propose/<name> = main + a subtree merge of ws/<name> without <folder>/.delphi/
 #            or its inherited files (both managed on main); if that changes main and isn't already on propose/<name>, check it (against main),
 #            force-push it, and open or update its PR.
 # A conflict is reported with its files and that workspace skipped; exits 1 if any failed. ws/*
-# branches without a folder get a notice, never deleted. Merges run in a temporary worktree.
+# branches without a folder, old names included, get a notice, never deleted. Merges run in a temporary worktree.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 dir=both
 case "${1:-}" in refresh | propose) dir=$1 && shift ;; esac
 only=${1:-}
-case "$only" in ws/*) only=${only#ws/} ;; esac
-case "$only" in *[!a-z0-9/-]*) echo "usage: ci/sync.sh [refresh|propose] [<name>]" >&2 && exit 2 ;; esac
+only=${only#ws/}
+case "$only" in *[!a-z0-9.-]*) echo "usage: ci/sync.sh [refresh|propose] [<name>]" >&2 && exit 2 ;; esac
 
 git fetch --quiet --prune origin
 main=$(git rev-parse origin/main)
@@ -96,9 +98,12 @@ conflict() { # <message>: report the conflicted files, abort the merge, skip thi
   failed=1 ok=0
 }
 
-refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged in
-  local ws=refs/remotes/origin/ws/$1 from=refs/remotes/origin/ws/$1
-  [ -n "$(tree "$ws")" ] || [ -z "$(tree "refs/remotes/origin/ws/${1##*/}")" ] || from=refs/remotes/origin/ws/${1##*/}
+refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with main merged in
+  local ws=refs/remotes/origin/ws/$1 from=refs/remotes/origin/ws/$1 was=refs/remotes/origin/ws/$3
+  if [ -n "$(tree "$was")" ] && { [ -z "$(tree "$ws")" ] ||
+    { [ "$(git rev-parse "$ws")" != "$(git rev-parse "$was")" ] && git merge-base --is-ancestor "$ws" "$was"; }; }; then
+    from=$was # its old name is ahead: carry that over
+  fi
   if [ -z "$(tree "$from")" ]; then
     git -C "$wt" checkout --quiet --detach \
       "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(with_inherited "$(with_delphi "$main:$2")" "$2" "" "$main:$2/workspace.yml")")"
@@ -135,9 +140,12 @@ refresh() { # <name> <folder>: leave the worktree at ws/<name> with main merged 
       git -C "$wt" commit --quiet -m "delphi: generate plugins: defaults and .claude/settings.json"
     fi
   fi
-  if [ "$(tree HEAD)" != "$(tree "$ws")" ]; then
+  if [ "$from" = "$was" ]; then
+    git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1" "HEAD:refs/heads/ws/$3"
+    echo "ws/$1: from ws/$3, its old name (pushed to both)"
+  elif [ "$(tree HEAD)" != "$(tree "$ws")" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
-    if [ "$from" = "$ws" ]; then echo "ws/$1: refreshed"; else echo "ws/$1: created from ws/${1##*/}, its old name"; fi
+    echo "ws/$1: refreshed"
   fi
 }
 
@@ -181,23 +189,27 @@ $(git log --no-merges --invert-grep --grep='^delphi: ' --format='- %s (%an)' "$m
   echo "ws/$1: proposed (PR from propose/$1)"
 }
 
-for folder in $(git ls-tree -r --name-only "$main" -- software |
-  sed -nE 's#^(software/(.+/)?workspaces/[^/]+)/workspace\.yml$#\1#p'); do
-  name=${folder%/workspaces/*}/${folder##*/} ok=1
-  names="$names$name "
+olds=" " # <old name>|<name> of each workspace
+while read -r name folder; do
+  ok=1
+  names="$names$name " olds="$olds${folder%/workspaces/*}/${folder##*/}|$name "
   [ -z "$only" ] || [ "$only" = "$name" ] || continue
   if [ "$dir" != propose ]; then
-    refresh "$name" "$folder"
+    refresh "$name" "$folder" "${folder%/workspaces/*}/${folder##*/}"
   elif [ -n "$(tree "refs/remotes/origin/ws/$name")" ]; then
     git -C "$wt" checkout --quiet --detach "refs/remotes/origin/ws/$name" # propose ws/<name> as is
   else ok=0; fi
   if [ "$ok" = 1 ] && [ "$dir" != refresh ]; then propose "$name" "$folder"; fi
-done
+done < <(bash "$here/../.delphi/names.sh" "$main")
 
 [ -z "$only" ] || case "$names" in *" $only "*) ;; *) echo "no workspace '$only' on main" >&2 && exit 1 ;; esac
 for b in $(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ws/); do
   case "$names" in *" ${b#ws/} "*) continue ;; esac
-  case "$names" in *"/${b#ws/} "*) echo "notice: $b is a workspace's old name; it's now ws/$(echo "$names" | tr ' ' '\n' | grep "/${b#ws/}\$" | head -n 1) (kept)" ;;
+  n=${olds#*" ${b#ws/}|"} n=${n%% *}
+  case "$olds" in *" ${b#ws/}|"*)
+    if git merge-base --is-ancestor "refs/remotes/origin/$b" "refs/remotes/origin/ws/$n" 2>/dev/null; then
+      echo "notice: $b is ws/$n's old name (kept; delete it once no clone is on it)"
+    else echo "notice: $b, ws/$n's old name, has commits ws/$n lacks: merge it into ws/$n in a PR (kept)"; fi ;;
   *) echo "notice: $b has no workspace folder on main (kept)" ;; esac
 done
 exit "$failed"

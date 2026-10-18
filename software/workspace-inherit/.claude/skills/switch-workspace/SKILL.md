@@ -6,13 +6,12 @@ description: Switch this clone to another Delphi workspace, or to Delphi's main,
 Run from the workspace root:
 
 ```
-bash .delphi/switch.sh <name>        # ws/<name>: its place in the tree, e.g. software/application-software/argos/argos-dev
-bash .delphi/switch.sh argos-dev     # its last part alone, if only one workspace ends in it
+bash .delphi/switch.sh <name>        # ws/<name>: its dotted name, e.g. s.app.argos.argos-dev
 bash .delphi/switch.sh main          # Delphi's main: project folders, templates, CI
 ```
 
 - The user can also switch from the `/ws-delphi` pane (the `delphi` plugin's mod), which shows them as cards (`bash .delphi/switch.sh --list`): press one, then Switch workspace; `/ws-delphi <name>` switches straight away, and `/ws-delphi --web` opens the same cards in a browser tab.
-- List workspaces: `git branch -r --list 'origin/ws/*'`. A workspace's name is its folder path on main without `workspaces/`.
+- List workspaces and their project folders: `bash .delphi/switch.sh --list`.
 - It refuses while tracked files have changes: commit them on a branch (and PR them) first. Then it fetches, switches, fast-forwards, and runs the new workspace's `.delphi/setup.sh`.
 - The post-checkout hook parks this workspace's `repos/`, `worktrees/`, `references/` and `linked/` in `.delphi/parked/<name>/` (git-ignored; `<name>` as in its `workspace.yml`) and brings the other's back at the same paths, so worktrees and the work in them return as they were. Switch back the same way. Never run `git clean -X` or `git stash --all` at the workspace root: they take ignored files, parked work included.
 - Before switching, stop anything running from `worktrees/` (dev servers, Docker builds): its folder moves.

@@ -74,10 +74,10 @@ let isRefreshing = false, fetchedAt = '' // the list is being fetched; when it l
 let isPulling = false, pullNote = '', isPullOk = true // a pull is running; what the last one did
 
 const MAIN_GROUP = 'project folders, templates, CI'
-function toWs(name) {
+function toWs(line) { // a switch.sh --list line without its mark: `main`, or `<name> <its project folder>`
+  const [name = '', folder = ''] = line.trim().split(' ')
   if (name === 'main') return { name, leaf: 'main', group: MAIN_GROUP }
-  const parts = name.split('/')
-  return { name, leaf: parts[parts.length - 1], group: parts.slice(1, -1).join(' / ') }
+  return { name, leaf: name.split('.').pop(), group: folder.split('/').slice(1).join(' / ') }
 }
 
 // el('div', { class: 'x', onclick }, child, ...): children are elements or text (never parsed as HTML)
@@ -166,7 +166,7 @@ function draw() {
 }
 
 function render() {
-  const cur = toWs(here)
+  const cur = all.find(w => w.name === here) || toWs(here)
   document.getElementById('here').replaceChildren(
     el('span', { class: 'dot' }, '●'), el('strong', {}, cur.leaf || 'not on a workspace'), el('span', { class: 'dim' }, cur.group))
 
