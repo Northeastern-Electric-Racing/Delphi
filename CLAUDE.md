@@ -1,12 +1,12 @@
 # Hub: application-software overview
 
-You're in Delphi workspace `software/application-software/hub` (branch `ws/software/application-software/hub`):
+You're in Delphi workspace `s.app.hub` (branch `ws/s.app.hub`):
 the head of application software's overview of the workspaces they run. It has no code repos by default; add
 one under `repos:` in `workspace.yml` to make worktrees here (`new-worktree` skill).
 
 Each workspace listed under `workspaces:` in `workspace.yml` is also cloned separately on this machine, on its
 own `ws/<name>` branch, with its own Claude Code session. The user works in those in parallel. Here you
-only see their read-only copies under `linked/<branch>/` (refresh with `bash .delphi/setup.sh`; change which are
+only see their read-only copies under `linked/<name>/` (refresh with `bash .delphi/setup.sh`; change which are
 listed with the `setup-workspace` skill). Park rough notes with the `journal` skill.
 
 ## What you do here
