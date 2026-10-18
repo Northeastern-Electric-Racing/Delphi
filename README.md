@@ -43,7 +43,7 @@ histories stay joined and edits on either side meet in normal three-way merges.
 
 ```sh
 git clone -b ws/s.app.argos.argos-dev https://github.com/Northeastern-Electric-Racing/Delphi.git delphi
-cd delphi && .delphi/setup.sh           # repos/ stores + default-branch worktrees in worktrees/ (git-ignored)
+cd delphi && .delphi/setup.sh           # clones repos: into repos/ (git-ignored)
 .delphi/switch.sh s.app.nero.nero-experimental   # switch freely (or to main; --list lists them): the hook parks them (and workspace.yml's park: folders) in .delphi/parked/
 claude plugin install delphi@delphi --scope user   # then /ws-delphi in Claude Code: a pane to keep open that switches workspaces (/ws-delphi --web: in a browser)
 git switch -c my-change                 # edit, commit, push, open a PR into ws/s.app.argos.argos-dev
@@ -53,7 +53,7 @@ git fetch origin && git merge origin/ws/s.app.argos.argos-dev   # update your br
 After your PR merges into `ws/<name>`, CI proposes it: a PR `ws/<name> → main` from
 `propose/<name>`, labelled `by: ai` (change the label if you wrote it; CI keeps it). Merge that with a
 merge commit or squash, never rebase. Never push to `ws/*` or
-`main` directly (protect them). Code changes go in a worktree, `worktrees/<repo>/<branch>` (`.delphi/new-worktree.sh`), through that repo's own PRs.
+`main` directly (protect them). Code changes go in the clone at `repos/<repo>` (one thing at a time) or a worktree from it, `worktrees/<repo>/<branch>` (`.delphi/new-worktree.sh`), through that repo's own PRs.
 
 **Conflicts.** If `main` and `ws/<name>` changed the same lines, CI lists the files and skips that
 workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, run
@@ -64,7 +64,7 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 ```yaml
 name: s.app.argos.argos-dev   # its dotted name
 harness: claude-code
-repos:                  # stored in repos/<name>, checked out in worktrees/<name>/ by .delphi/setup.sh
+repos:                  # cloned at repos/<name>/ by .delphi/setup.sh; worktrees from it in worktrees/<name>/
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
   socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch
@@ -74,7 +74,7 @@ workspaces:             # Delphi workspaces (by name) or main, cloned into works
 
 `repos:` are the code you change. `references-git:` are open-source dependencies the agent reads for
 context: `setup.sh` checks each out shallow and detached at its pin (or the default branch), with
-pushes disabled, and refreshes them on every run. They get no store and no worktrees. Names are
+pushes disabled, and refreshes them on every run. They get no clone in `repos/` and no worktrees. Names are
 unique across both maps. The `-git` suffix leaves room for other kinds of references later.
 `workspaces:` are other workspaces (`- <name>`) or `main` to read: full clones of Delphi itself, each on
 its branch (`ws/<name>` or `main`) tracking origin, so `git status` and `git log` work as usual. Every

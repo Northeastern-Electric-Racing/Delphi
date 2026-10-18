@@ -6,7 +6,7 @@ park:                     # `- <folder>`: root folders that park with this works
   - pictures
   - .playwright-mcp
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
-repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
+repos:                    # `<name>: <git-url>`: code you change; a clone at repos/<name> (worktrees from it: worktrees/<name>/<branch>)
   nero: https://github.com/Northeastern-Electric-Racing/Nero-2.0.git
 workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, not edit from here; a clone on its branch at workspaces/<name or main>
   # - main

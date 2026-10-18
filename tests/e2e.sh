@@ -331,7 +331,7 @@ expect_bad unknown-workspace "lists nope, which isn't a workspace on main" sh -c
 expect_bad template-delphi "templates/workspace/.delphi: scripts live only" mkdir templates/workspace/.delphi
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
-# --- 8. setup.sh fetches workspace.yml repos into repos/<repo>, checks out the default branch under worktrees/, and is idempotent
+# --- 8. setup.sh clones workspace.yml repos at repos/<repo> on the default branch, adds no worktree, and is idempotent
 for r in lib1 lib2; do
   git init -q "$t/$r" && git -C "$t/$r" commit -q --allow-empty -m "$r" && git clone -q --bare "$t/$r" "$t/$r.git"
 done
@@ -342,21 +342,23 @@ printf 'name: s.app.argos.argos-dev\nharness: claude-code\nplugins:\n  - x.y\npa
 /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 || fail "setup.sh failed"
 /bin/bash "$t/ws/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh re-run failed"
 for r in lib1 lib2; do
-  [ "$(git -C "$t/ws/worktrees/$r/$def" rev-parse HEAD)" = "$(git -C "$t/$r" rev-parse HEAD)" ] || fail "$r default worktree missing"
-  [ "$(git -C "$t/ws/worktrees/$r/$def" branch --show-current)" = "$def" ] || fail "$r default worktree not on $def"
+  [ "$(git -C "$t/ws/repos/$r" rev-parse HEAD)" = "$(git -C "$t/$r" rev-parse HEAD)" ] || fail "repos/$r not cloned"
+  [ "$(git -C "$t/ws/repos/$r" branch --show-current)" = "$def" ] || fail "repos/$r not on $def"
 done
-[ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = true ] || fail "repos/lib1 not a bare store"
+[ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = false ] || fail "repos/lib1 is a bare store"
+[ ! -e "$t/ws/worktrees" ] || fail "setup.sh made worktrees/"
 grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
 for d in /repos/ /worktrees/ /.journal/ /.playwright-mcp/ /pictures/ .DS_Store; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
 mkdir -p "$t/ws/.playwright-mcp" "$t/ws/pictures/b" "$t/ws/docs" && touch "$t/ws/.playwright-mcp/p.yml" "$t/ws/pictures/b/s.png" "$t/ws/.DS_Store" "$t/ws/docs/.DS_Store"
 [ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/, worktrees/ or a tool's files show in status: $(git -C "$t/ws" status --porcelain)"
-rm -rf "$t/ws/worktrees/lib2" && git -C "$t/ws/repos/lib2" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
-  [ -d "$t/ws/worktrees/lib2/$def" ] || fail "re-run did not restore a missing default worktree"
-ok "setup.sh makes a bare store in repos/ plus a default-branch worktree in worktrees/, excludes both (and tools' files) once, and is idempotent"
-w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" && git clone -q "$t/lib1.git" "$w/repos/lib1"
-/bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed on a pre-existing clone"
-{ grep -q "could not check out worktrees/lib1/$def" "$t/err" && [ -d "$w/worktrees/lib2/$def" ]; } || fail "pre-existing clone not reported"
-ok "setup.sh warns and carries on when repos/<repo> is an older plain clone"
+rm -rf "$t/ws/repos/lib2" && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
+  [ -d "$t/ws/repos/lib2/.git" ] || fail "re-run did not restore a missing clone"
+ok "setup.sh clones repos: at repos/<repo> on the default branch, adds no worktree, excludes repos/ and worktrees/ (and tools' files) once, and is idempotent"
+w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" && git init -q --bare "$w/repos/lib1"
+/bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed with an older bare store"
+{ grep -q "repos/lib1: already present" "$t/out" && [ "$(git -C "$w/repos/lib1" rev-parse --is-bare-repository)" = true ] &&
+  [ -d "$w/repos/lib2/.git" ]; } || fail "older bare store not left as it is"
+ok "setup.sh leaves an older clone's bare store in repos/ as it is"
 git clone -q -c core.autocrlf=true -b ws/$AN "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh fails with core.autocrlf=true"
@@ -392,8 +394,7 @@ local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch>
   git -C "$w" checkout -q -b "$1" "origin/$2" && printf 'name: %s\nharness: claude-code\npark:\n  - pictures\nrepos:\n  %s: %s\nreferences-git:\n  %s-ref: file://%s\nworkspaces:\n  - main\n' \
     "$3" "$4" "$t/$4.git" "$4" "$t/$4.git" >"$w/workspace.yml" && git -C "$w" commit -qam "$1" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
 }
-live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" branch --show-current)" = "$def" ] &&
-  ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
+live() { [ "$(git -C "$w/repos/$1" branch --show-current 2>/dev/null)" = "$def" ] && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
   [ -f "$w/workspaces/main/ci/sync.sh" ]; }
 local_ws a1 "ws/$AN" "$AN" lib1 || fail "park: setup on argos-dev failed"
 ours() { [ ! -L "$w/.git/hooks/post-checkout" ] && grep -qx '\[ ! -f .delphi/park.sh \] || exec bash .delphi/park.sh "$@"' "$w/.git/hooks/post-checkout"; }
@@ -405,14 +406,14 @@ local_ws b1 "ws/$BN" "$BN" lib2 || fail "park: setup on bms-dev failed"
   [ -f "$w/.delphi/parked/$AN/pictures/a2/s.png" ] && [ -f "$w/notes/x" ]; } ||
   fail "park: .journal/ and park: folders not parked with argos-dev, or an unlisted folder moved"
 rm -r "$w/notes"
-{ [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/$AN/worktrees/lib1/$def" ] &&
+{ [ ! -e "$w/repos/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/$AN/repos/lib1/.git" ] &&
   [ -d "$w/.delphi/parked/$AN/workspaces/main/.git" ] && live lib2; } ||
   fail "park: argos-dev not parked on bms-dev"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: parked clones show in status: $(git -C "$w" status --porcelain)"
 { git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/workspaces" ]; } ||
   fail "park: clones visible on main: $(ls -A "$w")"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
-{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/$BN/repos/lib2" ] &&
+{ git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/repos/lib2" ] && [ -d "$w/.delphi/parked/$BN/repos/lib2" ] &&
   [ ! -e "$w/.delphi/parked/$AN" ]; } ||
   fail "park: argos-dev not restored"
 { [ -f "$w/.journal/ideas/n.md" ] && [ -f "$w/pictures/a2/s.png" ]; } || fail "park: .journal/ and pictures/ not restored"
@@ -421,12 +422,12 @@ git -C "$w" checkout -q -b a4 a2 && printf 'name: %s\nharness: claude-code\npark
 { [ -d "$w/.git" ] && grep -q "won't park '.git'" "$t/err" && grep -q "won't park '../up'" "$t/err" && git -C "$w" checkout -q a2 && live lib1; } ||
   fail "park: a bad park: entry was not skipped: $(cat "$t/err")"
 ok "park.sh skips a park: entry that isn't a folder name at the root (.git, ../x)"
-git -C "$w/worktrees/lib1/$def" commit -q --allow-empty -m "after restore" || fail "park: restored worktree unusable"
+git -C "$w/repos/lib1" commit -q --allow-empty -m "after restore" || fail "park: restored clone unusable"
 { git -C "$w" checkout -q b1 && live lib2 && git -C "$w" checkout -q a1 && live lib1; } || fail "park: second round trip"
-git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q a1 2>"$t/err"
-{ grep -q "worktrees/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.delphi/parked/$AN/worktrees" ]; } ||
+git -C "$w" checkout -q main && mkdir "$w/references" && git -C "$w" checkout -q a1 2>"$t/err"
+{ grep -q "references/ is in the way" "$t/err" && [ -d "$w/repos/lib1" ] && [ -d "$w/.delphi/parked/$AN/references" ]; } ||
   fail "park: a folder in the way was not reported and kept: $(cat "$t/err")"
-{ rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
+{ rmdir "$w/references" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
 ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
 ok "parked clones sit git-ignored in .delphi/parked/<name>/, the workspace's name"
 ok "park.sh also parks .journal/ and the folders under the leaving workspace's park:, and restores all a workspace parked"
@@ -518,7 +519,7 @@ nw code feat >/dev/null && [ "$(git -C "$w/worktrees/code/feat" rev-parse HEAD)"
 nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse develop)" ] ||
   fail "<base> ignored"
 [ "$(nw code feat)" = "$w/worktrees/code/feat" ] || fail "rerun did not reuse"
-[ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
+[ "$(git -C "$w/repos/code" branch --show-current)" = "$def" ] || fail "repos/code left its branch"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
 # skill scripts read the workspace from $DELPHI_ROOT (the session hook evals paths.sh's export line) and every folder from paths.sh
 (. "$w/.delphi/paths.sh" && [ "$DELPHI_ROOT" = "$w" ] && [ "$DELPHI_REPOS" = "$w/repos" ] &&
@@ -584,7 +585,7 @@ printf 'name: s.electrical.bms-dev\nharness: claude-code\nrepos:\n  code: %s\nwo
   printf 'name: %s\nharness: claude-code\nrepos:\n  lib1: %s\nworkspaces:\n  - main\n  - %s\n' "$AN" "$t/lib1.git" "$BN" >workspace.yml &&
   git commit -qam "sandbox repos" && git push -q origin HEAD:ws/$AN)
 bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed with links: $(cat "$t/err")"
-{ [ -d "$w/workspaces/$AN/worktrees/lib1" ] && [ ! -e "$w/workspaces/$AN/workspaces" ]; } ||
+{ [ -d "$w/workspaces/$AN/repos/lib1/.git" ] && [ ! -e "$w/workspaces/$AN/workspaces" ]; } ||
   fail "setup.sh did not run a link's own setup, or that setup cloned its own workspaces: $(cat "$t/err")"
 [ "$(git -C "$w/workspaces/$AN" rev-parse HEAD)" = "$(o rev-parse "ws/$AN")" ] || fail "copy not at ws/$AN"
 { [ "$(git -C "$w/workspaces/$AN" branch --show-current)" = "ws/$AN" ] && [ "$(git -C "$w/workspaces/main" branch --show-current)" = main ] &&
@@ -662,7 +663,7 @@ sw $BN >"$t/out" 2>&1 || fail "switch to bms-dev failed: $(cat "$t/out")"
 commit_on ws/$AN docs/CONTEXT.md "while away"
 sw "ws/$AN" >"$t/out" 2>&1 || fail "switch back (by branch) failed: $(cat "$t/out")"
 { [ "$(git -C "$w" branch --show-current)" = ws/$AN ] && grep -qx "while away" "$w/docs/CONTEXT.md" &&
-  [ -d "$w/worktrees/lib1/$def" ] && [ -f "$w/workspaces/main/ci/sync.sh" ]; } || fail "switch: argos-dev not restored and fast-forwarded"
+  [ -d "$w/repos/lib1/.git" ] && [ -f "$w/workspaces/main/ci/sync.sh" ]; } || fail "switch: argos-dev not restored and fast-forwarded"
 { sw main >/dev/null 2>&1 && [ "$(git -C "$w" branch --show-current)" = main ] && [ ! -e "$w/repos" ] && [ -f "$w/ci/sync.sh" ]; } ||
   fail "switch to main"
 git -C "$w" switch -q ws/$AN

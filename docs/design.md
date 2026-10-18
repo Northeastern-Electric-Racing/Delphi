@@ -196,14 +196,14 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 
 ## 5. `.delphi/setup.sh` (on every branch; does nothing on main, which has no `workspace.yml`)
 
-First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
-`repos/<name>`, then checks out its default branch as the first worktree,
-`worktrees/<name>/<default-branch>/` (re-created if missing). Adds the folders `park.sh` parks
+First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, clones it at
+`repos/<name>/` on its default branch, for people working on one thing at a time, and adds nothing
+else (an older clone's bare store there is left as it is). Adds the folders `park.sh` parks
 and `.DS_Store` to the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
-no store and no worktrees (`new-worktree.sh` refuses them). Each entry under `workspaces:` (`- <name>`
+no clone in `repos/` and no worktrees (`new-worktree.sh` refuses them). Each entry under `workspaces:` (`- <name>`
 or `- main`; the workspace itself is skipped) gets a full clone of the clone's own origin at
 `workspaces/<name>/`, on that branch (`ws/<name>` or `main`) tracking origin, so it behaves as a normal
 checkout (`git status` shows its branch). Every run switches it back to that branch if it was switched
@@ -218,7 +218,7 @@ and each copy parks with its workspace. Writes the clone's `post-checkout` hook,
 runs `.delphi/park.sh` from the worktree that checked out (replacing an older link to or copy of a
 `park.sh`), unless another hook is there (it says so and leaves it). `.delphi/` is on every branch, so
 the hook always runs the `park.sh` just checked out, never a stale copy, and each worktree of the clone
-its own: the worktrees share one hook, so a link would run one checkout's `park.sh` for all of them. Nothing else: code is edited only in worktrees. Must run on macOS `/bin/bash` 3.2
+its own: the worktrees share one hook, so a link would run one checkout's `park.sh` for all of them. Nothing else. Must run on macOS `/bin/bash` 3.2
 and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/park.sh` (the hook) lets one clone switch freely between workspaces and `main`. When a
@@ -236,7 +236,7 @@ out; nothing is repaired or rebuilt. Branches of the same workspace move nothing
 overwrites: a folder in the way is reported and the other copy stays parked.
 
 `.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `worktrees/<repo>/<branch>`
-from that store: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
+from the clone at `repos/<repo>`: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
 The inherited `new-worktree` skill makes worktrees the default way to start a branch.
 
 `.delphi/paths.sh` is the layout in one place: sourced, it sets and exports `DELPHI_ROOT` (from the
