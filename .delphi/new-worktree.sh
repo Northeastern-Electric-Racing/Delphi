@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # .delphi/new-worktree.sh <repo> <branch> [<base>]: create or reuse worktrees/<repo>/<branch> from
-# the store .delphi/setup.sh made at repos/<repo>, and print its path. An existing branch
+# the clone .delphi/setup.sh made at repos/<repo>, and print its path. An existing branch
 # (local or on origin) is checked out; a new one starts from <base> (default: origin's default
 # branch). Runs on bash 3.2 and Git Bash.
 set -euo pipefail

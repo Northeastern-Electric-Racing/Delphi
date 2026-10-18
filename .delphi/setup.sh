@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # .delphi/setup.sh: run in a checkout of ws/<name> (the workspace root; .delphi/ comes from Delphi's
 # main, which sync keeps on every ws/* branch, so edit it only there; on main this does nothing). For each repo listed under
-# `repos:` in workspace.yml, fetches it into a bare store at repos/<name> (unless present) and checks
-# out its default branch as the first worktree, worktrees/<name>/<default-branch>. For each repo under
+# `repos:` in workspace.yml, clones it at repos/<name> (unless present), on its default branch, and
+# adds nothing else (.delphi/new-worktree.sh makes worktrees from it). For each repo under
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
 # run, with pushes disabled. Each entry under `workspaces:` (`- <name>`, a workspace's dotted name
@@ -99,25 +99,8 @@ while read -r kind name url ref; do
   if [ "$kind" = link ]; then [ -n "$inside" ] || link "$name"; continue; fi
   case "$name" in . | .. | *[!A-Za-z0-9._-]*) echo "setup: skipping unsafe repo name '$name'" >&2 && continue ;; esac
   if [ "$kind" = ref ]; then readonly_copy "references/$name" "$url" ${ref:+"$ref"} && continue; fi
-  store=repos/$name
-  if [ -e "$store" ]; then
-    echo "repos/$name: already present"
-  else
-    git init -q --bare "$store"
-    git -C "$store" remote add origin "$url"
-    git -C "$store" fetch -q origin </dev/null
-    git -C "$store" remote set-head origin -a >/dev/null </dev/null
-  fi
-  def=$(git -C "$store" symbolic-ref -q --short refs/remotes/origin/HEAD) ||
-    { echo "setup: repos/$name has no origin/HEAD; skipping its worktree" >&2 && continue; }
-  def=${def#origin/}
-  dest=worktrees/$name/$def
-  if [ -e "$dest" ]; then continue
-  elif git -C "$store" rev-parse -q --verify "refs/heads/$def" >/dev/null; then
-    git -C "$store" worktree add -q "$PWD/$dest" "$def" ||
-      echo "setup: could not check out $dest (is $def checked out in repos/$name?)" >&2
-  else
-    git -C "$store" worktree add -q --track -b "$def" "$PWD/$dest" "origin/$def"
+  if [ -e "repos/$name" ]; then echo "repos/$name: already present"
+  else git clone -q "$url" "repos/$name" </dev/null || echo "setup: could not clone $url into repos/$name" >&2
   fi
 done <<EOF2
 $list
