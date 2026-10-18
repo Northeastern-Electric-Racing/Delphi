@@ -8,7 +8,7 @@
 # run, with pushes disabled. Each entry under `workspaces:` (`- ws/<name>` or `- main`, a workspace
 # being named by its place in the tree) gets the same kind of copy of that branch of this clone's
 # origin (Delphi), at linked/<branch>; to edit one, switch this clone to it (.delphi/switch.sh). Adds the
-# folders in .delphi/park.list and macOS's .DS_Store to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
+# folders park.sh parks and macOS's .DS_Store to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
 # every branch) as just checked out in the worktree that checked out (unless another hook is there), so switching
 # to another workspace or main parks those folders. First
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
@@ -103,7 +103,8 @@ EOF2
 
 exclude=$(git rev-parse --git-path info/exclude)
 mkdir -p "$(dirname "$exclude")"
-for d in $(awk '!/^[[:space:]]*(#|$)/ { print "/" $1 "/" }' .delphi/park.list) .DS_Store; do
+for d in /repos/ /worktrees/ /references/ /linked/ /.journal/ $(awk '/^[^[:space:]#]/ { s = /^park:/; next }
+  s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print "/" $0 "/" }' workspace.yml) .DS_Store; do
   grep -qxF "$d" "$exclude" 2>/dev/null || echo "$d" >>"$exclude"
 done
 hook=$(git rev-parse --git-path hooks/post-checkout)

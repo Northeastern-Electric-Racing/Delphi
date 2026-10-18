@@ -18,6 +18,5 @@ files:                        # repo-relative paths; a trailing / means everythi
   - .delphi/plugins.sh
   - .delphi/switch.sh
   - .delphi/park.sh
-  - .delphi/park.list
   - .delphi/migrations/
   - .github/workflows/delphi.yml

@@ -42,11 +42,6 @@ for f in $files; do git ls-files --error-unmatch -- "$f" >/dev/null 2>&1 || bad 
 for f in $(git ls-files .delphi); do
   [ "$f" = .delphi/versions ] || echo "$files" | grep -qxF "$f" || bad "$f: in .delphi/ but not listed in .delphi/manifest.yml"
 done
-parks=$(awk '!/^[[:space:]]*(#|$)/ { print $1 }' .delphi/park.list 2>/dev/null || true)
-for d in $parks; do
-  case "$d" in */* | . | .. | .git | .delphi) bad ".delphi/park.list: '$d' must be a folder name at the root, not .git or .delphi" ;; esac
-done
-for d in repos worktrees references linked; do echo "$parks" | grep -qx "$d" || bad ".delphi/park.list: must list $d (setup.sh makes it)"; done
 managed=$(echo "$files" | grep -v '^\.delphi/' || true) # the rest of Delphi's files: the same in the template and every workspace
 for m in $managed; do cmp -s "$m" "$tpl/$m" || bad "$tpl/$m: differs from $m"; done
 
@@ -110,6 +105,13 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
     /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
     /^plugins:[[:space:]]*(#.*)?$/ { r = 4; next }
     /^opt-out:[[:space:]]*(#.*)?$/ { r = 5; next }
+    /^park:[[:space:]]*(#.*)?$/ { r = 6; next }
+    r == 6 && /^[[:space:]]/ {
+      v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._-]+[[:space:]]*(#.*)?$/ || v ~ /^(\.|\.\.|\.git|\.delphi)$/) {
+        print "bad park entry (want `  - <folder at the root>`, not .git or .delphi): " $0; next }
+      if (pk[v]++) print "duplicate park entry: " v
+      next }
     r == 5 && /^[[:space:]]/ {
       if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._][A-Za-z0-9._\/-]*[[:space:]]*(#.*)?$/ || $0 ~ /(^|[[:space:]\/])\.\.(\/|[[:space:]]|$)/) {
         print "bad opt-out entry (want `  - <path it inherits>`, e.g. .claude/skills/journal): " $0; next }

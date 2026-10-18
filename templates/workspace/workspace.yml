@@ -4,6 +4,8 @@ plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists
   # - argos.testing   # the set at software/application-software/argos/plugins/<harness>/testing/
 opt-out:                  # `- <path>`: files from the workspace-inherit/ folders above that CI leaves alone here, so the workspace keeps its own copy (or none)
   # - .claude/skills/journal
+park:                     # `- <folder>`: root folders that park with this workspace on a switch (.delphi/park.sh), besides the ones it always parks
+  # - pictures
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git

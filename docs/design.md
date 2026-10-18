@@ -54,7 +54,7 @@ software/<org>/…/plugins/scope        the folder's short name in plugin names 
 .claude-plugin/marketplace.json       every Claude Code plugin set under software/ (generated)
 software/<org>/…/workspaces/<name>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
-.delphi/                              {setup,new-worktree,switch,park,plugins,version}.sh  park.list  manifest.yml  versions
+.delphi/                              {setup,new-worktree,switch,park,plugins,version}.sh  manifest.yml  versions
                                       migrations/  .gitattributes  .gitignore: on every ws/* root
 ci/sync.sh  ci/check.sh               CI scripts
 ci/plugins.sh                         writes the marketplace and each workspace's .claude/settings.json
@@ -192,7 +192,7 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 
 First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
 `repos/<name>`, then checks out its default branch as the first worktree,
-`worktrees/<name>/<default-branch>/` (re-created if missing). Adds the folders in `.delphi/park.list`
+`worktrees/<name>/<default-branch>/` (re-created if missing). Adds the folders `park.sh` parks
 and `.DS_Store` to the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
@@ -210,8 +210,11 @@ and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/park.sh` (the hook) lets one clone switch freely between workspaces and `main`. When a
 branch checkout changes the `name:` in `workspace.yml` (none on `main`), it moves the old
-workspace's root folders named in `.delphi/park.list` to `.delphi/parked/<name>/` and moves the
-new one's back. To park another folder, add it there (a new version); `ci/check.sh` checks the entries. A name from before workspaces were named by path (`argos-dev`) is the same
+workspace's root folders to `.delphi/parked/<name>/`: the ones `.delphi/paths.sh` names, `.journal/`,
+and those under `park:` in the `workspace.yml` of the branch it leaves, so each workspace chooses its
+own (a project's `workspace-defaults/` can start the list). It moves back everything parked for the
+new one, whatever its list says now. Entries are folder names at the root, never `.git` or `.delphi`:
+`ci/check.sh` checks them and `park.sh` skips a bad one. A name from before workspaces were named by path (`argos-dev`) is the same
 workspace as the path ending in it, so moving a clone onto its renamed branch moves nothing.
 `.delphi/.gitignore` ignores `parked/`; since `.delphi/` is on every branch, so is that rule. Parked
 work is ignored, not hidden: `git clean -X` or `git stash --all` at the root would take it. A move is a rename, so it is instant and every
