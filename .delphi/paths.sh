@@ -6,7 +6,7 @@
 # Bash and zsh safe.
 # shellcheck shell=bash
 DELPHI_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)
-DELPHI_REPOS=$DELPHI_ROOT/repos               # bare stores: repos/<repo>
+DELPHI_REPOS=$DELPHI_ROOT/repos               # clones: repos/<repo>
 DELPHI_WORKTREES=$DELPHI_ROOT/worktrees       # checkouts: worktrees/<repo>/<branch>
 DELPHI_REFERENCES=$DELPHI_ROOT/references     # read-only dependency sources: references/<name>
 DELPHI_WORKSPACES=$DELPHI_ROOT/workspaces     # Delphi clones to read: workspaces/<workspace>, workspaces/main
