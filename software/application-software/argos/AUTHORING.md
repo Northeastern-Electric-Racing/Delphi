@@ -25,7 +25,7 @@ a PR to `main`. Trim what the new workspace doesn't need before merging.
 ## Change the defaults or this folder
 
 Edit on a branch of `main` and open a PR to `main` (from a workspace: `bash .delphi/switch.sh main`;
-don't edit `linked/main/` from a workspace). `workspace-defaults/`
+don't edit `workspaces/main/` from a workspace). `workspace-defaults/`
 only affects workspaces created afterwards; to change existing ones, PR each workspace too. `workspace-inherit/` reaches
 every Argos workspace on the next sync.
 
