@@ -301,7 +301,7 @@ release() { # <version> [<migration slug>]: bump to <version> (with an empty mig
   sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
     echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
 }
-expect_bad migration-patch "$VN has a migration, so it must bump MINOR" release "$VN" x
+expect_bad migration-patch "$VN has a migration, so it must bump $([ "${V%%.*}" = 0 ] && echo MINOR || echo MAJOR)" release "$VN" x
 expect_bad version-down "0.0.9 is not above $V" release 0.0.9
 expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
 expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
@@ -385,7 +385,7 @@ git -C "$t/lib1" commit -q --allow-empty -m "lib1 three" && git -C "$t/lib1" pus
 ok "setup.sh checks out references-git: repos shallow, detached, at their pin, push disabled, refreshed on re-run"
 ok "new-worktree.sh refuses a reference repo"
 
-# --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/, linked/ in the
+# --- 8c. park.sh: switching to another workspace or main parks repos/, worktrees/, references/, workspaces/ in the
 # git-ignored .delphi/parked/ and restores them, same paths, when the workspace comes back; same-workspace branches don't move
 w=$t/park && git clone -q -b ws/$AN "$t/origin.git" "$w"
 local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch> whose workspace.yml lists <repo>
@@ -394,7 +394,7 @@ local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch>
 }
 live() { [ -d "$w/worktrees/$1/$def" ] && [ "$(git -C "$w/worktrees/$1/$def" branch --show-current)" = "$def" ] &&
   ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
-  [ -f "$w/linked/main/ci/sync.sh" ]; }
+  [ -f "$w/workspaces/main/ci/sync.sh" ]; }
 local_ws a1 "ws/$AN" "$AN" lib1 || fail "park: setup on argos-dev failed"
 ours() { [ ! -L "$w/.git/hooks/post-checkout" ] && grep -qx '\[ ! -f .delphi/park.sh \] || exec bash .delphi/park.sh "$@"' "$w/.git/hooks/post-checkout"; }
 ours || fail "setup.sh did not write the hook that runs .delphi/park.sh"
@@ -406,10 +406,10 @@ local_ws b1 "ws/$BN" "$BN" lib2 || fail "park: setup on bms-dev failed"
   fail "park: .journal/ and park: folders not parked with argos-dev, or an unlisted folder moved"
 rm -r "$w/notes"
 { [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/$AN/worktrees/lib1/$def" ] &&
-  [ -d "$w/.delphi/parked/$AN/linked/main/.git" ] && live lib2; } ||
+  [ -d "$w/.delphi/parked/$AN/workspaces/main/.git" ] && live lib2; } ||
   fail "park: argos-dev not parked on bms-dev"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: parked clones show in status: $(git -C "$w" status --porcelain)"
-{ git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/linked" ]; } ||
+{ git -C "$w" checkout -q main && [ ! -e "$w/repos" ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/references" ] && [ ! -e "$w/workspaces" ]; } ||
   fail "park: clones visible on main: $(ls -A "$w")"
 [ -z "$(git -C "$w" status --porcelain)" ] || fail "park: main not clean"
 { git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/$BN/repos/lib2" ] &&
@@ -522,9 +522,9 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
 # skill scripts read the workspace from $DELPHI_ROOT (the session hook evals paths.sh's export line) and every folder from paths.sh
 (. "$w/.delphi/paths.sh" && [ "$DELPHI_ROOT" = "$w" ] && [ "$DELPHI_REPOS" = "$w/repos" ] &&
-  [ "$DELPHI_WORKTREES" = "$w/worktrees" ] && [ "$DELPHI_REFERENCES" = "$w/references" ] && [ "$DELPHI_LINKED" = "$w/linked" ]) ||
+  [ "$DELPHI_WORKTREES" = "$w/worktrees" ] && [ "$DELPHI_REFERENCES" = "$w/references" ] && [ "$DELPHI_WORKSPACES" = "$w/workspaces" ]) ||
   fail "paths.sh layout"
-[ "$(cd "$t" && eval "$(bash "$w/.delphi/paths.sh")" && echo "$(printenv DELPHI_ROOT) $(printenv DELPHI_LINKED)")" = "$w $w/linked" ] ||
+[ "$(cd "$t" && eval "$(bash "$w/.delphi/paths.sh")" && echo "$(printenv DELPHI_ROOT) $(printenv DELPHI_WORKSPACES)")" = "$w $w/workspaces" ] ||
   fail "paths.sh's export line doesn't reach child processes"
 cap=$src/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh
 { e=$(cd "$t" && DELPHI_ROOT=$w bash "$cap" -c ideas "a note") && [ "${e#"$w/.journal/ideas/"}" != "$e" ] && grep -q "a note" "$e"; } ||
@@ -576,34 +576,39 @@ pl app@delphi user - 0 argos@delphi local "$w" 0 x@other user - 0 >"$t/plugins.j
 { [ -z "$(plugins)" ] && [ ! -s "$t/claude.log" ]; } || fail "plugins.sh did something with every plugin in order: $(cat "$t/claude.log")"
 ok "setup.sh (plugins.sh) makes this clone's @delphi plugins what the workspace enables and uninstalls ones the marketplace dropped; warns offline or for other marketplaces; quiet when all is in order"
 
-# --- 12. workspaces: setup.sh clones listed workspaces and main at linked/<name>, on their branch, pulled on re-run;
+# --- 12. workspaces: setup.sh clones listed workspaces and main at workspaces/<name>, on their branch, pulled on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely
 printf 'name: s.electrical.bms-dev\nharness: claude-code\nrepos:\n  code: %s\nworkspaces:\n  - s.app.argos.argos-dev  # a comment\n  - main\n  - s.electrical.bms-dev\n  - Bad\n  - ws/argos-dev\n' \
   "$t/code" >"$w/workspace.yml"
+(cd "$t/dev" && git fetch -q && git checkout -q -B sandbox origin/ws/$AN && # its own setup (run by a link) uses sandbox repos only
+  printf 'name: %s\nharness: claude-code\nrepos:\n  lib1: %s\nworkspaces:\n  - main\n  - %s\n' "$AN" "$t/lib1.git" "$BN" >workspace.yml &&
+  git commit -qam "sandbox repos" && git push -q origin HEAD:ws/$AN)
 bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed with links: $(cat "$t/err")"
-[ "$(git -C "$w/linked/$AN" rev-parse HEAD)" = "$(o rev-parse "ws/$AN")" ] || fail "copy not at ws/$AN"
-{ [ "$(git -C "$w/linked/$AN" branch --show-current)" = "ws/$AN" ] && [ "$(git -C "$w/linked/main" branch --show-current)" = main ] &&
-  [ "$(git -C "$w/linked/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] &&
-  [ "$(git -C "$w/linked/main" rev-parse --is-shallow-repository)" = false ]; } || fail "a link is not a full clone on its branch, tracking origin"
-[ -f "$w/linked/main/ci/sync.sh" ] || fail "link main"
-{ [ ! -e "$w/linked/$BN" ] && [ ! -e "$w/linked/Bad" ] && [ ! -e "$w/linked/ws" ] && grep -q "skipping bad workspaces: entry 'Bad'" "$t/err" &&
+{ [ -d "$w/workspaces/$AN/worktrees/lib1" ] && [ ! -e "$w/workspaces/$AN/workspaces" ]; } ||
+  fail "setup.sh did not run a link's own setup, or that setup cloned its own workspaces: $(cat "$t/err")"
+[ "$(git -C "$w/workspaces/$AN" rev-parse HEAD)" = "$(o rev-parse "ws/$AN")" ] || fail "copy not at ws/$AN"
+{ [ "$(git -C "$w/workspaces/$AN" branch --show-current)" = "ws/$AN" ] && [ "$(git -C "$w/workspaces/main" branch --show-current)" = main ] &&
+  [ "$(git -C "$w/workspaces/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] &&
+  [ "$(git -C "$w/workspaces/main" rev-parse --is-shallow-repository)" = false ]; } || fail "a link is not a full clone on its branch, tracking origin"
+[ -f "$w/workspaces/main/ci/sync.sh" ] || fail "link main"
+{ [ ! -e "$w/workspaces/$BN" ] && [ ! -e "$w/workspaces/Bad" ] && [ ! -e "$w/workspaces/ws" ] && grep -q "skipping bad workspaces: entry 'Bad'" "$t/err" &&
   grep -q "skipping bad workspaces: entry 'ws/argos-dev'" "$t/err"; } || fail "copied itself or a bad entry"
-git -C "$w/linked/$AN" push -q --dry-run origin HEAD:refs/heads/x 2>/dev/null || fail "pushes from a link are disabled"
+git -C "$w/workspaces/$AN" push -q --dry-run origin HEAD:refs/heads/x 2>/dev/null || fail "pushes from a link are disabled"
 commit_on ws/$AN docs/CONTEXT.md "linked update"
-{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && grep -qx "linked update" "$w/linked/$AN/docs/CONTEXT.md"; } || fail "re-run did not refresh a link"
-git -C "$w/linked/main" switch -q -c scratch && commit_on main README.md "main update"
-{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && [ "$(git -C "$w/linked/main" branch --show-current)" = main ] &&
-  grep -qx "main update" "$w/linked/main/README.md"; } || fail "re-run did not switch a link back to its branch and pull it"
-git -C "$w/linked/main" switch -q scratch && echo x >>"$w/linked/main/README.md"
-{ bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "could not switch linked/main back to main" "$t/err" &&
-  [ "$(git -C "$w/linked/main" branch --show-current)" = scratch ] && grep -qx x <(tail -n 1 "$w/linked/main/README.md"); } ||
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && grep -qx "linked update" "$w/workspaces/$AN/docs/CONTEXT.md"; } || fail "re-run did not refresh a link"
+git -C "$w/workspaces/main" switch -q -c scratch && commit_on main README.md "main update"
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && [ "$(git -C "$w/workspaces/main" branch --show-current)" = main ] &&
+  grep -qx "main update" "$w/workspaces/main/README.md"; } || fail "re-run did not switch a link back to its branch and pull it"
+git -C "$w/workspaces/main" switch -q scratch && echo x >>"$w/workspaces/main/README.md"
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "could not switch workspaces/main back to main" "$t/err" &&
+  [ "$(git -C "$w/workspaces/main" branch --show-current)" = scratch ] && grep -qx x <(tail -n 1 "$w/workspaces/main/README.md"); } ||
   fail "re-run moved a link with uncommitted changes, or failed: $(cat "$t/err")"
-git -C "$w/linked/main" checkout -q README.md && git -C "$w/linked/main" switch -q main && git -C "$w/linked/main" branch -q -D scratch
-[ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
-! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
-ok "setup.sh clones workspaces: at linked/<name> on their branch, skips itself and bad entries (old ws/<name> ones too), switches back and pulls on re-run, keeps local changes"
+git -C "$w/workspaces/main" checkout -q README.md && git -C "$w/workspaces/main" switch -q main && git -C "$w/workspaces/main" branch -q -D scratch
+[ "$(grep -cx /workspaces/ "$w/.git/info/exclude")" = 1 ] || fail "/workspaces/ not excluded exactly once"
+! git -C "$w" status --porcelain | grep -q workspaces || fail "workspaces/ shows in status"
+ok "setup.sh clones workspaces: at workspaces/<name> on their branch and runs their setup (which skips its own workspaces:), skips itself and bad entries (old ws/<name> ones too), switches back and pulls on re-run, keeps local changes"
 [ "$(git -C "$w" config delphi.$BN.version)" = "$VN" ] || fail "setup.sh did not record the version"
-old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
+old_link() { rm -rf "$w/linked/main" "$w/workspaces/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
 old_link && echo x >>"$w/linked/main/README.md"
 { ! /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "linked/main has uncommitted changes" "$t/err" &&
   grep -qx x <(tail -n 1 "$w/linked/main/README.md") && ! git -C "$w" config delphi.$BN.version >/dev/null; } ||
@@ -614,12 +619,12 @@ git -C "$w/linked/main" checkout -q README.md && git -C "$w/linked/main" commit 
 git -C "$w/linked/main" checkout -q --detach origin/main
 ok "a migration that can't finish safely stops setup.sh, keeps what it would lose, and records nothing"
 git -C "$w" config delphi.$BN.version 0.0.1
-{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && [ -f "$w/linked/main/.git" ] && grep -q "linked/main is a worktree" "$t/err"; } ||
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && [ -f "$w/workspaces/main/.git" ] && grep -q "workspaces/main is a worktree" "$t/err"; } ||
   fail "a migration ran again, or setup.sh wrote into a worktree: $(cat "$t/err")"
-ok "a recorded version's migrations don't run again; setup.sh never writes into a worktree in linked/"
-git -C "$w" config --unset delphi.$BN.version
-{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
-  [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
+ok "a recorded version's migrations don't run again; setup.sh never writes into a worktree in workspaces/"
+mkdir -p "$w/linked" && mkdir -p "$w/linked" && git -C "$w" worktree move "$w/workspaces/main" "$w/linked/main" && git -C "$w" config --unset delphi.$BN.version
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/workspaces/main/.git" ] &&
+  [ -f "$w/workspaces/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q "linked\|workspaces" && [ ! -e "$w/linked" ] &&
   [ "$(git -C "$w" config delphi.$BN.version)" = "$VN" ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
 ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a clone) and records the version"
 old_copy() { # <dir> <ref>: a link as setup.sh made it before 0.9.0: shallow, detached, pushes disabled
@@ -627,14 +632,14 @@ old_copy() { # <dir> <ref>: a link as setup.sh made it before 0.9.0: shallow, de
     git -C "$1" remote set-url --push origin DISABLED-read-only-copy && git -C "$1" fetch -q --depth 1 origin "$2" &&
     git -C "$1" checkout -q --detach FETCH_HEAD
 }
-old_copy "$w/linked/main" main && old_copy "$w/linked/$AN" "ws/$AN" && echo x >>"$w/linked/$AN/CLAUDE.md" && git -C "$w" config delphi.$BN.version 0.8.0
-{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.9.0" "$t/out" &&
-  [ "$(git -C "$w/linked/main" branch --show-current)" = main ] && [ "$(git -C "$w/linked/$AN" branch --show-current)" = "ws/$AN" ] &&
-  [ "$(git -C "$w/linked/main" rev-parse --is-shallow-repository)" = false ] && ! git -C "$w/linked/main" config remote.origin.pushurl >/dev/null &&
-  [ "$(git -C "$w/linked/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] && grep -qx x <(tail -n 1 "$w/linked/$AN/CLAUDE.md"); } ||
+rm -rf "$w/workspaces" && old_copy "$w/linked/main" main && old_copy "$w/linked/$AN" "ws/$AN" && echo x >>"$w/linked/$AN/CLAUDE.md" && git -C "$w" config delphi.$BN.version 0.8.0
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.9.0" "$t/out" && grep -q "moved linked/main to workspaces/main" "$t/out" && [ ! -e "$w/linked" ] &&
+  [ "$(git -C "$w/workspaces/main" branch --show-current)" = main ] && [ "$(git -C "$w/workspaces/$AN" branch --show-current)" = "ws/$AN" ] &&
+  [ "$(git -C "$w/workspaces/main" rev-parse --is-shallow-repository)" = false ] && ! git -C "$w/workspaces/main" config remote.origin.pushurl >/dev/null &&
+  [ "$(git -C "$w/workspaces/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] && grep -qx x <(tail -n 1 "$w/workspaces/$AN/CLAUDE.md"); } ||
   fail "0.9.0 did not turn old read-only copies into clones on their branch, keeping local changes: $(cat "$t/out")"
-git -C "$w/linked/$AN" checkout -q CLAUDE.md
-ok "0.9.0 turns old shallow, detached, push-disabled copies in linked/ into full clones on their branch, keeping what's in them"
+git -C "$w/workspaces/$AN" checkout -q CLAUDE.md
+ok "0.9.0 turns old shallow, detached, push-disabled copies in linked/ into full clones on their branch, keeping what's in them; 1.0.0 moves them to workspaces/"
 echo "# local" >>"$w/.delphi/switch.sh"
 { /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi $VN as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
@@ -652,12 +657,12 @@ echo x >>"$w/CLAUDE.md"
   fail "switch: dirty root not refused"
 git -C "$w" checkout -q CLAUDE.md
 sw $BN >"$t/out" 2>&1 || fail "switch to bms-dev failed: $(cat "$t/out")"
-{ [ "$(git -C "$w" branch --show-current)" = ws/$BN ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/linked" ] &&
-  [ -d "$w/.delphi/parked/$AN/linked/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
+{ [ "$(git -C "$w" branch --show-current)" = ws/$BN ] && [ ! -e "$w/worktrees" ] && [ ! -e "$w/workspaces" ] &&
+  [ -d "$w/.delphi/parked/$AN/workspaces/main" ]; } || fail "switch: argos-dev not parked on bms-dev"
 commit_on ws/$AN docs/CONTEXT.md "while away"
 sw "ws/$AN" >"$t/out" 2>&1 || fail "switch back (by branch) failed: $(cat "$t/out")"
 { [ "$(git -C "$w" branch --show-current)" = ws/$AN ] && grep -qx "while away" "$w/docs/CONTEXT.md" &&
-  [ -d "$w/worktrees/lib1/$def" ] && [ -f "$w/linked/main/ci/sync.sh" ]; } || fail "switch: argos-dev not restored and fast-forwarded"
+  [ -d "$w/worktrees/lib1/$def" ] && [ -f "$w/workspaces/main/ci/sync.sh" ]; } || fail "switch: argos-dev not restored and fast-forwarded"
 { sw main >/dev/null 2>&1 && [ "$(git -C "$w" branch --show-current)" = main ] && [ ! -e "$w/repos" ] && [ -f "$w/ci/sync.sh" ]; } ||
   fail "switch to main"
 git -C "$w" switch -q ws/$AN
@@ -739,11 +744,11 @@ w=$t/rename && git clone -q -b "ws/$CO" "$t/origin.git" "$w"
 mkdir -p "$w/.delphi/parked/$AO/linked/ws/$CO" "$w/linked/ws/$AO" && git -C "$w" config "delphi.$CO.version" 0.7.0 && git -C "$w" config "delphi.$AO.version" 0.7.0
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed running 0.8.0: $(cat "$t/out")"
 { grep -q "migrating $CN to 0.8.0" "$t/out" && ! grep -q "to 0.1.0" "$t/out" && [ -d "$w/.delphi/parked/$AN/linked/$CN" ] &&
-  [ ! -e "$w/.delphi/parked/software" ] && [ -d "$w/linked/$AN" ] && [ ! -e "$w/linked/ws" ] &&
+  [ ! -e "$w/.delphi/parked/software" ] && [ -d "$w/workspaces/$AN" ] && [ ! -e "$w/linked" ] &&
   [ "$(git -C "$w" config "delphi.$AN.version")" = 0.7.0 ] && ! git -C "$w" config "delphi.$AO.version" >/dev/null &&
   ! git -C "$w" config "delphi.$CO.version" >/dev/null && [ "$(git -C "$w" config "delphi.$CN.version")" = "$VN" ] &&
   [ "$(git -C "$w" branch --show-current)" = "ws/$CN" ] && [ "$(git -C "$w" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$CN" ]; } ||
-  fail "0.8.0 did not rename to dotted names: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/linked"); $(git -C "$w" config --get-regexp '^delphi\.')"
+  fail "0.8.0 did not rename to dotted names: $(cat "$t/out"); $(find "$w/.delphi/parked" "$w/workspaces"); $(git -C "$w" config --get-regexp '^delphi\.')"
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q "moved\|renamed" "$t/out"; } || fail "setup.sh re-ran 0.8.0: $(cat "$t/out")"
 { git -C "$w" config "delphi.$CN.version" 0.7.0 && /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q "moved\|renamed" "$t/out"; } || fail "0.8.0 is not safe to re-run: $(cat "$t/out")"
 ok "0.8.0 moves parked slots, linked/ws/<old> copies and version records to dotted names, and renames a clone's ws/<old> branch to ws/<name>, once"

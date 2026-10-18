@@ -68,7 +68,7 @@ repos:                  # stored in repos/<name>, checked out in worktrees/<name
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
   socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch
-workspaces:             # Delphi workspaces (by name) or main, cloned into linked/<name>/ to read
+workspaces:             # Delphi workspaces (by name) or main, cloned into workspaces/<name>/ to read
   - main
 ```
 
@@ -78,7 +78,8 @@ pushes disabled, and refreshes them on every run. They get no store and no workt
 unique across both maps. The `-git` suffix leaves room for other kinds of references later.
 `workspaces:` are other workspaces (`- <name>`) or `main` to read: full clones of Delphi itself, each on
 its branch (`ws/<name>` or `main`) tracking origin, so `git status` and `git log` work as usual. Every
-run switches a clone back to its branch if it was switched away and pulls it. By convention they aren't
+run switches a clone back to its branch if it was switched away, pulls it, and runs its own setup, so its repos and
+references are there too (a workspace inside another's `workspaces/` skips its own `workspaces:`). By convention they aren't
 edited from the workspace that links them; to change one, work in its own clone or switch to it.
 
 The workspace's dotted name is repeated in `name:` so a checkout knows which workspace it is; names
@@ -110,7 +111,7 @@ can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`
 `workspace-inherit/`: files (usually skills, never `CLAUDE.md`) that CI writes onto the `ws/*` branch
 of every workspace below it on each sync. Edit them on `main`; a workspace's own edit is undone. To
 keep its own copy, a workspace lists the path under `opt-out:` in its `workspace.yml`.
-A workspace that lists `main` under `workspaces:` reads them at `linked/main/` (recommended for every
+A workspace that lists `main` under `workspaces:` reads them at `workspaces/main/` (recommended for every
 new workspace); to change them, switch to `main`.
 
 ## CI (`.github/workflows/delphi.yml`)

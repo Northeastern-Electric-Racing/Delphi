@@ -21,7 +21,7 @@ slashed() { case "$1" in */*) echo 1 ;; esac; } # an old name, its folder's path
 top=$(git rev-parse --show-toplevel)
 park=$top/.delphi/parked
 parks() { # <commit>: the root folders its workspace parks
-  echo repos worktrees references linked .journal
+  echo repos worktrees references workspaces linked .journal # linked: workspaces/ before 1.0.0
   git show "$1:workspace.yml" 2>/dev/null | awk '/^[^[:space:]#]/ { s = /^park:/; next }
     s && /^[[:space:]]+-/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); print }' || true
 }

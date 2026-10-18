@@ -11,7 +11,7 @@ of each folder from `software/` down to its project folder, then `<leaf>`, joine
 short name is the one line in its `short-name` file, else its own name; `.delphi/names.sh [<rev>]`
 prints every workspace's name and folder, and every script that names workspaces uses it. Short
 names and leaves are lowercase letters, digits and `-`, so a name is always a valid ref and a flat
-folder name (`linked/<name>`, `.delphi/parked/<name>`), and no branch can be a folder of another. For each workspace, branch
+folder name (`workspaces/<name>`, `.delphi/parked/<name>`), and no branch can be a folder of another. For each workspace, branch
 **`ws/<name>`** has **that folder as its repo root**. Two directions keep them in sync, both subtree
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
@@ -205,11 +205,14 @@ checks it out detached, disables pushes, and does this again on every run, so th
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
 no store and no worktrees (`new-worktree.sh` refuses them). Each entry under `workspaces:` (`- <name>`
 or `- main`; the workspace itself is skipped) gets a full clone of the clone's own origin at
-`linked/<name>/`, on that branch (`ws/<name>` or `main`) tracking origin, so it behaves as a normal
+`workspaces/<name>/`, on that branch (`ws/<name>` or `main`) tracking origin, so it behaves as a normal
 checkout (`git status` shows its branch). Every run switches it back to that branch if it was switched
 away (with its own `.delphi/switch.sh`, which refuses over uncommitted changes) and pulls it
-(`--ff-only`); a failure is reported and the clone left as it is. By convention a workspace reads its
-links and doesn't edit them; `/linked/` is excluded too.
+(`--ff-only`), then runs its own `setup.sh`, so the linked workspace's repos and references are there
+as in its own clone (main has nothing to set up). A workspace that is itself another's
+`workspaces/<name>/` (setup.sh sees a Delphi workspace two folders up) skips its own `workspaces:`, so
+setups never chain. A failure is reported and the clone left as it is. By convention a workspace reads its
+links and doesn't edit them; `/workspaces/` is excluded too.
 Links are separate clones, not worktrees of the Delphi clone, so two workspaces can both link `main`
 and each copy parks with its workspace. Writes the clone's `post-checkout` hook, a 3-line script that
 runs `.delphi/park.sh` from the worktree that checked out (replacing an older link to or copy of a
@@ -237,7 +240,7 @@ from that store: checks out an existing branch, else starts one from `<base>` (d
 The inherited `new-worktree` skill makes worktrees the default way to start a branch.
 
 `.delphi/paths.sh` is the layout in one place: sourced, it sets and exports `DELPHI_ROOT` (from the
-file's own place) and `DELPHI_REPOS`, `DELPHI_WORKTREES`, `DELPHI_REFERENCES`, `DELPHI_LINKED`; run,
+file's own place) and `DELPHI_REPOS`, `DELPHI_WORKTREES`, `DELPHI_REFERENCES`, `DELPHI_WORKSPACES`; run,
 it prints them as an export line. Each harness's generated settings put that line into every shell
 at session start: for Claude Code, a SessionStart hook in `.claude/settings.json` (from
 `ci/plugins.sh`) appends it to `$CLAUDE_ENV_FILE`, which reaches the model's commands, subagents' and
