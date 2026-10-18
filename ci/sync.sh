@@ -157,18 +157,26 @@ propose() { # <name> <folder>: PR the worktree's ws/<name> into main if it chang
   case "$(tree HEAD)" in "$(tree "$main")" | "$(tree "refs/remotes/origin/propose/$1")") return ;; esac
   "$wt/ci/check.sh" "$wt" "$main" || { echo "ws/$1: check failed; not proposed" >&2 && failed=1 && return; }
   git -C "$wt" push --quiet --force origin "HEAD:refs/heads/propose/$1"
-  body="Proposes \`ws/$1\` into \`$2/\` (opened by ci/sync.sh; see README).
+  body="## Changes
 
-Changed files:
-$(git -C "$wt" diff --name-only "$main" HEAD | sed 's/^/- /')
+Proposes \`ws/$1\` into \`$2/\` (opened by ci/sync.sh, updated on each push to it; see README). Workspace commits:
 
-Workspace commits:
-$(git log --no-merges --invert-grep --grep='^delphi: ' --format='- %s (%an)' "$main..$ws")"
+$(git log --no-merges --invert-grep --grep='^delphi: ' --format='- %s (%an)' "$main..$ws")
+
+## Testing
+
+- ci/check.sh, run by sync before proposing
+
+## Checklist
+
+- [x] \`ci/check.sh .\` passes
+- [x] No merge conflicts
+- [ ] Request reviewers & ping on Slack"
   pr=$(gh pr list --base main --head "propose/$1" --state open --json number --jq '.[0].number // empty')
-  if [ -n "$pr" ]; then
+  if [ -n "$pr" ]; then # labels are left alone, so a written-by label someone changed stays
     gh pr edit "$pr" --title "$title" --body "$body" >/dev/null
   else
-    gh pr create --base main --head "propose/$1" --title "$title" --body "$body" >/dev/null
+    gh pr create --base main --head "propose/$1" --title "$title" --body "$body" --label "by: ai" >/dev/null
   fi
   echo "ws/$1: proposed (PR from propose/$1)"
 }
