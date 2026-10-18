@@ -11,3 +11,4 @@
 0.5.0 6088d535fdd9 switch.sh --list prints main and the workspaces, marking this clone's; the delphi mod's /ws pane reads it
 0.5.1 3fd96f222b77 the delphi mod's command is /ws-delphi (was /ws); switch.sh's comment says so
 0.6.0 c65ffc578bfa setup.sh (.delphi/plugins.sh) makes each clone's @delphi plugins what its workspace enables (installs them, uninstalls local ones it doesn't) and uninstalls ones the marketplace dropped, instead of warning; plugin changes need no migration
+0.7.0 84df5ce802db park.sh also parks .journal/ and the root folders under a workspace's park: in workspace.yml (each workspace its own), restores everything parked for a workspace, and skips bad entries; setup.sh excludes them
