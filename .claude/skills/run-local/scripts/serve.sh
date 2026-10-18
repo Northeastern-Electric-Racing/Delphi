@@ -18,9 +18,18 @@ if [ -f "$key.pid" ] && kill -0 "$(cat "$key.pid")" 2>/dev/null && up "$(cat "$k
   exit 0
 fi
 
+# Claim the port under a lock, or parallel calls all pick the same one while ng serve starts. A port is
+# taken once a client listens on it or a live serve.sh has claimed it. mkdir is the lock (no flock on
+# macOS); it is held only for the claim, so nothing started below can keep it.
+lock=$state/port.lock
+n=0; until mkdir "$lock" 2>/dev/null; do n=$((n + 1)); [ $n -lt 100 ] || rm -rf "$lock"; sleep 0.1; done # stale after 10s
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+claimed() { for f in "$state"/*.port; do [ -f "$f" ] && [ "$(cat "$f")" = "$1" ] && kill -0 "$(cat "${f%.port}.pid")" 2>/dev/null && return; done; return 1; }
 port=
-for p in $(seq 4200 4210); do up "$p" || { port=$p && break; }; done
+for p in $(seq 4200 4210); do up "$p" || claimed "$p" || { port=$p && break; }; done
 [ -n "$port" ] || { echo "serve: no free port in 4200-4210" >&2 && exit 1; }
+echo $$ >"$key.pid" && echo "$port" >"$key.port" # claimed by this script until ng serve's pid replaces it
+rmdir "$lock" && trap - EXIT
 
 cd "$wt/angular-client"
 [ -x node_modules/.bin/ng ] || npm ci --no-audit --no-fund >"$log" 2>&1 ||
