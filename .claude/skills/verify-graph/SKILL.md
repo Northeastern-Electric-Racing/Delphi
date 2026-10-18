@@ -1,21 +1,22 @@
 ---
 name: verify-graph
-description: Playwright MCP verification of the graph page — modes, controls, topic selection, and data rendering. Use after any change to graph-page components, graph rendering, data flow, or mode switching logic.
+description: Playwright CLI verification of the graph page — modes, controls, topic selection, and data rendering. Use after any change to graph-page components, graph rendering, data flow, or mode switching logic.
 user-invocable: true
 ---
 
-Get the ticket's branch running with `run-local <branch>`; that branch's client URL is `BASE_URL`. Historical runs with data must exist. Screenshots go to `pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
+Get the branch's client running with `run-local <branch>`; its URL is `BASE_URL`. Then run the base checks:
 
-Per check: `browser_navigate` → `browser_snapshot` (assert) → `browser_click` or `browser_run_code` → `browser_take_screenshot`. Two clicks need `browser_run_code` with a body from `helpers.js`: **selectRun** ("Select this Run" sits under a PrimeNG overlay) and **selectTopic** (a tree click on a leaf navigates away). Run the groups in order; stop and fix at the first failure.
+```
+bash scripts/check.sh <branch> "$BASE_URL"
+```
 
-| # | Do | Assert |
-|---|---|---|
-| 1 | Open `{BASE_URL}/graph` | Header "Real Time"; Pause, Time Range, Select Run, Clear Graph; "X (sec):", Y Min/Max, "Select Range"; no Realtime button |
-| 2 | Expand BMS › Pack, selectTopic "Voltage", wait 3s | URL has `?topics=BMS/Pack/Voltage`; a series is drawn |
-| 3 | Pause↔Play; Time Range↔Point Range; Tog Sidebar twice | Labels flip ("X (points):" in point range); sidebar hides, then returns |
-| 4 | Select Run, then selectRun, wait 3s | Header "Run #N"; Realtime shown; no Pause or Time Range; Y Min/Max remain; x-axis spans more than 30s |
-| 5 | Realtime; open Select Range, pick "5 minutes" | 7 options (1, 2, 5, 10, 15, 30 min, 1 hour); header "Hist Range"; Realtime shown, no Pause; x-axis about 5 min |
-| 6 | Cycle Realtime → Run → Realtime → "1 minute" → Realtime | Headers match each mode; no console errors (`browser_console_messages`) |
-| 7 | In real time, wait 10s | x-axis about 30s, not the whole session (historical auto-fit doesn't leak) |
+It seeds a 50-hour run spanning two midnights (once, shared by parallel checks), opens a `playwright-cli` session named after the branch (`scripts/open.sh`: output to `pictures/<branch>/`, config to `.playwright-cli/<branch>/`), and runs `scripts/check.js`. That covers: page loads in real time, a topic from the tree draws live, the seeded run, historical Quick Select, back to real time, and no console errors beyond develop's NG0100. It prints `[x]`/`[ ]` per check and exits 1 on a failure. Each `look:` line names a screenshot and what it should show: open it and judge it, since only a picture shows whether a chart is right.
 
-Report a checklist (one line per group, `[x]` or `[ ]` with the failure) and the screenshot folder.
+Go further where the diff points, by hand in the same session (`P="playwright-cli -s=<branch>"`): controls the diff touches (Pause↔Play, Time Range↔Point Range, Tog Sidebar, Tog Mult Yaxis, Y Min/Max, Custom range, Clear Graph), zoom, pan and hover, several topics, or mode switching for console errors. Reproduce a failed check the same way before fixing it; `check.js` has its steps.
+
+- Act: `$P click "button:has-text('Pause')"`, `role=combobox[name='Quick Select']`, `role=option[name='5 minutes']`, or a ref from `$P snapshot`.
+- Assert: `$P find "<text>"`, `$P snapshot`, `$P console error`; longer Playwright code with `$P run-code "async (page) => {…}"`, or `--filename` for a file kept in `.playwright-cli/<branch>/`.
+- The seeded run: click Select Run, then `bash scripts/select-run.sh <branch> $(bash scripts/seed.sh)`.
+- Screenshots: `$P screenshot --filename=pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
+
+When a hand check keeps coming back, add it to `check.js`. Report `check.sh`'s lines plus one line per hand check, and the screenshot folder. `$P close` at the end.
