@@ -1,3 +1,0 @@
-# Parked workspaces (.delphi/park.sh): this clone's own, never committed. Ignored files are
-# what `git clean -X` and `git stash --all` take, so don't run those at the workspace root.
-/parked/
