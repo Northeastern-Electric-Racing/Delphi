@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 0.10.0: the clones of the workspaces under `workspaces:` moved from linked/<name> to workspaces/<name>.
+# 1.0.0: the clones of the workspaces under `workspaces:` moved from linked/<name> to workspaces/<name>.
 # Moves each one here (a leftover worktree with git worktree move), then removes linked/ if that
 # empties it. Parked ones are their own workspace's, moved when it's set up. Only renames; a name taken
 # at both places is reported and left.

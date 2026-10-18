@@ -301,7 +301,7 @@ release() { # <version> [<migration slug>]: bump to <version> (with an empty mig
   sed -i.bak "s/^version: .*/version: $1/" .delphi/manifest.yml && rm .delphi/manifest.yml.bak && git add -A &&
     echo "$(bash .delphi/version.sh) release $1" >>.delphi/versions
 }
-expect_bad migration-patch "$VN has a migration, so it must bump MINOR" release "$VN" x
+expect_bad migration-patch "$VN has a migration, so it must bump $([ "${V%%.*}" = 0 ] && echo MINOR || echo MAJOR)" release "$VN" x
 expect_bad version-down "0.0.9 is not above $V" release 0.0.9
 expect_bad migration-no-line "no line for migrations/9.0.0" sh -c "printf '#!/usr/bin/env bash\nset -euo pipefail\n' >.delphi/migrations/9.0.0-x.sh"
 expect_bad migration-name "name it <MAJOR.MINOR.PATCH>-<slug>.sh" touch .delphi/migrations/x.sh
@@ -639,7 +639,7 @@ rm -rf "$w/workspaces" && old_copy "$w/linked/main" main && old_copy "$w/linked/
   [ "$(git -C "$w/workspaces/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] && grep -qx x <(tail -n 1 "$w/workspaces/$AN/CLAUDE.md"); } ||
   fail "0.9.0 did not turn old read-only copies into clones on their branch, keeping local changes: $(cat "$t/out")"
 git -C "$w/workspaces/$AN" checkout -q CLAUDE.md
-ok "0.9.0 turns old shallow, detached, push-disabled copies in linked/ into full clones on their branch, keeping what's in them; 0.10.0 moves them to workspaces/"
+ok "0.9.0 turns old shallow, detached, push-disabled copies in linked/ into full clones on their branch, keeping what's in them; 1.0.0 moves them to workspaces/"
 echo "# local" >>"$w/.delphi/switch.sh"
 { /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi $VN as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
