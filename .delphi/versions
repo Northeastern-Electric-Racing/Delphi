@@ -13,3 +13,4 @@
 0.6.0 c65ffc578bfa setup.sh (.delphi/plugins.sh) makes each clone's @delphi plugins what its workspace enables (installs them, uninstalls local ones it doesn't) and uninstalls ones the marketplace dropped, instead of warning; plugin changes need no migration
 0.7.0 84df5ce802db park.sh also parks .journal/ and the root folders under a workspace's park: in workspace.yml (each workspace its own), restores everything parked for a workspace, and skips bad entries; setup.sh excludes them
 0.8.0 05d4c954a946 workspaces are named by their folders' short names and leaf, joined by dots (.delphi/names.sh, short-name files; ws/s.app.argos.argos-dev, was ws/software/…/argos-dev); workspaces: entries are - <name> | - main, copied to linked/<name>; sync carries ws/<old> over once (migration)
+0.9.0 b850821eaa9a linked/<name> are full clones on ws/<name> (or main) tracking origin, pushes allowed; setup.sh switches each back to its branch if switched away and pulls it (migration)
