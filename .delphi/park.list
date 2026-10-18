@@ -1,0 +1,11 @@
+# .delphi/park.list: the folders at the workspace root that belong to the checked-out workspace, one
+# name per line. setup.sh git-excludes each (/<name>/); park.sh moves each to .delphi/parked/<workspace>/
+# when the clone switches to another workspace or main, and back when it returns. Top-level folder
+# names only (no `/`), never .git or .delphi. ci/check.sh checks the entries.
+repos             # bare stores (setup.sh)
+worktrees         # checkouts (setup.sh, new-worktree.sh)
+references        # read-only dependency sources (setup.sh)
+linked            # read-only Delphi copies (setup.sh)
+.journal          # rough notes (the journal skill)
+pictures          # screenshots, pictures/<branch>/
+.playwright-mcp   # Playwright MCP's snapshots and logs

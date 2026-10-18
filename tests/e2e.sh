@@ -271,6 +271,8 @@ expect_bad bad-key "unexpected line" sh -c "printf 'color: x\n' >>$A/workspace.y
 expect_bad wrong-name "the folder path without workspaces/" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad no-name "name is missing" sh -c "sed -i.bak '/^name:/d' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad defaults-name "workspace-defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
+expect_bad park-list-path ".delphi/park.list: 'a/b' must be a folder name" sh -c "echo a/b >>.delphi/park.list"
+expect_bad park-list-core ".delphi/park.list: must list linked" sh -c "grep -v '^linked' .delphi/park.list >p && mv p .delphi/park.list"
 expect_bad folder-delphi "$A/.delphi: managed in the root" sh -c "mkdir $A/.delphi && cp .delphi/park.sh $A/.delphi/"
 expect_bad ref-clash "can't be a branch while ws/$AN is" sh -c "mkdir -p software/application-software/workspaces && cp -R $A software/application-software/workspaces/argos &&
   sed -i.bak 's|^name:.*|name: software/application-software/argos|' software/application-software/workspaces/argos/workspace.yml"
@@ -348,7 +350,7 @@ for r in lib1 lib2; do
 done
 [ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = true ] || fail "repos/lib1 not a bare store"
 grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
-for d in /repos/ /worktrees/ /.playwright-mcp/ /pictures/ .DS_Store; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
+for d in /repos/ /worktrees/ /.journal/ /.playwright-mcp/ /pictures/ .DS_Store; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
 mkdir -p "$t/ws/.playwright-mcp" "$t/ws/pictures/b" "$t/ws/docs" && touch "$t/ws/.playwright-mcp/p.yml" "$t/ws/pictures/b/s.png" "$t/ws/.DS_Store" "$t/ws/docs/.DS_Store"
 [ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/, worktrees/ or a tool's files show in status: $(git -C "$t/ws" status --porcelain)"
 rm -rf "$t/ws/worktrees/lib2" && git -C "$t/ws/repos/lib2" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
@@ -400,7 +402,10 @@ local_ws a1 "ws/$AN" "$AN" lib1 || fail "park: setup on argos-dev failed"
 ours() { [ ! -L "$w/.git/hooks/post-checkout" ] && grep -qx '\[ ! -f .delphi/park.sh \] || exec bash .delphi/park.sh "$@"' "$w/.git/hooks/post-checkout"; }
 ours || fail "setup.sh did not write the hook that runs .delphi/park.sh"
 { git -C "$w" checkout -q -b a2 && live lib1 && [ ! -e "$w/.delphi/parked" ]; } || fail "park: same-workspace branch moved clones"
+mkdir -p "$w/.journal/ideas" "$w/pictures/a2" && touch "$w/.journal/ideas/n.md" "$w/pictures/a2/s.png"
 local_ws b1 "ws/$BN" "$BN" lib2 || fail "park: setup on bms-dev failed"
+{ [ ! -e "$w/.journal" ] && [ ! -e "$w/pictures" ] && [ -f "$w/.delphi/parked/$AN/.journal/ideas/n.md" ] &&
+  [ -f "$w/.delphi/parked/$AN/pictures/a2/s.png" ]; } || fail "park: .journal/ and pictures/ not parked with argos-dev"
 { [ ! -e "$w/worktrees/lib1" ] && [ ! -e "$w/references/lib1-ref" ] && [ -d "$w/.delphi/parked/$AN/worktrees/lib1/$def" ] &&
   [ -d "$w/.delphi/parked/$AN/linked/main/.git" ] && live lib2; } ||
   fail "park: argos-dev not parked on bms-dev"
@@ -411,6 +416,7 @@ local_ws b1 "ws/$BN" "$BN" lib2 || fail "park: setup on bms-dev failed"
 { git -C "$w" checkout -q a2 && live lib1 && [ ! -e "$w/worktrees/lib2" ] && [ -d "$w/.delphi/parked/$BN/repos/lib2" ] &&
   [ ! -e "$w/.delphi/parked/$AN" ]; } ||
   fail "park: argos-dev not restored"
+{ [ -f "$w/.journal/ideas/n.md" ] && [ -f "$w/pictures/a2/s.png" ]; } || fail "park: .journal/ and pictures/ not restored"
 git -C "$w/worktrees/lib1/$def" commit -q --allow-empty -m "after restore" || fail "park: restored worktree unusable"
 { git -C "$w" checkout -q b1 && live lib2 && git -C "$w" checkout -q a1 && live lib1; } || fail "park: second round trip"
 git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q a1 2>"$t/err"
@@ -419,6 +425,7 @@ git -C "$w" checkout -q main && mkdir "$w/worktrees" && git -C "$w" checkout -q 
 { rmdir "$w/worktrees" && git -C "$w" checkout -q main && git -C "$w" checkout -q a1 && live lib1; } || fail "park: no recovery once cleared"
 ok "park.sh parks a workspace's clones on switching to another workspace or main and restores them at the same paths"
 ok "parked clones sit git-ignored in .delphi/parked/<name>/, the workspace's place in the tree"
+ok "park.sh moves every folder .delphi/park.list names (.journal/, pictures/ too), not a fixed set"
 ok "park.sh leaves same-workspace branches alone and reports, never overwrites, a folder in the way"
 git -C "$w" checkout -q -b a3 a1 && echo 'echo "park.sh from a3" >&2' >>"$w/.delphi/park.sh" && git -C "$w" commit -qam a3
 { git -C "$w" checkout -q b1 2>"$t/err" && ! grep -q "from a3" "$t/err" && git -C "$w" checkout -q a3 2>"$t/err" &&

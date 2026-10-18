@@ -23,7 +23,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
-  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source. Only here: sync
+  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source; `.delphi/park.list`
+  is the root folders that belong to a workspace (setup.sh excludes them, park.sh moves them on a switch). Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
 - `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
