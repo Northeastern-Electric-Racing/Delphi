@@ -2,20 +2,22 @@
 # .delphi/park.sh <prev> <new> <branch-flag>: run by the post-checkout hook .delphi/setup.sh writes,
 # from the worktree that checked out. .delphi/ is on every branch, main included, so the hook always
 # finds it, the version just checked out. When a checkout moves this clone to another workspace
-# (the `name:` in workspace.yml, its place in the tree; none on main), it parks the old workspace's
+# (the `name:` in workspace.yml; none on main), it parks the old workspace's
 # root folders (the ones .delphi/paths.sh names, .journal/, and those under `park:` in the workspace.yml
 # of the branch it leaves) at .delphi/parked/<name>/ (git-ignored by .delphi/.gitignore), and brings
-# back everything parked for the new one. A name from before workspaces were named by
-# path (argos-dev) is the same workspace as the path ending in it, so moving onto the renamed branch
-# moves nothing. Moves are renames, so every path is the same again once its workspace is checked
+# back everything parked for the new one. A workspace's dotted name and its old one, its folder's
+# path (s.app.argos.argos-dev, software/application-software/argos/argos-dev), are taken to be the
+# same workspace when their last parts match, so moving onto the renamed branch moves nothing. Moves are renames, so every path is the same again once its workspace is checked
 # out. Runs on bash 3.2 and Git Bash.
 set -euo pipefail
 [ "${3:-0}" = 1 ] || exit 0
 name() { git show "$1:workspace.yml" 2>/dev/null | awk '/^name:/ { print $2; exit }' || true; }
 old=$(name "$1") new=$(name "$2")
 [ "$old" != "$new" ] || exit 0
-case "$old" in */*) ;; ?*) [ "$old" != "${new##*/}" ] || exit 0 ;; esac # renamed by path: still the same workspace
-case "$new" in */*) ;; ?*) [ "$new" != "${old##*/}" ] || exit 0 ;; esac
+last() { local n=${1##*/}; echo "${n##*.}"; }   # a name's last part, after its last / or .
+slashed() { case "$1" in */*) echo 1 ;; esac; } # an old name, its folder's path
+[ -z "$old" ] || [ -z "$new" ] || [ "$(slashed "$old")" = "$(slashed "$new")" ] || [ "$(last "$old")" != "$(last "$new")" ] ||
+  exit 0 # its old name and its new one: still the same workspace
 top=$(git rev-parse --show-toplevel)
 park=$top/.delphi/parked
 parks() { # <commit>: the root folders its workspace parks

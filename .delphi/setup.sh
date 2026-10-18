@@ -5,14 +5,15 @@
 # out its default branch as the first worktree, worktrees/<name>/<default-branch>. For each repo under
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
-# run, with pushes disabled. Each entry under `workspaces:` (`- ws/<name>` or `- main`, a workspace
-# being named by its place in the tree) gets the same kind of copy of that branch of this clone's
-# origin (Delphi), at linked/<branch>; to edit one, switch this clone to it (.delphi/switch.sh). Adds the
+# run, with pushes disabled. Each entry under `workspaces:` (`- <name>`, a workspace's dotted name
+# from .delphi/names.sh, or `- main`) gets the same kind of copy of that branch of this clone's
+# origin (Delphi, ws/<name> or main), at linked/<name>; to edit one, switch this clone to it (.delphi/switch.sh). Adds the
 # folders park.sh parks and macOS's .DS_Store to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
 # every branch) as just checked out in the worktree that checked out (unless another hook is there), so switching
 # to another workspace or main parks those folders. First
 # it runs the .delphi/migrations/<version>-*.sh this workspace hasn't (oldest first; the last one done
-# is `git config delphi.<name>.version`, 0.0.0 if unset), stopping at one that fails, and warns if
+# is `git config delphi.<name>.version`, else the record under its old name, its folder's path without
+# workspaces/, from origin/main; 0.0.0 if neither), stopping at one that fails, and warns if
 # .delphi/ isn't exactly the version it says (.delphi/version.sh). Last, it brings this machine's Delphi plugins in
 # step with the workspace (.delphi/plugins.sh: installs what it enables, uninstalls local ones it doesn't and what the marketplace dropped). Safe to re-run. Keep it bash 3.2
 # (macOS) and Git Bash safe: no bash-4 features, POSIX awk only.
@@ -20,7 +21,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 [ -f workspace.yml ] || { echo "setup: no workspace.yml here (on main?); nothing to set up" >&2 && exit 0; }
 self=$(awk '/^name:/ { print $2; exit }' workspace.yml)
-case "$self" in "" | [-/]* | */ | *//* | *[!a-z0-9/-]*) echo "setup: workspace.yml needs a valid name:" >&2 && exit 1 ;; esac
+case "$self" in "" | [-.]* | *. | *..* | *[!a-z0-9.-]*) echo "setup: workspace.yml needs a valid name:" >&2 && exit 1 ;; esac
 
 older() { # <a> <b>: a is a lower MAJOR.MINOR.PATCH than b
   [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -t. -k1,1n -k2,2n -k3,3n | head -n 1)" = "$1" ]
@@ -28,7 +29,8 @@ older() { # <a> <b>: a is a lower MAJOR.MINOR.PATCH than b
 here=$(bash .delphi/version.sh) released=$(grep -v '^#' .delphi/versions | grep . | tail -n 1 | cut -d' ' -f1,2 || true)
 [ "$here" = "$released" ] ||
   echo "setup: .delphi/ is not Delphi ${released%% *} as released (edited here? change it only through main)" >&2
-have=$(git config "delphi.$self.version" || echo 0.0.0)
+old=$(bash .delphi/names.sh refs/remotes/origin/main 2>/dev/null | awk -v n="$self" '$1 == n { sub("/workspaces/", "/", $2); print $2 }' || true)
+have=$(git config "delphi.$self.version" || { [ -n "$old" ] && git config "delphi.$old.version"; } || echo 0.0.0)
 pending=$(for f in .delphi/migrations/*.sh; do [ ! -e "$f" ] || echo "${f##*/}"; done | sort -t. -k1,1n -k2,2n -k3,3n)
 while IFS= read -r f; do
   v=${f%%-*}
@@ -66,10 +68,11 @@ readonly_copy() { # <dir> <url> [<ref>]: shallow, detached, push-disabled checko
   fi
 }
 
-link() { # ws/<name>|main: a read-only copy of that branch of Delphi at linked/<branch>
-  case "$1" in main | ws/[a-z0-9]*) ;; *) echo "setup: skipping bad workspaces: entry '$1'" >&2 && return ;; esac
-  case "$1" in "ws/$self") return ;; */ | *//* | *[!a-z0-9/-]*) echo "setup: skipping bad workspaces: entry '$1'" >&2 && return ;; esac
-  readonly_copy "linked/$1" "$(git remote get-url origin)" "$1"
+link() { # <name>|main: a read-only copy of that workspace's branch of Delphi (ws/<name>), or main, at linked/<name>
+  case "$1" in "$self") return ;; "" | [-.]* | *. | *..* | *[!a-z0-9.-]*)
+    echo "setup: skipping bad workspaces: entry '$1' (want a workspace's name, like s.app.argos.argos-dev, or main)" >&2 && return ;;
+  esac
+  readonly_copy "linked/$1" "$(git remote get-url origin)" "$([ "$1" = main ] && echo main || echo "ws/$1")"
 }
 
 while read -r kind name url ref; do
