@@ -105,6 +105,13 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
     /^workspaces:[[:space:]]*(#.*)?$/ { r = 3; next }
     /^plugins:[[:space:]]*(#.*)?$/ { r = 4; next }
     /^opt-out:[[:space:]]*(#.*)?$/ { r = 5; next }
+    /^park:[[:space:]]*(#.*)?$/ { r = 6; next }
+    r == 6 && /^[[:space:]]/ {
+      v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._-]+[[:space:]]*(#.*)?$/ || v ~ /^(\.|\.\.|\.git|\.delphi)$/) {
+        print "bad park entry (want `  - <folder at the root>`, not .git or .delphi): " $0; next }
+      if (pk[v]++) print "duplicate park entry: " v
+      next }
     r == 5 && /^[[:space:]]/ {
       if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._][A-Za-z0-9._\/-]*[[:space:]]*(#.*)?$/ || $0 ~ /(^|[[:space:]\/])\.\.(\/|[[:space:]]|$)/) {
         print "bad opt-out entry (want `  - <path it inherits>`, e.g. .claude/skills/journal): " $0; next }

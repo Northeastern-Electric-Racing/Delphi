@@ -192,9 +192,8 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 
 First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, fetches it into a bare store at
 `repos/<name>`, then checks out its default branch as the first worktree,
-`worktrees/<name>/<default-branch>/` (re-created if missing). Adds `/repos/` and `/worktrees/` to
-the clone's `.git/info/exclude` once, along with what tools leave at the root: `/.playwright-mcp/`,
-`/pictures/` (screenshots) and `.DS_Store`. For each repo under `references-git:` (read-only dependency
+`worktrees/<name>/<default-branch>/` (re-created if missing). Adds the folders `park.sh` parks
+and `.DS_Store` to the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
@@ -211,8 +210,11 @@ and Git Bash: no bash-4 features, POSIX awk only.
 
 `.delphi/park.sh` (the hook) lets one clone switch freely between workspaces and `main`. When a
 branch checkout changes the `name:` in `workspace.yml` (none on `main`), it moves the old
-workspace's `repos/`, `worktrees/`, `references/` and `linked/` to `.delphi/parked/<name>/` and
-moves the new one's back. A name from before workspaces were named by path (`argos-dev`) is the same
+workspace's root folders to `.delphi/parked/<name>/`: the ones `.delphi/paths.sh` names, `.journal/`,
+and those under `park:` in the `workspace.yml` of the branch it leaves, so each workspace chooses its
+own (a project's `workspace-defaults/` can start the list). It moves back everything parked for the
+new one, whatever its list says now. Entries are folder names at the root, never `.git` or `.delphi`:
+`ci/check.sh` checks them and `park.sh` skips a bad one. A name from before workspaces were named by path (`argos-dev`) is the same
 workspace as the path ending in it, so moving a clone onto its renamed branch moves nothing.
 `.delphi/.gitignore` ignores `parked/`; since `.delphi/` is on every branch, so is that rule. Parked
 work is ignored, not hidden: `git clean -X` or `git stash --all` at the root would take it. A move is a rename, so it is instant and every

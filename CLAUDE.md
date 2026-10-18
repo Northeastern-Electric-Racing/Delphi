@@ -23,7 +23,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
-  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source. Only here: sync
+  is the layout (`DELPHI_ROOT`, `DELPHI_WORKTREES`, …) that they and skill scripts source; park.sh also moves
+  the root folders under a workspace's `park:` in `workspace.yml` on a switch, and setup.sh excludes them. Only here: sync
   puts `.delphi/` at the root of every `ws/*` branch and strips it from proposals.
 - `.delphi/manifest.yml` (Delphi's files and their `version:`), `.delphi/versions` (one line per
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
@@ -45,7 +46,10 @@ source of truth; `docs/goals.md` lists what any change must keep.
 ## Rules
 
 - Keep it small: fewest lines that implement the design; a short header comment per script.
-  Prefer deleting to adapting. Runtime tools: bash, git, and `gh` (only to open or update PRs).
+  Prefer deleting to adapting.
+- Don't list out groups of things in docs or comments (`docs/design.md`, README, CLAUDE.md, script
+  headers): name the file or key that holds them ("the folders in `.delphi/park.list`", "each repo
+  under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
 - Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
