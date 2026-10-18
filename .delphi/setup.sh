@@ -6,8 +6,9 @@
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
 # run, with pushes disabled. Each entry under `workspaces:` (`- <name>`, a workspace's dotted name
-# from .delphi/names.sh, or `- main`) gets the same kind of copy of that branch of this clone's
-# origin (Delphi, ws/<name> or main), at linked/<name>; to edit one, switch this clone to it (.delphi/switch.sh). Adds the
+# from .delphi/names.sh, or `- main`) gets a full clone of this clone's origin (Delphi) at linked/<name>,
+# on ws/<name> (or main) tracking origin; every run switches it back to that branch if it was switched
+# away (its own .delphi/switch.sh) and pulls it. By convention it's read from here, not edited. Adds the
 # folders park.sh parks and macOS's .DS_Store to this clone's .git/info/exclude, and writes its post-checkout hook, which runs .delphi/park.sh (on
 # every branch) as just checked out in the worktree that checked out (unless another hook is there), so switching
 # to another workspace or main parks those folders. First
@@ -68,11 +69,22 @@ readonly_copy() { # <dir> <url> [<ref>]: shallow, detached, push-disabled checko
   fi
 }
 
-link() { # <name>|main: a read-only copy of that workspace's branch of Delphi (ws/<name>), or main, at linked/<name>
+link() { # <name>|main: a clone of Delphi on that workspace's branch (ws/<name>), or main, at linked/<name>
   case "$1" in "$self") return ;; "" | [-.]* | *. | *..* | *[!a-z0-9.-]*)
     echo "setup: skipping bad workspaces: entry '$1' (want a workspace's name, like s.app.argos.argos-dev, or main)" >&2 && return ;;
   esac
-  readonly_copy "linked/$1" "$(git remote get-url origin)" "$([ "$1" = main ] && echo main || echo "ws/$1")"
+  local dir=linked/$1 ref=ws/$1
+  [ "$1" != main ] || ref=main
+  [ ! -f "$dir/.git" ] || { echo "setup: $dir is a worktree, not a clone; skipping it" >&2 && return; }
+  if [ ! -d "$dir/.git" ]; then
+    git clone -q --branch "$ref" "$(git remote get-url origin)" "$dir" </dev/null ||
+      { echo "setup: could not clone $ref into $dir" >&2 && return; }
+  elif [ "$(git -C "$dir" branch --show-current)" != "$ref" ]; then # switched away: back to its own branch first
+    bash "$dir/.delphi/switch.sh" "$1" </dev/null >/dev/null ||
+      { echo "setup: could not switch $dir back to $ref; left it as it is" >&2 && return; }
+  fi
+  git -C "$dir" pull -q --ff-only origin "$ref" </dev/null || echo "setup: could not pull $ref into $dir (see git -C $dir status)" >&2
+  echo "$dir: on $ref ($(git -C "$dir" rev-parse --short HEAD))"
 }
 
 while read -r kind name url ref; do

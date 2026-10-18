@@ -204,8 +204,12 @@ sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `r
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
 a failed fetch is reported and the old copy kept. Adds `/references/` to the exclude too; references get
 no store and no worktrees (`new-worktree.sh` refuses them). Each entry under `workspaces:` (`- <name>`
-or `- main`; the workspace itself is skipped) gets the same kind of copy of that branch (`ws/<name>`
-or `main`) of the clone's own origin, at `linked/<name>/`, also refreshed every run; `/linked/` is excluded too.
+or `- main`; the workspace itself is skipped) gets a full clone of the clone's own origin at
+`linked/<name>/`, on that branch (`ws/<name>` or `main`) tracking origin, so it behaves as a normal
+checkout (`git status` shows its branch). Every run switches it back to that branch if it was switched
+away (with its own `.delphi/switch.sh`, which refuses over uncommitted changes) and pulls it
+(`--ff-only`); a failure is reported and the clone left as it is. By convention a workspace reads its
+links and doesn't edit them; `/linked/` is excluded too.
 Links are separate clones, not worktrees of the Delphi clone, so two workspaces can both link `main`
 and each copy parks with its workspace. Writes the clone's `post-checkout` hook, a 3-line script that
 runs `.delphi/park.sh` from the worktree that checked out (replacing an older link to or copy of a

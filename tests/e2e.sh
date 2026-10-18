@@ -576,21 +576,32 @@ pl app@delphi user - 0 argos@delphi local "$w" 0 x@other user - 0 >"$t/plugins.j
 { [ -z "$(plugins)" ] && [ ! -s "$t/claude.log" ]; } || fail "plugins.sh did something with every plugin in order: $(cat "$t/claude.log")"
 ok "setup.sh (plugins.sh) makes this clone's @delphi plugins what the workspace enables and uninstalls ones the marketplace dropped; warns offline or for other marketplaces; quiet when all is in order"
 
-# --- 12. workspaces: setup.sh checks out listed workspaces and main read-only at linked/<name>, refreshed on re-run;
+# --- 12. workspaces: setup.sh clones listed workspaces and main at linked/<name>, on their branch, pulled on re-run;
 # migrations: setup.sh runs the pending ones (0.0.1 replaces old link.sh worktrees), stopping where one can't go on safely
 printf 'name: s.electrical.bms-dev\nharness: claude-code\nrepos:\n  code: %s\nworkspaces:\n  - s.app.argos.argos-dev  # a comment\n  - main\n  - s.electrical.bms-dev\n  - Bad\n  - ws/argos-dev\n' \
   "$t/code" >"$w/workspace.yml"
 bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh failed with links: $(cat "$t/err")"
 [ "$(git -C "$w/linked/$AN" rev-parse HEAD)" = "$(o rev-parse "ws/$AN")" ] || fail "copy not at ws/$AN"
+{ [ "$(git -C "$w/linked/$AN" branch --show-current)" = "ws/$AN" ] && [ "$(git -C "$w/linked/main" branch --show-current)" = main ] &&
+  [ "$(git -C "$w/linked/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] &&
+  [ "$(git -C "$w/linked/main" rev-parse --is-shallow-repository)" = false ]; } || fail "a link is not a full clone on its branch, tracking origin"
 [ -f "$w/linked/main/ci/sync.sh" ] || fail "link main"
 { [ ! -e "$w/linked/$BN" ] && [ ! -e "$w/linked/Bad" ] && [ ! -e "$w/linked/ws" ] && grep -q "skipping bad workspaces: entry 'Bad'" "$t/err" &&
   grep -q "skipping bad workspaces: entry 'ws/argos-dev'" "$t/err"; } || fail "copied itself or a bad entry"
-! git -C "$w/linked/$AN" push -q origin HEAD:refs/heads/x 2>/dev/null || fail "push from a link succeeded"
+git -C "$w/linked/$AN" push -q --dry-run origin HEAD:refs/heads/x 2>/dev/null || fail "pushes from a link are disabled"
 commit_on ws/$AN docs/CONTEXT.md "linked update"
 { bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && grep -qx "linked update" "$w/linked/$AN/docs/CONTEXT.md"; } || fail "re-run did not refresh a link"
+git -C "$w/linked/main" switch -q -c scratch && commit_on main README.md "main update"
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>&1 && [ "$(git -C "$w/linked/main" branch --show-current)" = main ] &&
+  grep -qx "main update" "$w/linked/main/README.md"; } || fail "re-run did not switch a link back to its branch and pull it"
+git -C "$w/linked/main" switch -q scratch && echo x >>"$w/linked/main/README.md"
+{ bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "could not switch linked/main back to main" "$t/err" &&
+  [ "$(git -C "$w/linked/main" branch --show-current)" = scratch ] && grep -qx x <(tail -n 1 "$w/linked/main/README.md"); } ||
+  fail "re-run moved a link with uncommitted changes, or failed: $(cat "$t/err")"
+git -C "$w/linked/main" checkout -q README.md && git -C "$w/linked/main" switch -q main && git -C "$w/linked/main" branch -q -D scratch
 [ "$(grep -cx /linked/ "$w/.git/info/exclude")" = 1 ] || fail "/linked/ not excluded exactly once"
 ! git -C "$w" status --porcelain | grep -q linked || fail "linked/ shows in status"
-ok "setup.sh checks out workspaces: read-only at linked/<name>, skips itself and bad entries (old ws/<name> ones too), refreshes on re-run"
+ok "setup.sh clones workspaces: at linked/<name> on their branch, skips itself and bad entries (old ws/<name> ones too), switches back and pulls on re-run, keeps local changes"
 [ "$(git -C "$w" config delphi.$BN.version)" = "$VN" ] || fail "setup.sh did not record the version"
 old_link() { rm -rf "$w/linked/main" && git -C "$w" worktree add -q --detach "$w/linked/main" origin/main && git -C "$w" config --unset delphi.$BN.version; }
 old_link && echo x >>"$w/linked/main/README.md"
@@ -610,7 +621,20 @@ git -C "$w" config --unset delphi.$BN.version
 { /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.0.1" "$t/out" && [ -d "$w/linked/main/.git" ] &&
   [ -f "$w/linked/main/ci/sync.sh" ] && ! git -C "$w" worktree list | grep -q linked &&
   [ "$(git -C "$w" config delphi.$BN.version)" = "$VN" ]; } || fail "0.0.1 did not replace an old link.sh worktree: $(cat "$t/out")"
-ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a read-only copy) and records the version"
+ok "setup.sh runs pending migrations (0.0.1: an old link.sh worktree in linked/ becomes a clone) and records the version"
+old_copy() { # <dir> <ref>: a link as setup.sh made it before 0.9.0: shallow, detached, pushes disabled
+  rm -rf "$1" && git init -q "$1" && git -C "$1" remote add origin "$t/origin.git" &&
+    git -C "$1" remote set-url --push origin DISABLED-read-only-copy && git -C "$1" fetch -q --depth 1 origin "$2" &&
+    git -C "$1" checkout -q --detach FETCH_HEAD
+}
+old_copy "$w/linked/main" main && old_copy "$w/linked/$AN" "ws/$AN" && echo x >>"$w/linked/$AN/CLAUDE.md" && git -C "$w" config delphi.$BN.version 0.8.0
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && grep -q "migrating $BN to 0.9.0" "$t/out" &&
+  [ "$(git -C "$w/linked/main" branch --show-current)" = main ] && [ "$(git -C "$w/linked/$AN" branch --show-current)" = "ws/$AN" ] &&
+  [ "$(git -C "$w/linked/main" rev-parse --is-shallow-repository)" = false ] && ! git -C "$w/linked/main" config remote.origin.pushurl >/dev/null &&
+  [ "$(git -C "$w/linked/$AN" rev-parse --abbrev-ref '@{u}')" = "origin/ws/$AN" ] && grep -qx x <(tail -n 1 "$w/linked/$AN/CLAUDE.md"); } ||
+  fail "0.9.0 did not turn old read-only copies into clones on their branch, keeping local changes: $(cat "$t/out")"
+git -C "$w/linked/$AN" checkout -q CLAUDE.md
+ok "0.9.0 turns old shallow, detached, push-disabled copies in linked/ into full clones on their branch, keeping what's in them"
 echo "# local" >>"$w/.delphi/switch.sh"
 { /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi $VN as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh

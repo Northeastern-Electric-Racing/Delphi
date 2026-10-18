@@ -6,7 +6,7 @@ one under `repos:` in `workspace.yml` to make worktrees here (`new-worktree` ski
 
 Each workspace listed under `workspaces:` in `workspace.yml` is also cloned separately on this machine, on its
 own `ws/<name>` branch, with its own Claude Code session. The user works in those in parallel. Here you
-only see their read-only copies under `linked/<name>/` (refresh with `bash .delphi/setup.sh`; change which are
+only see their clones under `linked/<name>/`, each on its branch (refresh with `bash .delphi/setup.sh`; change which are
 listed with the `setup-workspace` skill). Park rough notes with the `journal` skill.
 
 ## What you do here
@@ -24,4 +24,4 @@ listed with the `setup-workspace` skill). Park rough notes with the `journal` sk
 
 - Switch this clone to another workspace unless the user explicitly asks (`switch-workspace`). By default,
   hand off: the user relaunches Claude in that workspace's own clone.
-- Edit anything under `linked/`.
+- Edit, commit, or push anything under `linked/`: the user may work in those clones, but not this session.

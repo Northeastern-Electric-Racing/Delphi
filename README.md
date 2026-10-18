@@ -68,7 +68,7 @@ repos:                  # stored in repos/<name>, checked out in worktrees/<name
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
   socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch
-workspaces:             # Delphi workspaces (by name) or main, read-only, shallow-cloned into linked/<name>/
+workspaces:             # Delphi workspaces (by name) or main, cloned into linked/<name>/ to read
   - main
 ```
 
@@ -76,8 +76,10 @@ workspaces:             # Delphi workspaces (by name) or main, read-only, shallo
 context: `setup.sh` checks each out shallow and detached at its pin (or the default branch), with
 pushes disabled, and refreshes them on every run. They get no store and no worktrees. Names are
 unique across both maps. The `-git` suffix leaves room for other kinds of references later.
-`workspaces:` are other workspaces (`- <name>`) or `main` to read: the same kind of read-only copy, of Delphi itself.
-To change one, switch to it instead.
+`workspaces:` are other workspaces (`- <name>`) or `main` to read: full clones of Delphi itself, each on
+its branch (`ws/<name>` or `main`) tracking origin, so `git status` and `git log` work as usual. Every
+run switches a clone back to its branch if it was switched away and pulls it. By convention they aren't
+edited from the workspace that links them; to change one, work in its own clone or switch to it.
 
 The workspace's dotted name is repeated in `name:` so a checkout knows which workspace it is; names
 are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Every other file in the folder is the workspace's own, at its normal harness
