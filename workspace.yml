@@ -1,4 +1,4 @@
-name: software/application-software/nero/nero-experimental
+name: s.app.nero.nero-experimental
 harness: claude-code
 plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists the `default` set of every folder above first and generates .claude/settings.json
   - delphi         # default, from software/
@@ -8,5 +8,5 @@ park:                     # `- <folder>`: root folders that park with this works
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; bare store at repos/<name>, default branch at worktrees/<name>/<branch>
   nero: https://github.com/Northeastern-Electric-Racing/Nero-2.0.git
-workspaces:               # `- ws/<name>` or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<ws/name or main>
+workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, never edit; shallow copy at linked/<name or main>
   # - main
