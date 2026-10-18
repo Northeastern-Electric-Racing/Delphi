@@ -46,7 +46,10 @@ source of truth; `docs/goals.md` lists what any change must keep.
 ## Rules
 
 - Keep it small: fewest lines that implement the design; a short header comment per script.
-  Prefer deleting to adapting. Runtime tools: bash, git, and `gh` (only to open or update PRs).
+  Prefer deleting to adapting.
+- Don't list out groups of things in docs or comments (`docs/design.md`, README, CLAUDE.md, script
+  headers): name the file or key that holds them ("the folders in `.delphi/park.list`", "each repo
+  under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
 - Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same

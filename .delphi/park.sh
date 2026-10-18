@@ -3,7 +3,7 @@
 # from the worktree that checked out. .delphi/ is on every branch, main included, so the hook always
 # finds it, the version just checked out. When a checkout moves this clone to another workspace
 # (the `name:` in workspace.yml, its place in the tree; none on main), it parks the old workspace's
-# root folders listed in .delphi/park.list (repos/, worktrees/, .journal/, ...) at .delphi/parked/<name>/
+# root folders listed in .delphi/park.list at .delphi/parked/<name>/
 # (git-ignored by .delphi/.gitignore) and brings the new one's back. A name from before workspaces were named by
 # path (argos-dev) is the same workspace as the path ending in it, so moving onto the renamed branch
 # moves nothing. Moves are renames, so every path is the same again once its workspace is checked
