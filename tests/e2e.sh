@@ -361,11 +361,10 @@ w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspac
   git init -q --bare "$w/repos/lib2" && git -C "$w/repos/lib2" remote add origin "$t/lib2.git" && git -C "$w/repos/lib2" fetch -q origin &&
   git -C "$w/repos/lib2" worktree add -q -b "$def" "$w/worktrees/lib2/$def" "origin/$def" && echo wip >"$w/worktrees/lib2/$def/wip"
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed on older clones: $(cat "$t/out")"
-{ grep -q "migrate: moved the worktree store repos/lib2 to worktrees/lib2/.bare" "$t/out" &&
-  [ "$(git -C "$w/worktrees/lib2/$def" status --porcelain)" = "?? wip" ] && [ "$(git -C "$w/repos/lib2" rev-parse --is-bare-repository)" = false ] &&
-  [ "$(git -C "$w/repos/lib1" branch --show-current)" = "$def" ] && [ -f "$w/repos/lib1/wip" ] && [ -d "$w/worktrees/lib1/$def" ]; } ||
-  fail "2.0.0 did not move an old bare store under worktrees/ (keeping its worktrees) or left a plain clone alone: $(cat "$t/out")"
-ok "setup.sh runs 2.0.0: an old bare store in repos/ moves to worktrees/<repo>/.bare with its worktrees intact, then repos/<repo> is cloned; a plain clone is left as it is"
+{ [ "$(git -C "$w/repos/lib2" rev-parse --is-bare-repository)" = true ] && [ "$(git -C "$w/worktrees/lib2/$def" status --porcelain)" = "?? wip" ] &&
+  [ -d "$w/worktrees/lib2/.bare" ] && [ "$(git -C "$w/repos/lib1" branch --show-current)" = "$def" ] && [ -f "$w/repos/lib1/wip" ] &&
+  [ -d "$w/worktrees/lib1/$def" ]; } || fail "an older bare store or plain clone in repos/ was not left as it is: $(cat "$t/out")"
+ok "setup.sh leaves an older bare store or plain clone in repos/ (and its worktrees) as it is, and adds the store in worktrees/"
 git clone -q -c core.autocrlf=true -b ws/$AN "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh fails with core.autocrlf=true"
