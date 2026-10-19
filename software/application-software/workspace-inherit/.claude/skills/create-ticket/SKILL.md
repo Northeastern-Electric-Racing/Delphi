@@ -15,8 +15,8 @@ idea → spikes → epic → dev work, or a standalone spike → dev work
 
 | Ticket | What it is | Issue type | Parent |
 |---|---|---|---|
-| Idea | What could be built and why. Its areas to explore are open questions, each with directions worth trying. | none | none |
-| Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
+| Idea | What could be built and why. Its areas to explore are things to improve or problems to solve, each with approaches worth trying. | none | none |
+| Spike | One approach to try on one area of an idea (it needn't cover the whole area), or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
 | Epic | Work too large for one dev work ticket: the goal and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea or spike it came from in "From". | Feature | none |
 | Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. Large work is cut into vertical slices (see Dev work below). | Feature, Bug, or Task | its epic, if any |
 
@@ -43,12 +43,12 @@ How every ticket reads, on any project:
 
 ## Spikes
 
-- One direction, not a set to choose between. If a spike reads "X or Y", it is two spikes.
-- Prefer an idea with a few spikes (often 2-4) under it; a spike can also stand alone, or with siblings, to explore an area.
-- Title it `<area>: <direction>`, with the area a short kebab-case name its siblings share (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of an idea's bullets. A lone small improvement needs no prefix.
-- Sibling spikes share the context transfer's summary and common facts; each adds only the facts particular to its direction.
+- One approach, not a set to choose between. If a spike reads "X or Y", it is two spikes.
+- Prefer an idea with a few spikes (often 2-4) under it; a spike can also stand alone, or with siblings, to explore an area. Several spikes can take on the same area in different ways.
+- Title it `<area>: <approach>`, with the area a short kebab-case name its siblings share (`graph-saving: Save a graph to a file and re-upload it`). An area may cover more than one of an idea's bullets. A lone small improvement needs no prefix.
+- Sibling spikes share the context transfer's summary and common facts; each adds only the facts particular to its approach.
 - An idea needn't get all its spikes at once: file an area's spikes when someone is ready to try them.
-- Done: its findings are posted, review feedback is addressed, and the lead's latest review on its draft PR is an approval (GitHub's Approve), including when the recommendation is to drop the direction. A done spike stays open until `consolidate-spikes` closes it.
+- Done: its findings are posted, review feedback is addressed, and the lead's latest review on its draft PR is an approval (GitHub's Approve), including when the recommendation is to drop the approach. A done spike stays open until `consolidate-spikes` closes it.
 
 ## Draft
 
