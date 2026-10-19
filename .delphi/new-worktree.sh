@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # .delphi/new-worktree.sh <repo> <branch> [<base>]: create or reuse worktrees/<repo>/<branch> from
-# the clone .delphi/setup.sh made at repos/<repo>, and print its path. An existing branch
-# (local or on origin) is checked out; a new one starts from <base> (default: origin's default
-# branch). Runs on bash 3.2 and Git Bash.
+# the bare store .delphi/setup.sh made at worktrees/<repo>/.bare (never the clone at repos/<repo>), and
+# print its path. An existing branch (local or on origin) is checked out; a new one starts from <base>
+# (default: origin's default branch). Runs on bash 3.2 and Git Bash.
 set -euo pipefail
 # shellcheck source-path=SCRIPTDIR source=paths.sh
 . "$(dirname "$0")/paths.sh"
 repo=${1:?usage: new-worktree.sh <repo> <branch> [<base>]} branch=${2:?usage: new-worktree.sh <repo> <branch> [<base>]}
 base=${3:-origin/HEAD} dest="$DELPHI_WORKTREES/$repo/$branch"
-g() { git -C "$DELPHI_REPOS/$repo" "$@"; }
-[ -d "$DELPHI_REPOS/$repo" ] ||
-  { echo "new-worktree: no repos/$repo (list it under repos: and run .delphi/setup.sh; references are read-only)" >&2 && exit 1; }
+store=$DELPHI_WORKTREES/$repo/.bare
+g() { git -C "$store" "$@"; }
+[ -d "$store" ] ||
+  { echo "new-worktree: no worktrees/$repo/.bare (list it under repos: and run .delphi/setup.sh; references are read-only)" >&2 && exit 1; }
 g fetch -q origin
 if [ -d "$dest" ]; then :
 elif g rev-parse -q --verify "refs/heads/$branch" >/dev/null; then
