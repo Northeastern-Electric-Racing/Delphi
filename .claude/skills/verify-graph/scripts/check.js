@@ -61,6 +61,7 @@ async (page) => {
     await button('Realtime').click();
     await text('Real Time').waitFor({ timeout: 5000 });
     await page.getByRole('combobox', { name: 'Quick Select' }).click();
+    await page.getByRole('option').first().waitFor({ timeout: 5000 });
     const options = await page.getByRole('option').count();
     if (options !== 11) throw new Error(`${options} Quick Select options, not 11`);
     await page.getByRole('option', { name: '5 minutes', exact: true }).click();
