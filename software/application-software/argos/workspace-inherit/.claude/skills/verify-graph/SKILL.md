@@ -4,7 +4,7 @@ description: Playwright CLI verification of the graph page — modes, controls, 
 user-invocable: true
 ---
 
-Get the branch's client running with `run-local <branch>`; its URL is `BASE_URL`. Then run the base checks:
+Get the branch's client running with `run-local <branch>`; its URL is `BASE_URL`. The scripts need `playwright-cli` (`npm i -g @playwright/cli`, then `playwright-cli install-browser chromium`; cloud containers use their preinstalled Chromium). Then run the base checks:
 
 ```
 bash scripts/check.sh <branch> "$BASE_URL"
@@ -18,5 +18,7 @@ Go further where the diff points, by hand in the same session (`P="playwright-cl
 - Assert: `$P find "<text>"`, `$P snapshot`, `$P console error`; longer Playwright code with `$P run-code "async (page) => {…}"`, or `--filename` for a file kept in `.playwright-cli/<branch>/`.
 - The seeded run: click Select Run, then `bash scripts/select-run.sh <branch> $(bash scripts/seed.sh)`.
 - Screenshots: `$P screenshot --filename=pictures/<branch>/verify-graph/NN-<name>.png` (gitignored).
+
+When the diff touches rendering or the live data path, measure it too: `bash scripts/perf.sh <branch> "$BASE_URL" [<topic>,…]` prints retained JS heap, allocation rate, frame rate and long tasks (`scripts/perf.js`), then the browser's GPU-process memory, where a WebGL chart's buffers show up. The numbers drift with machine load, so run the branch and its base side by side, twice, at the same topics. Calypso sends about one point a second per topic and has no rate setting, so the chart's own data is small next to the app's: a JS-heap gap of a few MB is noise, and more topics widen real ones.
 
 When a hand check keeps coming back, add it to `check.js`. Report `check.sh`'s lines plus one line per hand check, and the screenshot folder. `$P close` at the end.
