@@ -53,7 +53,7 @@ git fetch origin && git merge origin/ws/s.app.argos.argos-dev   # update your br
 After your PR merges into `ws/<name>`, CI proposes it: a PR `ws/<name> → main` from
 `propose/<name>`, labelled `by: ai` (change the label if you wrote it; CI keeps it). Merge that with a
 merge commit or squash, never rebase. Never push to `ws/*` or
-`main` directly (protect them). Code changes go in the clone at `repos/<repo>` (one thing at a time) or a worktree from it, `worktrees/<repo>/<branch>` (`.delphi/new-worktree.sh`), through that repo's own PRs.
+`main` directly (protect them). Code changes go in a worktree, `worktrees/<repo>/<branch>` (`.delphi/new-worktree.sh`, from the clone at `repos/<repo>`), through that repo's own PRs.
 
 **Conflicts.** If `main` and `ws/<name>` changed the same lines, CI lists the files and skips that
 workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, run
@@ -64,7 +64,7 @@ workspace. Fix it in a PR into `ws/<name>`: on a branch cut from `ws/<name>`, ru
 ```yaml
 name: s.app.argos.argos-dev   # its dotted name
 harness: claude-code
-repos:                  # cloned at repos/<name>/ by .delphi/setup.sh; worktrees from it in worktrees/<name>/
+repos:                  # cloned at repos/<name>/, default branch at worktrees/<name>/<branch>/, by .delphi/setup.sh
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
 references-git:         # read-only dependency sources, shallow-cloned into references/<name>/
   socketioxide: https://github.com/Totodore/socketioxide.git v0.18.7   # optional tag or branch

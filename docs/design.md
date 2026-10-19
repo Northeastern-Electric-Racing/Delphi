@@ -197,8 +197,10 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 ## 5. `.delphi/setup.sh` (on every branch; does nothing on main, which has no `workspace.yml`)
 
 First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, clones it at
-`repos/<name>/` on its default branch, for people working on one thing at a time, and adds nothing
-else (an older clone's bare store there is left as it is). Adds the folders `park.sh` parks
+`repos/<name>/` and checks out its default branch as a worktree, `worktrees/<name>/<default-branch>/`
+(re-created if missing), so it's there to see and branch from. A clone still on that branch is first
+detached at the same commit (nothing in it changes), since a branch is checked out in one place at a time;
+an older clone's bare store there gets the worktree the same way. Adds the folders `park.sh` parks
 and `.DS_Store` to the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;

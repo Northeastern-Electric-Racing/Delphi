@@ -10,5 +10,6 @@ bash .delphi/new-worktree.sh <repo> <branch> [<base>]
 ```
 
 - An existing branch (local or on origin, e.g. a PR head) is checked out; anything else is created from `<base>` (default: the repo's default branch). Safe to re-run.
-- Stay at the workspace root and reach into the worktree by the printed path. Never switch branches in an existing worktree or work in the clone `repos/<repo>` (it's for people working on one thing at a time).
+- Stay at the workspace root and reach into the worktree by the printed path. Never switch branches in an existing worktree.
+- Keep `worktrees/<repo>/<default-branch>/` (made by setup) a clean reference: fetch and fast-forward only.
 - After the branch merges: `git -C repos/<repo> worktree remove ../../worktrees/<repo>/<branch>`.
