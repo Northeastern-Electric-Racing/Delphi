@@ -197,8 +197,11 @@ Nobody pushes to `ws/*` or `main` directly (branch protection; CI's token is the
 ## 5. `.delphi/setup.sh` (on every branch; does nothing on main, which has no `workspace.yml`)
 
 First runs the workspace's pending migrations (section 5b). Then reads `repos:` from `workspace.yml` and, for each not yet present, clones it at
-`repos/<name>/` on its default branch, for people working on one thing at a time, and adds nothing
-else (an older clone's bare store there is left as it is). Adds the folders `park.sh` parks
+`repos/<name>/`, a plain clone of its own. Separately, it fetches the repo into a bare store at
+`worktrees/<name>/.bare/` and checks out its default branch as the first worktree,
+`worktrees/<name>/<default-branch>/` (re-created if missing), so it's there to see and branch from.
+Worktrees come only from that store, so they never touch the clone (a branch can be checked out once
+per repository, and the two are separate repositories). Adds the folders `park.sh` parks
 and `.DS_Store` to the clone's `.git/info/exclude` once. For each repo under `references-git:` (read-only dependency
 sources), it fetches `<ref>` (default: origin's `HEAD`) with `--depth 1` into `references/<name>/`,
 checks it out detached, disables pushes, and does this again on every run, so the copy tracks its pin;
@@ -236,7 +239,7 @@ out; nothing is repaired or rebuilt. Branches of the same workspace move nothing
 overwrites: a folder in the way is reported and the other copy stays parked.
 
 `.delphi/new-worktree.sh <repo> <branch> [<base>]` creates or reuses `worktrees/<repo>/<branch>`
-from the clone at `repos/<repo>`: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
+from the store at `worktrees/<repo>/.bare`: checks out an existing branch, else starts one from `<base>` (default `origin/HEAD`). Same shell rules.
 The inherited `new-worktree` skill makes worktrees the default way to start a branch.
 
 `.delphi/paths.sh` is the layout in one place: sourced, it sets and exports `DELPHI_ROOT` (from the
