@@ -5,7 +5,7 @@ description: Fetch review comments on a PR (Argos, Nero), judge whether each (in
 
 Propose and apply fixes for a PR's unresolved review feedback. **Never reply to threads**; the user does.
 
-1. **Fetch** from the workspace root: `bash scripts/fetch-feedback.sh <repo> <pr>|<branch>` (`<repo>` as under `repos/`, e.g. `argos`; `--all` first for unfiltered history). It checks out the PR head's worktree and prints JSON: `worktree` (target it by path from the root from now on), unresolved `threads`, `comments`, `reviews`. Any non-zero exit: use the available GitHub integration's the available GitHub PR-reading tool instead.
+1. **Fetch** from the workspace root: `bash scripts/fetch-feedback.sh <repo> <pr>|<branch>` (`<repo>` as under `repos/`, e.g. `argos`; `--all` first for unfiltered history). It checks out the PR head's worktree and prints JSON: `worktree` (target it by path from the root from now on), unresolved `threads`, `comments`, `reviews`. Any non-zero exit: use the available GitHub integration's PR-reading tool instead.
 2. **Judge.** Skip bot noise and anything already fixed at HEAD. For an `outdated` thread, find its `diffHunk` code by content, then label it **addressed**, **applies**, **moved**, **obsolete**, or **unclear**.
 3. **Present** before editing, grouped by file, and ask to confirm, skip, or change each (offer to batch clear ones past 8):
 

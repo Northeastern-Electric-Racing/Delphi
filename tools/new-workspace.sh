@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# tools/new-workspace.sh [--by ai|ai-assisted|human] <org-path under software/> <leaf>: propose a new
+# tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness <adapter>] <org-path under software/> <leaf>: propose a new
 # workspace as a PR to main, labelled `by: <who>` (default ai: who wrote it, as the PR template asks).
 # In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
-# project's software/<org-path>/workspace-defaults/ (its CLAUDE.md appended to the template's) to
+# project's software/<org-path>/workspace-defaults/ (matching native instructions appended to the template's) to
 # software/<org-path>/workspaces/<leaf>/, sets `name: <name>` in its workspace.yml (its dotted name from
 # .delphi/names.sh, like s.app.argos.argos-dev; the workspace-inherit/ folders above it reach ws/<name>
-# on each sync), lists its default plugin sets and generates its .claude/settings.json (ci/plugins.sh),
+# on each sync), and generates adapter-owned files through ci/harnesses.sh,
 # checks it, pushes branch new-workspace/<org-path>/<leaf>, and opens the PR with gh. Your checkout is
 # untouched. After merge, ci/sync.sh creates ws/<name>.
 set -euo pipefail
@@ -62,7 +62,6 @@ sed -i.bak -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/$folder/$ins
 y=$wt/$folder/workspace.yml
 { echo "name: $name"; echo "harness: $adapter"; awk -v adapter="$adapter" '/^name:|^harness:/ { next } adapter != "claude-code" && /^plugins:/ { skip = 1; next } /^[^[:space:]#]/ { skip = 0 } !skip { print }' "$y"; } >"$y.new" && mv "$y.new" "$y"
 generate_harness "$wt" "$folder" "$wt/$folder"
-bash "$wt/ci/plugins.sh" "$wt" >/dev/null # its plugins: defaults and .claude/settings.json
 "$wt/ci/check.sh" "$wt"
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $name"

@@ -908,7 +908,38 @@ o show "$created:$F/AGENTS.md" | grep -qx '# Codex firmware s.electrical.firmwar
 (cd "$t/dev" && ! tools/new-workspace.sh --harness unknown electrical/firmware bad-harness >/dev/null 2>&1) || fail "unknown authoring harness accepted"
 ok "Codex authoring chooses native template/defaults, preserves project repos and rejects unknown harnesses"
 
-# --- 13. shellcheck, if installed
+# shellcheck disable=SC2016 # child shell edits the sandbox project's defaults
+on_main "project selects Codex by default" bash -c '
+  sed -i.bak "s/harness: claude-code/harness: codex/" "$1/workspace.yml"
+  rm "$1/workspace.yml.bak"
+  mkdir -p "$1/.agents/skills/fw-codex" "$1/.codex"
+  printf "Codex firmware skill\n" >"$1/.agents/skills/fw-codex/SKILL.md"
+  printf "# Codex project defaults\n" >"$1/.codex/config.toml"
+' _ "$FD"
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  tools/new-workspace.sh electrical/firmware fw-project-codex >/dev/null) || fail "project-default Codex workspace"
+F=software/electrical/firmware/workspaces/fw-project-codex
+created=new-workspace/electrical/firmware/fw-project-codex
+o show "$created:$F/workspace.yml" | grep -qx 'harness: codex' || fail "project harness default ignored"
+o show "$created:$F/workspace.yml" | grep -q 'fw: https://example.com/fw.git' || fail "default Codex project repos lost"
+o show "$created:$F/AGENTS.md" | grep -qx '# Codex firmware s.electrical.firmware.fw-project-codex' || fail "default Codex native instructions lost"
+o cat-file -e "$created:$F/.agents/skills/fw-codex/SKILL.md" || fail "default Codex native skill lost"
+o cat-file -e "$created:$F/.codex/config.toml" || fail "default Codex project config lost"
+{ ! o cat-file -e "$created:$F/CLAUDE.md" 2>/dev/null && ! o cat-file -e "$created:$F/.claude" 2>/dev/null; } || fail "Claude files leaked into project-default Codex workspace"
+ok "authoring without --harness honors project Codex defaults and preserves native files and repos"
+
+(cd "$t/dev" && tools/new-workspace.sh --harness claude-code electrical/firmware fw-project-claude >/dev/null) || fail "explicit Claude override"
+F=software/electrical/firmware/workspaces/fw-project-claude
+created=new-workspace/electrical/firmware/fw-project-claude
+o show "$created:$F/workspace.yml" | grep -qx 'harness: claude-code' || fail "explicit Claude harness did not override Codex default"
+o show "$created:$F/workspace.yml" | grep -q 'fw: https://example.com/fw.git' || fail "Claude override project repos lost"
+o show "$created:$F/CLAUDE.md" | grep -qx '# Firmware for s.electrical.firmware.fw-project-claude' || fail "Claude override native instructions lost"
+o cat-file -e "$created:$F/.claude/skills/fw/SKILL.md" || fail "Claude override native skill lost"
+{ ! o cat-file -e "$created:$F/AGENTS.md" 2>/dev/null && ! o cat-file -e "$created:$F/.agents" 2>/dev/null &&
+  ! o cat-file -e "$created:$F/.codex" 2>/dev/null; } || fail "Codex files leaked into Claude override"
+ok "explicit Claude selection overrides project Codex defaults and removes foreign native files"
+
+# --- 14. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
   shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/.delphi/*.sh "$src"/.delphi/migrations/*.sh ||
     fail "shellcheck"
