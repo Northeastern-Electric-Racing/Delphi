@@ -6,7 +6,7 @@
 #   MINOR  something new that existing clones need nothing for
 #   MAJOR  clones need cleanup (MINOR while 0.x): add .delphi/migrations/<version>-<slug>.sh, which
 #          setup.sh runs once per workspace in each clone (rules in Delphi's CLAUDE.md)
-version: 1.1.0
+version: 1.2.0
 files:                        # repo-relative paths; a trailing / means everything under it
   - .delphi/manifest.yml
   - .delphi/.gitattributes

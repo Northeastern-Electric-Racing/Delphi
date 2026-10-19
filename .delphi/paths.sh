@@ -7,7 +7,7 @@
 # shellcheck shell=bash
 DELPHI_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)
 DELPHI_REPOS=$DELPHI_ROOT/repos               # clones: repos/<repo>
-DELPHI_WORKTREES=$DELPHI_ROOT/worktrees       # checkouts: worktrees/<repo>/<branch>
+DELPHI_WORKTREES=$DELPHI_ROOT/worktrees       # checkouts: worktrees/<repo>/<branch>, from the bare store worktrees/<repo>/.bare
 DELPHI_REFERENCES=$DELPHI_ROOT/references     # read-only dependency sources: references/<name>
 DELPHI_WORKSPACES=$DELPHI_ROOT/workspaces     # Delphi clones to read: workspaces/<workspace>, workspaces/main
 export DELPHI_ROOT DELPHI_REPOS DELPHI_WORKTREES DELPHI_REFERENCES DELPHI_WORKSPACES
