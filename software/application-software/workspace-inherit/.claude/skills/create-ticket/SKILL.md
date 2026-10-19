@@ -15,7 +15,7 @@ idea → spikes → epic → dev work, or a standalone spike → dev work
 
 | Ticket | What it is | Issue type | Parent |
 |---|---|---|---|
-| Idea | What could be built and why. Its approaches are areas (open questions), each with directions worth trying. | none | none |
+| Idea | What could be built and why. Its areas to explore are open questions, each with directions worth trying. | none | none |
 | Spike | One direction to try in one area of an idea, or a small standalone improvement: what is tried and the hypothesis. Findings go in a comment and a draft PR (`report-spike`), not the ticket. | none | its idea, if any |
 | Epic | Work too large for one dev work ticket: the goal and whole-epic outcomes, not a walkthrough of each ticket. A new issue linking the idea or spike it came from in "From". | Feature | none |
 | Dev work | Any implementation work: testable requirements, Notes for gotchas and pointers to code. Large work is cut into vertical slices (see Dev work below). | Feature, Bug, or Task | its epic, if any |
