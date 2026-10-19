@@ -46,11 +46,11 @@ Per ticket: `/implement` (worktree, test-first, `/commit`) → `/open-pr`.
 
 - The `/commit` skill applies the commit message format.
 - Open PRs against `develop` as drafts. PR titles carry no ticket number; the body ends with `Closes #{ticket}`. The `/open-pr` skill runs the pre-PR checks (lint, conflict check), pushes, and opens the draft; `/update-pr` refreshes the description.
-- Keep PR descriptions tight: at most three backtick usages in the body, and never commit screenshots (drag-drop them into the PR via the GitHub web UI).
+- Keep PR descriptions tight: at most three backtick usages in the body, and never commit screenshots (`/open-pr` asks before attaching them to the PR).
 
 ## Screenshots
 
-Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root, using kebab-case descriptive filenames. The `pictures/` folder is git-ignored, so screenshots are never committed; drag-drop them into the PR via the GitHub web UI instead.
+Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root, using kebab-case descriptive filenames. The `pictures/` folder is git-ignored, so screenshots are never committed; `/open-pr` offers to attach them to the PR with `gh --attach` (drag-drop them on gh older than v2.99.0).
 
 ## Code Conventions
 
