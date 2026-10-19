@@ -7,13 +7,13 @@ body:
       value: |
         A spike lays out what to explore and what we expect. It does **not** hold answers: post findings as comments and link draft PRs. It's done when the lead approves its draft PR.
         Don't prescribe a solution. Describe what to learn and leave the how to whoever picks it up.
-        One direction per spike, not a set to choose between. Title it `<area>: <direction>`, the area shared by its siblings. Prefer filing it under an idea (as a sub-issue), but a spike can stand alone.
+        One approach per spike, not a set to choose between. Title it `<area>: <approach>`, the area shared by its siblings. Prefer filing it under an idea (as a sub-issue), but a spike can stand alone.
         After filing, add a written-by label (`by: human`, `by: ai`, `by: ai-assisted`).
   - type: textarea
     id: exploring
     attributes:
       label: Exploring
-      description: The one direction being tried, broadly. Say what it is, not how to build it or how to run the exploration.
+      description: The one approach being tried, broadly. Say what it is, not how to build it or how to run the exploration.
     validations:
       required: true
   - type: textarea
