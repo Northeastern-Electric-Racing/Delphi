@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # .delphi/setup.sh: run in a checkout of ws/<name> (the workspace root; .delphi/ comes from Delphi's
 # main, which sync keeps on every ws/* branch, so edit it only there; on main this does nothing). For each repo listed under
-# `repos:` in workspace.yml, clones it at repos/<name> (unless present) and checks out its default
-# branch as a worktree, worktrees/<name>/<default-branch> (re-created if missing), detaching the clone
-# if it was on that branch (.delphi/new-worktree.sh makes the other worktrees). For each repo under
+# `repos:` in workspace.yml, clones it at repos/<name> (unless present). Separately, fetches it into a
+# bare store at worktrees/<name>/.bare (unless present) and checks out its default branch as the first
+# worktree, worktrees/<name>/<default-branch> (re-created if missing); .delphi/new-worktree.sh makes the
+# others from that store, so worktrees never touch the clone. For each repo under
 # `references-git:` (read-only dependency sources, `<name>: <git-url> [<ref>]`), checks out a shallow,
 # detached copy of <ref> (default: origin's default branch) at references/<name>, refreshed on every
 # run, with pushes disabled. Each entry under `workspaces:` (`- <name>`, a workspace's dotted name
@@ -100,22 +101,25 @@ while read -r kind name url ref; do
   if [ "$kind" = link ]; then [ -n "$inside" ] || link "$name"; continue; fi
   case "$name" in . | .. | *[!A-Za-z0-9._-]*) echo "setup: skipping unsafe repo name '$name'" >&2 && continue ;; esac
   if [ "$kind" = ref ]; then readonly_copy "references/$name" "$url" ${ref:+"$ref"} && continue; fi
-  r=repos/$name
-  if [ -e "$r" ]; then echo "$r: already present"
-  else git clone -q "$url" "$r" </dev/null || { echo "setup: could not clone $url into $r" >&2 && continue; }
+  if [ -e "repos/$name" ]; then echo "repos/$name: already present"
+  else git clone -q "$url" "repos/$name" </dev/null || echo "setup: could not clone $url into repos/$name" >&2
   fi
-  def=$(git -C "$r" symbolic-ref -q --short refs/remotes/origin/HEAD) ||
-    { echo "setup: $r has no origin/HEAD; skipping its worktree" >&2 && continue; }
+  store=worktrees/$name/.bare
+  if [ ! -e "$store" ]; then
+    git init -q --bare "$store"
+    git -C "$store" remote add origin "$url"
+    git -C "$store" fetch -q origin </dev/null
+    git -C "$store" remote set-head origin -a >/dev/null </dev/null
+  fi
+  def=$(git -C "$store" symbolic-ref -q --short refs/remotes/origin/HEAD) ||
+    { echo "setup: $store has no origin/HEAD; skipping its worktree" >&2 && continue; }
   def=${def#origin/}
   dest=worktrees/$name/$def
-  [ ! -e "$dest" ] || continue
-  if [ "$(git -C "$r" rev-parse --is-bare-repository)" = false ] && [ "$(git -C "$r" branch --show-current)" = "$def" ]; then
-    git -C "$r" checkout -q --detach && echo "$r: detached, so $def can be checked out at $dest" # same commit: nothing in it changes
-  fi
-  if git -C "$r" rev-parse -q --verify "refs/heads/$def" >/dev/null; then
-    git -C "$r" worktree add -q "$PWD/$dest" "$def" || echo "setup: could not check out $dest (is $def checked out elsewhere?)" >&2
+  if [ -e "$dest" ]; then continue
+  elif git -C "$store" rev-parse -q --verify "refs/heads/$def" >/dev/null; then
+    git -C "$store" worktree add -q "$PWD/$dest" "$def" || echo "setup: could not check out $dest" >&2
   else
-    git -C "$r" worktree add -q --track -b "$def" "$PWD/$dest" "origin/$def"
+    git -C "$store" worktree add -q --track -b "$def" "$PWD/$dest" "origin/$def"
   fi
 done <<EOF2
 $list

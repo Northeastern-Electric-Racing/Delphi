@@ -331,7 +331,7 @@ expect_bad unknown-workspace "lists nope, which isn't a workspace on main" sh -c
 expect_bad template-delphi "templates/workspace/.delphi: scripts live only" mkdir templates/workspace/.delphi
 expect_bad template-workflow-drift "differs from .github/workflows/delphi.yml" sh -c "echo x >>.github/workflows/delphi.yml"
 
-# --- 8. setup.sh clones workspace.yml repos at repos/<repo>, checks out the default branch under worktrees/, and is idempotent
+# --- 8. setup.sh clones workspace.yml repos at repos/<repo>; separately, a bare store and the default branch under worktrees/; idempotent
 for r in lib1 lib2; do
   git init -q "$t/$r" && git -C "$t/$r" commit -q --allow-empty -m "$r" && git clone -q --bare "$t/$r" "$t/$r.git"
 done
@@ -343,26 +343,29 @@ printf 'name: s.app.argos.argos-dev\nharness: claude-code\nplugins:\n  - x.y\npa
 /bin/bash "$t/ws/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh re-run failed"
 for r in lib1 lib2; do
   [ "$(git -C "$t/ws/repos/$r" rev-parse HEAD)" = "$(git -C "$t/$r" rev-parse HEAD)" ] || fail "repos/$r not cloned"
+  [ "$(git -C "$t/ws/repos/$r" branch --show-current)" = "$def" ] || fail "repos/$r not on $def"
   [ "$(git -C "$t/ws/worktrees/$r/$def" branch --show-current)" = "$def" ] || fail "$r default worktree not on $def"
-  [ -z "$(git -C "$t/ws/repos/$r" branch --show-current)" ] || fail "repos/$r not detached"
+  [ "$(git -C "$t/ws/worktrees/$r/.bare" rev-parse --is-bare-repository)" = true ] || fail "worktrees/$r/.bare not a bare store"
+  [ "$(git -C "$t/ws/repos/$r" worktree list | wc -l)" = 1 ] || fail "repos/$r has worktrees"
 done
 [ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = false ] || fail "repos/lib1 is a bare store"
 grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
 for d in /repos/ /worktrees/ /.journal/ /.playwright-mcp/ /pictures/ .DS_Store; do [ "$(grep -cx "$d" "$t/ws/.git/info/exclude")" = 1 ] || fail "$d not excluded exactly once"; done
 mkdir -p "$t/ws/.playwright-mcp" "$t/ws/pictures/b" "$t/ws/docs" && touch "$t/ws/.playwright-mcp/p.yml" "$t/ws/pictures/b/s.png" "$t/ws/.DS_Store" "$t/ws/docs/.DS_Store"
 [ "$(git -C "$t/ws" status --porcelain)" = " M workspace.yml" ] || fail "repos/, worktrees/ or a tool's files show in status: $(git -C "$t/ws" status --porcelain)"
-rm -rf "$t/ws/worktrees/lib2" && git -C "$t/ws/repos/lib2" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
+rm -rf "$t/ws/worktrees/lib2/$def" && git -C "$t/ws/worktrees/lib2/.bare" worktree prune && /bin/bash "$t/ws/.delphi/setup.sh" >/dev/null 2>&1 &&
   [ -d "$t/ws/worktrees/lib2/$def" ] || fail "re-run did not restore a missing default worktree"
-ok "setup.sh clones repos: at repos/<repo>, checks out the default branch in worktrees/, excludes both (and tools' files) once, and is idempotent"
+ok "setup.sh clones repos: at repos/<repo> and, separately, makes a bare store and the default-branch worktree in worktrees/<repo>/; excludes both (and tools' files) once; idempotent"
 w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspace.yml" "$w/" &&
-  git clone -q "$t/lib1.git" "$w/repos/lib1" && echo wip >"$w/repos/lib1/wip" && git -C "$w/repos/lib1" add wip &&
+  git clone -q "$t/lib1.git" "$w/repos/lib1" && echo wip >"$w/repos/lib1/wip" &&
   git init -q --bare "$w/repos/lib2" && git -C "$w/repos/lib2" remote add origin "$t/lib2.git" && git -C "$w/repos/lib2" fetch -q origin &&
-  git -C "$w/repos/lib2" remote set-head origin -a >/dev/null
+  git -C "$w/repos/lib2" worktree add -q -b "$def" "$w/worktrees/lib2/$def" "origin/$def" && echo wip >"$w/worktrees/lib2/$def/wip"
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed on older clones: $(cat "$t/out")"
-{ grep -q "repos/lib1: detached" "$t/out" && [ "$(git -C "$w/worktrees/lib1/$def" branch --show-current)" = "$def" ] &&
-  [ "$(git -C "$w/repos/lib1" diff --cached --name-only)" = wip ] && [ -d "$w/worktrees/lib2/$def" ] &&
-  [ "$(git -C "$w/repos/lib2" rev-parse --is-bare-repository)" = true ]; } || fail "older clone or bare store not given its default worktree: $(cat "$t/out")"
-ok "setup.sh detaches a clone on the default branch (keeping its changes) to check that out in worktrees/; an older bare store gets it too"
+{ grep -q "migrate: moved the worktree store repos/lib2 to worktrees/lib2/.bare" "$t/out" &&
+  [ "$(git -C "$w/worktrees/lib2/$def" status --porcelain)" = "?? wip" ] && [ "$(git -C "$w/repos/lib2" rev-parse --is-bare-repository)" = false ] &&
+  [ "$(git -C "$w/repos/lib1" branch --show-current)" = "$def" ] && [ -f "$w/repos/lib1/wip" ] && [ -d "$w/worktrees/lib1/$def" ]; } ||
+  fail "2.0.0 did not move an old bare store under worktrees/ (keeping its worktrees) or left a plain clone alone: $(cat "$t/out")"
+ok "setup.sh runs 2.0.0: an old bare store in repos/ moves to worktrees/<repo>/.bare with its worktrees intact, then repos/<repo> is cloned; a plain clone is left as it is"
 git clone -q -c core.autocrlf=true -b ws/$AN "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh fails with core.autocrlf=true"
@@ -399,7 +402,7 @@ local_ws() { # <branch> <ws branch> <name> <repo>: a local branch of <ws branch>
     "$3" "$4" "$t/$4.git" "$4" "$t/$4.git" >"$w/workspace.yml" && git -C "$w" commit -qam "$1" && /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>&1
 }
 live() { [ "$(git -C "$w/worktrees/$1/$def" branch --show-current 2>/dev/null)" = "$def" ] &&
-  ! git -C "$w/repos/$1" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
+  ! git -C "$w/worktrees/$1/.bare" worktree list --porcelain | grep -q prunable && git -C "$w/references/$1-ref" rev-parse -q HEAD >/dev/null &&
   [ -f "$w/workspaces/main/ci/sync.sh" ]; }
 local_ws a1 "ws/$AN" "$AN" lib1 || fail "park: setup on argos-dev failed"
 ours() { [ ! -L "$w/.git/hooks/post-checkout" ] && grep -qx '\[ ! -f .delphi/park.sh \] || exec bash .delphi/park.sh "$@"' "$w/.git/hooks/post-checkout"; }
@@ -525,7 +528,9 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
   fail "<base> ignored"
 [ "$(nw code feat)" = "$w/worktrees/code/feat" ] || fail "rerun did not reuse"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
-ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun"
+{ [ "$(git -C "$w/repos/code" branch --show-current)" = "$def" ] && [ "$(git -C "$w/repos/code" worktree list | wc -l)" = 1 ] &&
+  ! git -C "$w/repos/code" rev-parse -q --verify refs/heads/1-new >/dev/null; } || fail "new-worktree touched the clone at repos/code"
+ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun, never touching repos/<repo>"
 # skill scripts read the workspace from $DELPHI_ROOT (the session hook evals paths.sh's export line) and every folder from paths.sh
 (. "$w/.delphi/paths.sh" && [ "$DELPHI_ROOT" = "$w" ] && [ "$DELPHI_REPOS" = "$w/repos" ] &&
   [ "$DELPHI_WORKTREES" = "$w/worktrees" ] && [ "$DELPHI_REFERENCES" = "$w/references" ] && [ "$DELPHI_WORKSPACES" = "$w/workspaces" ]) ||

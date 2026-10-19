@@ -12,7 +12,7 @@ anyone, person or agent, work on a workspace with plain git and send improvement
 - **G1. Workspaces live in Delphi.** Each workspace is a folder on `main` with every file at its
   normal harness location.
 - **G2. The workspace is the repo root.** Checking out `ws/<name>` gives exactly that workspace at
-  the root. `.delphi/setup.sh` clones the code repos it lists and checks out their default branch as a worktree.
+  the root. `.delphi/setup.sh` clones the code repos it lists and, separately, checks out their default branch as a worktree.
 - **G3. Both directions, automatically.** Refresh: changes on `main` reach `ws/<name>`. Propose:
   merged workspace changes reach `main` as a PR.
 - **G4. Conflicts are reported, never guessed.** A conflicting workspace is skipped with its files

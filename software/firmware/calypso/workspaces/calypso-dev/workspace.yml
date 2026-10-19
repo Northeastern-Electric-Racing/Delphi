@@ -5,7 +5,7 @@ plugins:                  # `- <scope>[.<set>]`: plugin sets to enable; CI lists
 opt-out:                  # `- <path>`: files from the workspace-inherit/ folders above that CI leaves alone here, so the workspace keeps its own copy (or none)
   # - .claude/skills/journal
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
-repos:                    # `<name>: <git-url>`: code you change; a clone at repos/<name>, default branch at worktrees/<name>/<branch>
+repos:                    # `<name>: <git-url>`: code you change; a clone at repos/<name>, and separately worktrees/<name>/<branch> (default branch first)
   calypso: https://github.com/Northeastern-Electric-Racing/Calypso.git
 workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, not edit from here; a clone on its branch at workspaces/<name or main>
   - main

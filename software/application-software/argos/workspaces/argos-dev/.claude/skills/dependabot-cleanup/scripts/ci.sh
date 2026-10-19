@@ -19,7 +19,7 @@ while IFS=$'\t' read -r name link; do
     awk '/##\[group\]Run / { step = $0; n = 0; next } /##\[error\]/ { print step; for (i = 0; i < n; i++) print m[i]; print; exit }
          tolower($0) ~ /error|fail|panick/ && $0 !~ /^npm error *$/ && n < 10 { m[n++] = $0 }' | cut -c1-200
 done <<<"$jobs"
-g() { git -C "$DELPHI_REPOS/argos" "$@"; }
+g() { git -C "$DELPHI_WORKTREES/argos/.bare" "$@"; }
 g fetch -q origin develop "$branch"
 echo "--- develop is $(g rev-list --count "$(g merge-base origin/develop "origin/$branch")..origin/develop") commits past this PR's base"
 gh run list -R "$R" -b develop -L 20 --json workflowName,conclusion \
