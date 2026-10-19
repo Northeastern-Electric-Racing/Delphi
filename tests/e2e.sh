@@ -868,20 +868,18 @@ sync "$CN" >"$t/out" 2>&1 || fail "retire owned skill source: $(cat "$t/out")"
 o show "ws/$CN:.agents/skills/portable/SKILL.md" | grep -qx "Codex own" || fail "former opt-out owned skill was deleted"
 ok "removing a shared source and old opt-out preserves the former workspace-owned skill"
 
-# No real Codex invocation: assert launch arguments and exports in a stub and fresh child shell.
-cat >"$t/bin/codex" <<'CODEX'
-#!/usr/bin/env bash
-set -euo pipefail
-[ "$1" = -C ] && [ "$2" = "$DELPHI_ROOT" ] && [ "$3" = "argument with spaces" ]
-[ "$DELPHI_REPOS" = "$DELPHI_ROOT/repos" ]
-bash -c '[ "$DELPHI_WORKTREES" = "$DELPHI_ROOT/worktrees" ]'
-CODEX
-chmod +x "$t/bin/codex"
+# Helper commands initialize their layout independently of Codex or the caller's shell exports.
 w=$t/codex && git clone -q -b "ws/$CN" "$t/origin.git" "$w"
-(cd "$t" && env -u DELPHI_ROOT -u DELPHI_REPOS -u DELPHI_WORKTREES bash "$w/.delphi/codex.sh" "argument with spaces") || fail "Codex launcher exports/arguments"
 # shellcheck disable=SC2016 # fresh shell must receive the exports
-(cd "$t" && env -u DELPHI_ROOT bash "$w/.delphi/exec.sh" bash -c '[ "$PWD" != "$DELPHI_ROOT" ] && [ -f "$DELPHI_ROOT/AGENTS.md" ]') || fail "fresh host command wrapper"
-ok "Codex launcher and per-command bootstrap propagate layout to fresh shells and children while preserving arguments/cwd"
+(cd "$t" && env -u DELPHI_ROOT -u DELPHI_REPOS -u DELPHI_WORKTREES bash "$w/.delphi/exec.sh" bash -c '
+  set -e
+  [ "$1" = "argument with spaces" ]
+  [ "$PWD" != "$DELPHI_ROOT" ]
+  [ -f "$DELPHI_ROOT/AGENTS.md" ]
+  [ "$DELPHI_REPOS" = "$DELPHI_ROOT/repos" ]
+  bash -c '\''[ "$DELPHI_WORKTREES" = "$DELPHI_ROOT/worktrees" ]'\''
+' _ "argument with spaces") || fail "fresh host command wrapper"
+ok "per-command bootstrap propagates layout to fresh shells and children while preserving arguments/cwd"
 # Proxy capability selection uses stubs only, without GitHub/network access.
 mkdir -p "$t/proxy-bin"
 printf '#!/usr/bin/env bash\nexit 1\n' >"$t/proxy-bin/gh"

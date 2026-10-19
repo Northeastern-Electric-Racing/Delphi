@@ -254,9 +254,9 @@ it prints them as an export line. The adapter supplies layout initialization: fo
 skill scripts'. In a terminal, `. .delphi/paths.sh` from the root. `new-worktree.sh` sources it from
 its own folder; every skill script, plugin or workspace, sources `$DELPHI_ROOT/.delphi/paths.sh` and
 takes only names (repo, branch), never a searched-for path, so the model types only the names.
-Skills themselves stay harness-neutral. Codex CLI starts with `.delphi/codex.sh`, which sources
-the layout and launches `codex -C` at this root. Hosts that launch Codex independently follow
-`AGENTS.md`: determine the absolute root once, then run skill helpers through that root's
+Skills themselves stay harness-neutral. Codex discovers its native instructions and skills from
+the checked-out workspace branch. Agents follow `AGENTS.md`: determine the absolute root once,
+then run skill helpers through that root's
 `.delphi/exec.sh`. It sources the layout on every invocation, preserves the caller's directory,
 and exports it to children; pass this explicit root/wrapper to independently started sub-agents.
 No session hook, shared shell state, or particular managed environment is assumed. Setup and

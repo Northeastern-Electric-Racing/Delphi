@@ -46,8 +46,8 @@ every Argos workspace on the next sync.
 
 ## Codex
 
-The `default-codex` leaf is `ws/s.app.argos.default-codex`. Use `bash .delphi/codex.sh` to start
-Codex CLI after setup. In another Codex host, follow `AGENTS.md` and use `.delphi/exec.sh` for skill
+The `default-codex` leaf is `ws/s.app.argos.default-codex`. Open that workspace branch in Codex
+normally, then follow `AGENTS.md` and use `.delphi/exec.sh` for skill
 helpers in fresh shells and sub-agents. This workspace carries Argos workflows and dependency
 references without prescribing a cloud environment, credentials or Codex permission settings.
 Check required local tooling before running a workflow; use available browser/GitHub integrations

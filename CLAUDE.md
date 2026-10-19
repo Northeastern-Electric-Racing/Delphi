@@ -45,7 +45,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
 - `ci/harnesses.sh` declares supported adapters and native paths; `ci/inherit.sh` resolves neutral
   `skills/` and legacy `workspace-inherit/` skill paths for sync and validation. Codex uses
-  `.delphi/codex.sh` for CLI startup and `.delphi/exec.sh` for hosts with independent shells.
+  `.delphi/exec.sh` to initialize helper commands in independent shells.
 
 ## Rules
 

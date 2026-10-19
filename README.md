@@ -96,11 +96,10 @@ Argos's `default-codex` workspace targets the Codex harness across hosts:
 git clone -b ws/s.app.argos.default-codex https://github.com/Northeastern-Electric-Racing/Delphi.git delphi
 cd delphi
 bash .delphi/setup.sh
-bash .delphi/codex.sh
 ```
 
-The CLI launcher exports the layout before starting Codex. In hosts that start Codex themselves,
-read `AGENTS.md` and use `.delphi/exec.sh` for helper commands; it sets the layout for every command
+Open the checked-out workspace in Codex normally; it discovers `AGENTS.md` and `.agents/skills/`
+from the workspace branch. Follow `AGENTS.md` and use `.delphi/exec.sh` for helper commands; it sets the layout for every command
 and its child processes, even when shell exports do not persist. Start a fresh session after a
 workspace switch. Host dependencies and credentials are configured by the user or host; the
 workspace doesn't depend on a particular cloud environment. Codex does not enable Delphi's Claude

@@ -18,3 +18,4 @@
 1.1.0 a3446f7f763c setup.sh clones each repos: entry at repos/<name> (a normal clone on its default branch, was a bare store) and adds no worktree; new-worktree.sh makes worktrees from that clone; older bare stores are left as they are
 1.2.0 d139aaf9f4a5 worktrees come from their own bare store, worktrees/<name>/.bare, separate from the plain clone at repos/<name>; setup.sh makes the store and the default-branch worktree again; an older bare store at repos/<name> is left as it is
 1.3.0 39487f8f28ec portable Codex harness and native shared skill inheritance
+1.3.1 2edd9e9dc9fc remove Codex launcher; discover instructions and skills from the workspace branch
