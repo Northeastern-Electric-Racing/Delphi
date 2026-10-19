@@ -1,6 +1,6 @@
 ---
 name: report-spike
-description: Post a spike's findings on its ticket, judged against its hypothesis, and ask the lead to review its draft PR. Use when a spike's direction has been tried on an application-software repo (Argos, Nero).
+description: Post a spike's findings on its ticket, judged against its hypothesis, and ask the lead to review its draft PR. Use when a spike's approach has been tried on an application-software repo (Argos, Nero).
 ---
 
 A spike runs like any ticket (branch, commits, a draft PR from `open-pr`); this reports it. Load the project's `pr-conventions` first.
