@@ -26,6 +26,8 @@
 # Lists every problem; exits 1 if any.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=ci/inherit.sh
+source "$here/inherit.sh"
 cd "${1:-.}"
 base=${2:-}
 problems=0
@@ -142,34 +144,60 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
       next }
     { print "unexpected line: " $0 }
     END { if (!h) print "harness is missing"; if (want != "" && !nm) print "name is missing" }' "$1")
+  local adapter
+  adapter=$(awk '/^harness:/ { print $2; exit }' "$1")
+  if [ -n "$adapter" ]; then
+    harness "$adapter" 2>/dev/null || { bad "$1: unknown harness '$adapter'"; return; }
+    if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 } s && /^[[:space:]]+-/ { found = 1 } END { exit !found }' "$1"; then
+      bad "$1: $adapter does not support Delphi plugin sets"
+    fi
+    if [ -n "${2:-}" ]; then
+      [ -f "${1%/*}/$instruction" ] || bad "${1%/*}/$instruction: required for $adapter"
+      case "$adapter" in
+        codex) for incompatible in CLAUDE.md .claude; do
+          [ ! -e "${1%/*}/$incompatible" ] || bad "${1%/*}/$incompatible: belongs to a different harness"
+        done ;;
+        claude-code) for incompatible in AGENTS.md .agents .codex; do
+          [ ! -e "${1%/*}/$incompatible" ] || bad "${1%/*}/$incompatible: belongs to a different harness"
+        done ;;
+      esac
+    fi
+  fi
   while IFS= read -r v; do listed="$listed $1|$v"; done < <(awk '/^workspaces:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-[[:space:]]+/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); if ($0 != "main") print }' "$1")
 }
 
-levels() { # <workspace folder>: software/ and each folder down to its project folder, top first
-  echo "${1%/workspaces/*}" | awk -F/ '{ p = $1; print p; for (i = 2; i <= NF; i++) { p = p "/" $i; print p } }'
-}
-inherits() { # <workspace folder> <workspace.yml>: what it inherits, against what it has and opts out of
-  local level p o opted seen="" used="" out
+inherits() { # <workspace folder> <workspace.yml>: validate resolved destinations, not source layout
+  local p src o opted seen="" used="" out adapter
+  adapter=$(awk '/^harness:/ { print $2; exit }' "$2")
+  harness "$adapter" 2>/dev/null || return 0
   out=$(awk '/^opt-out:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-[[:space:]]+/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); sub(/\/$/, ""); print }' "$2")
-  for level in $(levels "$1"); do
-    [ -d "$level/workspace-inherit" ] || continue
-    for p in $(cd "$level/workspace-inherit" && find . -type f | sed 's#^\./##' | sort); do
-      case " $seen " in *" $p "*) bad "$level/workspace-inherit/$p: $1 also inherits it from a folder above; keep one" ;; esac
-      seen="$seen $p" opted=""
-      for o in $out; do case "$p/" in "$o"/*) opted=1 used="$used $o" ;; esac; done
-      [ -n "$opted" ] || [ ! -e "$1/$p" ] || bad "$1/$p: inherited from $level/workspace-inherit/; remove it, or list it under opt-out: in workspace.yml"
-    done
-  done
+  while IFS=$'\t' read -r _ p src; do
+    case "$adapter:$p" in
+      codex:.claude/* | claude-code:.agents/* | claude-code:.codex/*)
+        bad "$src: $p belongs to a different harness" ;;
+    esac
+    case " $seen " in *" $p "*) bad "$src: $1 also inherits it from a folder above; keep one" ;; esac
+    seen="$seen $p" opted=""
+    for o in $out; do case "$p/" in "$o"/*) opted=1 used="$used $o" ;; esac; done
+    [ -n "$opted" ] || [ ! -e "$1/$p" ] || bad "$1/$p: inherited from $src; remove it, or list it under opt-out: in workspace.yml"
+  done < <(inherited_files "" "$1" "$adapter")
   for o in $out; do case " $used " in *" $o "*) ;; *) bad "$2: opt-out: $o is nothing it inherits" ;; esac; done
 }
+
 while IFS= read -r d; do
   case "$d" in */workspaces/*) bad "$d: belongs in an org or project folder, not under workspaces/" ;; esac
-  for f in CLAUDE.md workspace.yml .delphi .claude/settings.json $managed; do
+  for f in CLAUDE.md AGENTS.md workspace.yml .delphi .claude/settings.json .codex/config.toml $managed; do
     [ ! -e "$d/$f" ] || bad "$d/$f: each workspace has its own; it can't be inherited"
   done
 done < <(find software -type d -name workspace-inherit 2>/dev/null | sort)
+while IFS= read -r d; do
+  case "$d" in */workspaces/*) continue ;; esac
+  for skill in "$d"/*; do
+    [ ! -e "$skill" ] || [ -f "$skill/SKILL.md" ] || bad "$skill: shared skills need <name>/SKILL.md"
+  done
+done < <(find software -type d -name skills ! -path '*/workspace-inherit/*' ! -path '*/workspace-defaults/*' 2>/dev/null)
 while IFS= read -r d; do
   [ ! -d "${d%/workspaces}/defaults" ] || bad "${d%/workspaces}/defaults: renamed workspace-defaults/"
 done < <(find software -type d -name workspaces 2>/dev/null)

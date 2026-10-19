@@ -88,6 +88,28 @@ path, except `.github/workflows/delphi.yml` (a copy of the template's). The scri
 (listed in `.delphi/manifest.yml`), live once at main's root: sync puts
 `.delphi/` on every `ws/*` branch, so change them only through PRs to main.
 
+## Codex
+
+Argos's `default-codex` workspace targets the Codex harness across hosts:
+
+```sh
+git clone -b ws/s.app.argos.default-codex https://github.com/Northeastern-Electric-Racing/Delphi.git delphi
+cd delphi
+bash .delphi/setup.sh
+bash .delphi/codex.sh
+```
+
+The CLI launcher exports the layout before starting Codex. In hosts that start Codex themselves,
+read `AGENTS.md` and use `.delphi/exec.sh` for helper commands; it sets the layout for every command
+and its child processes, even when shell exports do not persist. Start a fresh session after a
+workspace switch. Host dependencies and credentials are configured by the user or host; the
+workspace doesn't depend on a particular cloud environment. Codex does not enable Delphi's Claude
+plugin sets or install MCP servers. Use tools already available in the selected host.
+
+`harness:` is validated against `ci/harnesses.sh`. Authoring selects its native instruction template
+and skill destination while preserving shared project defaults. See `docs/design.md` for adding
+another adapter.
+
 ## Versions
 
 `.delphi/manifest.yml` lists Delphi's own files under a `version:` (MAJOR.MINOR.PATCH), and
@@ -98,7 +120,7 @@ a version needs cleanup in people's clones, it ships `.delphi/migrations/<versio
 
 ## New workspace
 
-`tools/new-workspace.sh <org-path under software/> <leaf>` copies `templates/workspace/` into
+`tools/new-workspace.sh [--harness claude-code|codex] <org-path under software/> <leaf>` copies `templates/workspace/` into
 `software/<org-path>/workspaces/<leaf>/`, adds the project's `workspace-defaults/` if it has one, and
 opens a PR to `main`, labelled `by: ai` (put `--by ai-assisted` or `--by human` first to change it).
 Once it merges, CI creates `ws/<name>` (its dotted name).
@@ -107,8 +129,13 @@ Once it merges, CI creates `ws/<name>` (its dotted name).
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and
 `workspace-defaults/` (what a new workspace there starts with).
 
+**Shared skills.** Put reusable workflows in `skills/<name>/` at an org or project folder.
+Sync renders them into the native skill directory declared in `ci/harnesses.sh`, with one source
+across harnesses. Edit these on `main`; workspace edits are reset on refresh. `opt-out:` uses
+the destination path in the selected harness.
+
 **Inherited files.** Any folder under `software/`, `software/` itself included, can hold
-`workspace-inherit/`: files (usually skills, never `CLAUDE.md`) that CI writes onto the `ws/*` branch
+`workspace-inherit/`: files at their workspace paths (never native workspace instructions) that CI writes onto the `ws/*` branch
 of every workspace below it on each sync. Edit them on `main`; a workspace's own edit is undone. To
 keep its own copy, a workspace lists the path under `opt-out:` in its `workspace.yml`.
 A workspace that lists `main` under `workspaces:` reads them at `workspaces/main/` (recommended for every

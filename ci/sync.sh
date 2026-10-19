@@ -24,6 +24,8 @@
 # branches without a folder, old names included, get a notice, never deleted. Merges run in a temporary worktree.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=ci/inherit.sh
+source "$here/inherit.sh"
 dir=both
 case "${1:-}" in refresh | propose) dir=$1 && shift ;; esac
 only=${1:-}
@@ -57,26 +59,30 @@ optouts() { # <rev:path of a workspace.yml>: its opt-out: entries, space-separat
     s && /^[[:space:]]+-[[:space:]]+/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); sub(/\/$/, ""); printf "%s ", $0 }'
 }
 
-inherited() { # <rev> <folder> <opt-outs>: `<mode> <blob><TAB><path>` for each file the workspace at
-  # <folder> inherits from <rev>'s workspace-inherit/ folders, top first, less <opt-outs> (a folder covers what's under it)
-  local level
-  for level in $(echo "${2%/workspaces/*}" | awk -F/ '{ p = $1; print p; for (i = 2; i <= NF; i++) { p = p "/" $i; print p } }'); do
-    git ls-tree -r "$1:$level/workspace-inherit" 2>/dev/null || true
-  done | awk -F'\t' -v out="$3" 'BEGIN { n = split(out, o, " ") }
+inherited() { # <revision> <folder> <opt-outs> <harness>: mode blob<TAB>native destination
+  inherited_files "$1" "$2" "$4" | awk -F'\t' -v out="$3" 'BEGIN { n = split(out, o, " ") }
     { for (i = 1; i <= n; i++) if ($2 == o[i] || index($2, o[i] "/") == 1) next
-      split($1, m, " "); print m[1] " " m[3] "\t" $2 }'
+      print $1 "\t" $2 }'
 }
 
 with_inherited() { # <tree-ish> <folder> <old main or ''> <rev:path of its workspace.yml> [<prefix>/]: without
   # <prefix>, its tree with what the workspace inherits from main written over it, and what it
   # inherited from <old> but no longer does removed; with <prefix> (a proposal), those paths under
   # <prefix> put back to main's. Opt-outs come from that workspace.yml.
-  local i=$wt.index out now p ms pre=${5:-}
+  local i=$wt.index out old_out="" now p ms adapter old_adapter old_manifest pre=${5:-}
   out=$(optouts "$4")
-  now=$(inherited "$main" "$2" "$out")
+  adapter=$(git show "$4" | awk '/^harness:/ { print $2; exit }')
+  old_adapter=$adapter
+  if [ -n "$3" ]; then
+    old_manifest=$3:$2/workspace.yml
+    git cat-file -e "$old_manifest" 2>/dev/null || old_manifest=$3:workspace.yml
+    old_adapter=$(git show "$old_manifest" | awk '/^harness:/ { print $2; exit }')
+    old_out=$(optouts "$old_manifest")
+  fi
+  now=$(inherited "$main" "$2" "$out" "$adapter")
   rm -f "$i"
   GIT_INDEX_FILE=$i git read-tree "$1"
-  { [ -z "$3" ] || inherited "$3" "$2" "$out"; [ -z "$pre" ] || printf '%s\n' "$now"; } | cut -f2 | sort -u |
+  { [ -z "$3" ] || inherited "$3" "$2" "$out $old_out" "$old_adapter"; [ -z "$pre" ] || printf '%s\n' "$now"; } | cut -f2 | sort -u |
     while IFS= read -r p; do
       [ -z "$p" ] && continue
       [ -n "$pre" ] || ! printf '%s\n' "$now" | cut -f2 | grep -qxF "$p" || continue # still inherited: written below
@@ -107,6 +113,15 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   if [ -z "$(tree "$from")" ]; then
     git -C "$wt" checkout --quiet --detach \
       "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(with_inherited "$(with_delphi "$main:$2")" "$2" "" "$main:$2/workspace.yml")")"
+    if ! generate_harness "$mw" "$2" "$wt" 2>"$wt.err"; then
+      echo "ws/$1: $(cat "$wt.err"); not created" >&2
+      git -C "$wt" reset --quiet --hard HEAD
+      git -C "$wt" clean -qfd
+      failed=1 ok=0
+      return
+    fi
+    git -C "$wt" add -A
+    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(git -C "$wt" write-tree)")"
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
     echo "ws/$1: created from $2"
     return
@@ -127,18 +142,16 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   if [ "$t" != "$(tree "$head")" ]; then
     git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$head" -m "delphi: sync inherited files from main" "$t")"
   fi
-  if [ "$(awk '/^harness:/ { print $2; exit }' "$wt/workspace.yml")" = claude-code ]; then
-    if ! (cd "$mw" && bash "$here/plugins.sh" yml "$2" "$wt/workspace.yml" >"$wt.yml" &&
-      bash "$here/plugins.sh" settings "$2" "$wt.yml" >"$wt.settings") 2>"$wt.err"; then
-      echo "ws/$1: $(cat "$wt.err"); not refreshed" >&2
-      failed=1 ok=0
-      return
-    fi
-    cp "$wt.yml" "$wt/workspace.yml" && mkdir -p "$wt/.claude" && cp "$wt.settings" "$wt/.claude/settings.json"
-    if [ -n "$(git -C "$wt" status --porcelain -- workspace.yml .claude/settings.json)" ]; then
-      git -C "$wt" add workspace.yml .claude/settings.json
-      git -C "$wt" commit --quiet -m "delphi: generate plugins: defaults and .claude/settings.json"
-    fi
+  if ! generate_harness "$mw" "$2" "$wt" 2>"$wt.err"; then
+    echo "ws/$1: $(cat "$wt.err"); not refreshed" >&2
+    git -C "$wt" reset --quiet --hard HEAD
+    git -C "$wt" clean -qfd
+    failed=1 ok=0
+    return
+  fi
+  if [ -n "$(git -C "$wt" status --porcelain)" ]; then
+    git -C "$wt" add -A # only the adapter has written since the inherited tree was committed
+    git -C "$wt" commit --quiet -m "delphi: generate plugins: defaults and .claude/settings.json"
   fi
   if [ "$from" = "$was" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1" "HEAD:refs/heads/ws/$3"

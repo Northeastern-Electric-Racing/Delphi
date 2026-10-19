@@ -5,7 +5,7 @@ Goals: `docs/goals.md`. No CLI: plain git plus a few shell scripts run by GitHub
 ## 1. Model
 
 `main` holds every workspace as a folder, `software/**/workspaces/<leaf>/`, with its files at their
-normal harness paths (`CLAUDE.md`, `.claude/…`, `docs/…`). A workspace's `<name>` is the short name
+normal harness paths (declared in `ci/harnesses.sh`). A workspace's `<name>` is the short name
 of each folder from `software/` down to its project folder, then `<leaf>`, joined by dots
 (`s.app.argos.argos-dev` for `software/application-software/argos/workspaces/argos-dev`). A folder's
 short name is the one line in its `short-name` file, else its own name; `.delphi/names.sh [<rev>]`
@@ -16,11 +16,10 @@ folder name (`workspaces/<name>`, `.delphi/parked/<name>`), and no branch can be
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
-only on main. Likewise each `workspace-inherit/` folder: sync writes its files onto the `ws/*`
+only on main. Likewise shared `skills/` and each `workspace-inherit/` folder: sync writes its files onto the `ws/*`
 root of every workspace below its folder and never proposes them back. Otherwise nothing is shared
 or generated between workspaces: a project's `workspace-defaults/` is copied once at creation, `workspaces:` only checks out other branches to read, and
-harness plugins (section 2) carry what workspaces opt into. The one generated workspace file is
-`.claude/settings.json`.
+harness plugins (section 2) carry what workspaces opt into. Generated workspace files belong to the adapter; Claude Code generates `.claude/settings.json`.
 
 ```
    ┌───────────────────────────────┐
@@ -52,19 +51,22 @@ harness plugins (section 2) carry what workspaces opt into. The one generated wo
 
 ```
 software/<org>/…/<project>/           README.md  AUTHORING.md  workspace-defaults/   (optional, main only)
+software/[<org>/…/]skills/<name>/     reusable Agent Skills, rendered to the native skill directory
 software/[<org>/…/]workspace-inherit/  files every workspace below gets on its ws/* root (optional, main only)
 software/<org>/…/plugins/<harness>/<set>/   a plugin set for the workspaces under that folder (optional, main only)
 software/<org>/…/short-name           the folder's short name in workspace names (optional; default: its name)
 software/<org>/…/plugins/scope        its scope in plugin names (optional; default: its short name)
 .claude-plugin/marketplace.json       every Claude Code plugin set under software/ (generated)
-software/<org>/…/workspaces/<leaf>/   workspace.yml  CLAUDE.md  .claude/…  docs/…
+software/<org>/…/workspaces/<leaf>/   workspace.yml  native instructions and skills  docs/…
                                       .github/workflows/delphi.yml  .gitattributes
 .delphi/                              {setup,new-worktree,switch,park,plugins,version}.sh  manifest.yml  versions
                                       migrations/  .gitattributes  .gitignore: on every ws/* root
 ci/sync.sh  ci/check.sh               CI scripts
+ci/harnesses.sh  ci/inherit.sh        adapter registry and native inheritance resolver
 ci/plugins.sh                         writes the marketplace and each workspace's .claude/settings.json
 tools/new-workspace.sh                new workspace as a PR
-templates/workspace/                  what new-workspace copies
+templates/workspace/                  common workspace template
+templates/harnesses/                  other adapters' native instruction templates
 .github/workflows/delphi.yml          CI
 tests/e2e.sh                          sandbox test of all of the above
 ```
@@ -89,25 +91,28 @@ workspace directly in its `workspaces/` starts with, copied once and then its ow
 is checked as a manifest (without `name:`) but is not a workspace.
 
 Any folder from `software/` down to a project folder may hold `workspace-inherit/`: files laid out as
-in a workspace root (`.claude/skills/<skill>/…`) that every workspace below it gets, at any depth.
+in a workspace root that every workspace below it gets, at any depth.
 They are never copied into the workspace folder on main; refresh writes them onto `ws/<name>` and
 propose drops them, so they stay one copy, edited on main, and a workspace's own edit to one is
 undone on refresh. A workspace that wants its own copy lists the path (or a folder above it) under
 `opt-out:` in its `workspace.yml`; refresh then leaves that path alone and propose carries it like
 any workspace file. `ci/check.sh` fails on a path inherited from two folders, a workspace file at an
 inherited path it hasn't opted out of, an `opt-out:` that matches nothing, and a workspace's own
-files in `workspace-inherit/` (`CLAUDE.md`, `workspace.yml`, `.delphi/`, `.claude/settings.json`,
-the workflow). The general skills (worktrees, switching, setup, the journal) live in
-`software/workspace-inherit/`, and the skills a folder's workspaces share live in its own (e.g.
-`application-software/` for PRs and tickets, `argos/` for running and verifying Argos). Shared
-skills go there rather than in a plugin: they're plain files on the workspace branch, with nothing
-to install.
+files in `workspace-inherit/` (the paths protected by `ci/check.sh`). Shared skills live in `skills/<name>/` beside `workspace-inherit/`, at the same org/project
+levels. The resolver in `ci/inherit.sh` maps their paths to the selected harness's native skill
+directory and uses those destinations for collision checks, opt-outs, refresh and propose. General
+skills live in `software/skills/`; other org/project folders add their own. Legacy inherited
+`.claude/skills/` sources are also mapped to the selected harness, so source moves don't duplicate
+skills. Other inherited files retain their paths, and files belonging to the wrong harness fail
+validation. Shared frontmatter uses the common Agent Skills fields; harness-specific tool
+permissions belong in the adapter or host configuration. Shared skills go here rather than in a
+plugin: they're plain files on the workspace branch, with nothing to install.
 
 A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
 harness features beyond files (hooks, MCP servers). It lives in `plugins/<harness>/<set>/` of a
 folder (`plugins/claude/` for Claude Code; a sister folder per other harness), one copy for the
 workspaces below. The one so far is `delphi`, `software/`'s `default` set (scope `delphi`): a mod
-(section 5) whose `/ws-delphi` pane switches workspaces. Every workspace gets the
+(section 5) whose `/ws-delphi` pane switches workspaces. Every Claude Code workspace gets the
 `default` set of each folder above it, which `ci/plugins.sh` lists first under `plugins:` in its
 `workspace.yml` (`- argos   # default, from software/application-software/argos/`; a removed line
 comes back); other sets are listed there by hand (`- <scope>.<set>`). `ci/plugins.sh` generates the
@@ -161,8 +166,8 @@ For every workspace on `origin/main` (or just `<name>`):
    `origin/main` into `ws/<name>` with `--no-ff -Xsubtree=<folder>`, then, if its `.delphi/` differs
    from main's, commit main's over it ("delphi: sync .delphi/ from main", built in a temporary
    index). Then write over it the files it inherits from main (every `workspace-inherit/` from
-   `software/` down to its project folder, less its `opt-out:` paths) and remove those it
-   inherited from the main it last merged (the merge base) but no longer does ("delphi: sync
+   `software/` down to its project folder, less its `opt-out:` paths) and remove the resolved destinations it
+   inherited from the main it last merged (the merge base) but no longer does, resolving the old sources with the old harness for transitions ("delphi: sync
    inherited files from main"; a new branch gets them in its one commit), and push if the tree changed. (`--no-ff` matters: once ws commits are in main, a
    fast-forward would put main's whole tree on the ws branch.) A `.delphi/` edit made on `ws/<name>`
    is undone here. Then, for a `claude-code` workspace, list main's default sets above it under the
@@ -244,23 +249,29 @@ The inherited `new-worktree` skill makes worktrees the default way to start a br
 
 `.delphi/paths.sh` is the layout in one place: sourced, it sets and exports `DELPHI_ROOT` (from the
 file's own place) and `DELPHI_REPOS`, `DELPHI_WORKTREES`, `DELPHI_REFERENCES`, `DELPHI_WORKSPACES`; run,
-it prints them as an export line. Each harness's generated settings put that line into every shell
-at session start: for Claude Code, a SessionStart hook in `.claude/settings.json` (from
+it prints them as an export line. The adapter supplies layout initialization: for Claude Code, a SessionStart hook in `.claude/settings.json` (from
 `ci/plugins.sh`) appends it to `$CLAUDE_ENV_FILE`, which reaches the model's commands, subagents' and
 skill scripts'. In a terminal, `. .delphi/paths.sh` from the root. `new-worktree.sh` sources it from
 its own folder; every skill script, plugin or workspace, sources `$DELPHI_ROOT/.delphi/paths.sh` and
 takes only names (repo, branch), never a searched-for path, so the model types only the names.
-Skills themselves stay harness-neutral (SKILL.md is the shared Agent Skills format): they call
-scripts by their path in the skill's folder (`bash scripts/<script>.sh …`) and name no harness
-variable, so another harness needs only its own settings to set `DELPHI_ROOT`.
+Skills themselves stay harness-neutral. Codex CLI starts with `.delphi/codex.sh`, which sources
+the layout and launches `codex -C` at this root. Hosts that launch Codex independently follow
+`AGENTS.md`: determine the absolute root once, then run skill helpers through that root's
+`.delphi/exec.sh`. It sources the layout on every invocation, preserves the caller's directory,
+and exports it to children; pass this explicit root/wrapper to independently started sub-agents.
+No session hook, shared shell state, or particular managed environment is assumed. Setup and
+worktree scripts already source the layout from their own known location. Host credentials and
+dependencies remain host concerns; existing authenticated GitHub tools can be used, and an
+explicit `DELPHI_GITHUB_REST_PROXY` capability enables the existing REST-proxy fallback. No
+credential or permission settings are generated for Codex.
 
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
 to origin, and runs the new workspace's `setup.sh`. `switch.sh --list` prints `main` and each workspace with a branch, as `<name> <project folder>`, `*` before this clone's. The `delphi` mod
 (`software/plugins/claude/default/`) puts that in a pane to keep open: `/ws-delphi` shows them as cards grouped by project, this clone's
 marked current, with a warning when tracked files have changed; pressing a card selects it, and
-**Switch workspace** runs `switch.sh` (`/ws-delphi <name>` skips the pane). No restart: Claude Code
-reloads skills from `.claude/skills/` itself, and the mod sends the root's new `CLAUDE.md` with the
+**Switch workspace** runs `switch.sh` (`/ws-delphi <name>` skips the pane). Codex sessions must
+restart after a switch. Claude Code with this mod reloads skills from `.claude/skills/` itself, and the mod sends the root's new `CLAUDE.md` with the
 next prompt (once, after any change: a switch, a pull, `switch.sh` by hand), saying it replaces the
 one the session started with (a user mod can't rewrite the session's own `CLAUDE.md` block). All
 the git work stays in `switch.sh`, which `tests/e2e.sh` covers; the mod's own tests
@@ -301,14 +312,33 @@ it's switched back to (`switch.sh` runs setup). Migrations must be safe to re-ru
 fresh clone, and delete only what nothing is lost from, stopping with what to do otherwise. `setup.sh`
 also warns when `.delphi/` isn't exactly the version it says (edited in the clone).
 
-## 6. New workspaces (`tools/new-workspace.sh [--by <who>] <org-path> <leaf>`)
+## 6. New workspaces
 
-Validates the leaf and the dotted name it gets (format, unique, no leftover `ws/<name>` or `ws/<old>`), copies `templates/workspace/`
-and then `software/<org-path>/workspace-defaults/` if present (its `CLAUDE.md` appended to the template's)
-into `software/<org-path>/workspaces/<leaf>/` (filling `{{name}}`/`{{folder}}` in `CLAUDE.md`) in a
-temporary worktree, sets `name: <name>`, generates its `.claude/settings.json`, runs `ci/check.sh`, pushes branch
-`new-workspace/<org-path>/<leaf>`, and opens a PR in the PR template's sections, labelled `by: <who>` (`ai`,
-the default, `ai-assisted` or `human`). Sync creates `ws/<name>` once it merges.
+`tools/new-workspace.sh [--by <who>] [--harness <adapter>] <org-path> <leaf>` validates the leaf and
+dotted name, then copies `templates/workspace/` and project `workspace-defaults/` into a temporary
+worktree. The explicit harness overrides the project's manifest default (else Claude Code). Its
+native instruction template is selected by `ci/harnesses.sh`, with only the matching instruction
+default appended and placeholders filled. Repositories and ordinary defaults are preserved;
+foreign native instruction/skill files and unsupported plugin defaults are not copied across
+harnesses. Shared skills arrive on refresh, never in the workspace's main folder.
+
+The tool sets `name:` and `harness:`, generates adapter-owned files, runs `ci/check.sh`, pushes
+`new-workspace/<org-path>/<leaf>`, and opens the PR using the PR template and `by: <who>` label.
+Sync creates `ws/<name>` once it merges.
+
+### Adding a harness
+
+`ci/harnesses.sh` is the explicit registry of native instruction/template paths, skill destinations
+and plugin capabilities, plus generated-file behavior. Add the adapter there and a native template
+under `templates/`, then teach validation about foreign native paths and any new generated files.
+Adapters must reject capabilities they cannot supply; Codex currently rejects Delphi plugin sets.
+Keep common workflows in neutral skills and place harness-specific integrations behind the adapter.
+Do not infer hook, plugin, authentication or hot-reload support from another harness.
+
+Test native authoring, refresh/propose ownership, opt-outs, old/new destination cleanup and layout
+propagation in `tests/e2e.sh`, including transitions from an existing adapter. Runtime changes use
+the normal manifest version release. Environment provisioning is independent: adding a harness
+must not require a particular cloud host or account.
 
 ## 7. CI (`.github/workflows/delphi.yml`)
 

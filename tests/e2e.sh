@@ -69,7 +69,7 @@ o() { git -C "$t/origin.git" "$@"; }
 # commit_on <branch> <file> <text>: a person's PR into <branch>, merged (edit on a branch, merge --no-ff)
 commit_on() {
   (cd "$t/dev" && git fetch -q && git checkout -q -B "edit" "origin/$1" && printf '%s\n' "$3" >>"$2" &&
-    git commit -qam "edit $2 on $1" && git checkout -q -B "tmp-$1" "origin/$1" &&
+    git add -- "$2" && git commit -qm "edit $2 on $1" && git checkout -q -B "tmp-$1" "origin/$1" &&
     git merge -q --no-ff --no-edit edit && git push -q origin "HEAD:$1")
 }
 
@@ -264,6 +264,13 @@ expect_bad() { # <label> <expected message> <setup command...>: copy the real la
   grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
   ok "check fails: $label ($want)"
 }
+CX=software/application-software/argos/workspaces/default-codex
+expect_bad unknown-harness "unknown harness 'unknown'" sed -i.bak 's/harness: codex/harness: unknown/' "$CX/workspace.yml"
+expect_bad codex-plugin "codex does not support Delphi plugin sets" sh -c "printf 'plugins:\n  - delphi\n' >>$CX/workspace.yml"
+expect_bad codex-no-instructions "AGENTS.md: required for codex" rm "$CX/AGENTS.md"
+expect_bad codex-wrong-native "CLAUDE.md: belongs to a different harness" touch "$CX/CLAUDE.md"
+expect_bad codex-inherited-wrong-native "belongs to a different harness" sh -c "mkdir -p software/workspace-inherit/.claude && echo x >software/workspace-inherit/.claude/extra.json"
+expect_bad neutral-collision "also inherits it from a folder above" sh -c "mkdir -p software/application-software/skills/journal && echo x >software/application-software/skills/journal/SKILL.md"
 expect_bad no-harness "harness is missing" sh -c "sed -i.bak 's/^harness:.*//' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>$A/workspace.yml"
 expect_bad bad-repo "bad repos entry" sh -c "awk '{ print } /^repos:/ { print \"  ../x: y\" }' $A/workspace.yml >$A/y && mv $A/y $A/workspace.yml"
@@ -312,9 +319,9 @@ expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -
 expect_bad defaults-manifest "workspace-defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
 expect_bad defaults-named-workspace "workspace-defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/workspace-defaults/.delphi && cp -R $A/. software/x/workspaces/workspace-defaults/"
 expect_bad old-defaults "defaults: renamed workspace-defaults/" mkdir -p "${A%/workspaces/*}/defaults"
-expect_bad inherited-file-kept "$A/.claude/skills/journal/SKILL.md: inherited from software/workspace-inherit/" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
+expect_bad inherited-file-kept "$A/.claude/skills/journal/SKILL.md: inherited from software/skills/journal/" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
 expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
-expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "echo x >software/workspace-inherit/CLAUDE.md"
+expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "mkdir -p software/workspace-inherit && echo x >software/workspace-inherit/CLAUDE.md"
 expect_bad inherit-in-workspace "belongs in an org or project folder" sh -c "mkdir -p $A/workspace-inherit && echo x >$A/workspace-inherit/f"
 expect_bad bad-opt-out "bad opt-out entry" sh -c "printf 'opt-out:\n  - ../x\n' >>$A/workspace.yml"
 expect_bad opt-out-nothing "opt-out: nope is nothing it inherits" sh -c "printf 'opt-out:\n  - nope\n' >>$A/workspace.yml"
@@ -536,7 +543,7 @@ ok "new-worktree.sh makes new branches from the default or <base>, checks out ex
   fail "paths.sh layout"
 [ "$(cd "$t" && eval "$(bash "$w/.delphi/paths.sh")" && echo "$(printenv DELPHI_ROOT) $(printenv DELPHI_WORKSPACES)")" = "$w $w/workspaces" ] ||
   fail "paths.sh's export line doesn't reach child processes"
-cap=$src/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh
+cap=$src/software/skills/journal/scripts/capture.sh
 { e=$(cd "$t" && DELPHI_ROOT=$w bash "$cap" -c ideas "a note") && [ "${e#"$w/.journal/ideas/"}" != "$e" ] && grep -q "a note" "$e"; } ||
   fail "capture.sh from \$DELPHI_ROOT: $e"
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
@@ -770,6 +777,136 @@ commit_on "ws/$CO" CLAUDE.md "old side" && commit_on "ws/$CN" .gitattributes "# 
 { sync >"$t/out" 2>&1 && grep -q "notice: ws/$CO, ws/$CN's old name, has commits ws/$CN lacks" "$t/out" &&
   ! o show "ws/$CN:CLAUDE.md" | grep -qx "old side"; } || fail "a diverged old name was merged or not reported: $(cat "$t/out")"
 ok "an old name with commits of its own is reported, never merged"
+
+# --- 13. portable harnesses: native skills, round trips, transitions, bootstrap and authoring
+C=software/application-software/argos/workspaces/sandbox-codex CN=s.app.argos.sandbox-codex
+# shellcheck disable=SC2016 # child shell expands its positional arguments
+on_main "add Codex and neutral skills" bash -c '
+  mkdir -p "$1" software/skills/portable/scripts
+  cp "$2/templates/harnesses/codex/AGENTS.md" "$1/AGENTS.md"
+  cp "$2/templates/workspace/.gitattributes" "$1/.gitattributes"
+  mkdir -p "$1/.github/workflows"
+  cp .github/workflows/delphi.yml "$1/.github/workflows/delphi.yml"
+  printf "name: %s\nharness: codex\n" "$3" >"$1/workspace.yml"
+  printf "portable v1\n" >software/skills/portable/SKILL.md
+  printf "helper v1\n" >software/skills/portable/scripts/helper.sh
+' _ "$C" "$src" "$CN"
+sync "$CN" >"$t/out" 2>&1 || fail "Codex creation: $(cat "$t/out")"
+for skill in top portable; do
+  o cat-file -e "ws/$CN:.agents/skills/$skill/SKILL.md" || fail "Codex lacks native $skill"
+done
+! o cat-file -e "ws/$CN:.claude" 2>/dev/null || fail "Codex inherited Claude files"
+[ "$(o rev-parse "ws/$CN^")" = "$(o rev-parse main)" ] || fail "Codex creation parent"
+ok "Codex creation maps neutral and legacy shared skills to .agents/skills without Claude settings"
+commit_on "ws/$CN" .agents/skills/portable/SKILL.md "workspace edit"
+commit_on "ws/$CN" AGENTS.md "workspace-owned instructions"
+sync propose "$CN" >"$t/out" 2>&1 || fail "Codex proposal: $(cat "$t/out")"
+! o cat-file -e "propose/$CN:$C/.agents/skills/portable/SKILL.md" 2>/dev/null || fail "native inherited skill proposed"
+o show "propose/$CN:$C/AGENTS.md" | grep -qx "workspace-owned instructions" || fail "AGENTS.md not proposed"
+sync refresh "$CN" >/dev/null
+[ "$(o show "ws/$CN:.agents/skills/portable/SKILL.md")" = "portable v1" ] || fail "Codex inherited edit not reset"
+ok "Codex proposals preserve native instructions and strip inherited native skills; refresh resets inherited edits"
+on_main "move legacy skill source, remove helper" bash -c '
+  mkdir -p software/skills
+  git mv software/workspace-inherit/.claude/skills/top software/skills/top
+  git rm -q software/skills/portable/scripts/helper.sh
+'
+sync refresh "$CN" >"$t/out" 2>&1 || fail "source migration: $(cat "$t/out")"
+! o cat-file -e "ws/$CN:.agents/skills/portable/scripts/helper.sh" 2>/dev/null || fail "stale inherited helper survived"
+o show "ws/$CN:.agents/skills/top/SKILL.md" | grep -qx "top v3" || fail "legacy source move lost skill"
+ok "neutral source migration keeps native paths stable and removes obsolete inherited files"
+# shellcheck disable=SC2016 # child shell expands its positional arguments
+on_main "switch Codex workspace to Claude" bash -c '
+  git mv "$1/AGENTS.md" "$1/CLAUDE.md"
+  sed -i.bak "s/harness: codex/harness: claude-code/" "$1/workspace.yml"
+  rm "$1/workspace.yml.bak"
+  bash ci/plugins.sh >/dev/null
+' _ "$C"
+# The ws-owned AGENTS edit would conflict with main renaming it: resolve via a normal workspace PR first.
+# Undo the test-only instruction change before the harness transition.
+(cd "$t/dev" && git fetch -q && git checkout -q -B transition "origin/ws/$CN" &&
+  git show "origin/main:$C/CLAUDE.md" >AGENTS.md && git commit -qam "prepare native instruction transition" &&
+  git push -q origin "HEAD:ws/$CN")
+sync refresh "$CN" >"$t/out" 2>&1 || fail "Codex to Claude: $(cat "$t/out")"
+{ o cat-file -e "ws/$CN:.claude/skills/portable/SKILL.md" &&
+  ! o cat-file -e "ws/$CN:.agents/skills/portable/SKILL.md" 2>/dev/null; } || fail "old native skill destination survived"
+# shellcheck disable=SC2016 # child shell expands its positional arguments
+on_main "switch workspace back to Codex" bash -c '
+  git mv "$1/CLAUDE.md" "$1/AGENTS.md"
+  git rm -q "$1/.claude/settings.json"
+  printf "name: %s\nharness: codex\n" "$2" >"$1/workspace.yml"
+' _ "$C" "$CN"
+sync "$CN" >"$t/out" 2>&1 || fail "Claude to Codex: $(cat "$t/out")"
+{ o cat-file -e "ws/$CN:.agents/skills/portable/SKILL.md" &&
+  ! o cat-file -e "ws/$CN:.claude/settings.json" 2>/dev/null &&
+  ! o cat-file -e "ws/$CN:.claude/skills/portable/SKILL.md" 2>/dev/null; } || fail "Claude files survived harness transition"
+ok "harness transitions remove old native skill destinations and generated settings in both directions"
+(cd "$t/dev" && git fetch -q && git checkout -q -B stale-settings "origin/ws/$CN" &&
+  mkdir -p .claude && echo '{}' >.claude/settings.json && git add .claude/settings.json &&
+  git commit -qm "stale settings from previous harness" && git push -q origin "HEAD:ws/$CN")
+sync refresh "$CN" >"$t/out" 2>&1 || fail "stale generated settings cleanup: $(cat "$t/out")"
+! o cat-file -e "ws/$CN:.claude/settings.json" 2>/dev/null || fail "generated settings deletion was not committed"
+ok "Codex refresh stages and commits removal of stale generated settings from a workspace branch"
+commit_on "ws/$CN" workspace.yml "$(printf 'opt-out:\n  - .agents/skills/portable')"
+commit_on "ws/$CN" .agents/skills/portable/SKILL.md "Codex own"
+commit_on "ws/$CN" .agents/skills/portable/OWN.md "workspace-owned native file"
+sync "$CN" >"$t/out" 2>&1 || fail "Codex opt-out: $(cat "$t/out")"
+o show "propose/$CN:$C/.agents/skills/portable/OWN.md" | grep -qx "workspace-owned native file" || fail "Codex owned skill not proposed"
+o show "ws/$CN:.agents/skills/portable/SKILL.md" | grep -qx "Codex own" || fail "Codex opt-out overwritten"
+ok "Codex native opt-outs preserve editable and proposable workspace-owned skills"
+
+(cd "$t/dev" && git fetch -q && git checkout -q -B tmp-main origin/main &&
+  git merge -q --no-ff --no-edit "origin/propose/$CN" && git push -q origin HEAD:main)
+sync refresh "$CN" >/dev/null
+# A formerly opted-out skill is workspace-owned even after its shared source and opt-out are removed.
+# shellcheck disable=SC2016 # child expands its arguments
+on_main "retire shared skill without deleting owned copy" bash -c '
+  git rm -rq software/skills/portable
+  printf "name: %s\nharness: codex\n" "$2" >"$1/workspace.yml"
+' _ "$C" "$CN"
+sync "$CN" >"$t/out" 2>&1 || fail "retire owned skill source: $(cat "$t/out")"
+o show "ws/$CN:.agents/skills/portable/SKILL.md" | grep -qx "Codex own" || fail "former opt-out owned skill was deleted"
+ok "removing a shared source and old opt-out preserves the former workspace-owned skill"
+
+# No real Codex invocation: assert launch arguments and exports in a stub and fresh child shell.
+cat >"$t/bin/codex" <<'CODEX'
+#!/usr/bin/env bash
+set -euo pipefail
+[ "$1" = -C ] && [ "$2" = "$DELPHI_ROOT" ] && [ "$3" = "argument with spaces" ]
+[ "$DELPHI_REPOS" = "$DELPHI_ROOT/repos" ]
+bash -c '[ "$DELPHI_WORKTREES" = "$DELPHI_ROOT/worktrees" ]'
+CODEX
+chmod +x "$t/bin/codex"
+w=$t/codex && git clone -q -b "ws/$CN" "$t/origin.git" "$w"
+(cd "$t" && env -u DELPHI_ROOT -u DELPHI_REPOS -u DELPHI_WORKTREES bash "$w/.delphi/codex.sh" "argument with spaces") || fail "Codex launcher exports/arguments"
+# shellcheck disable=SC2016 # fresh shell must receive the exports
+(cd "$t" && env -u DELPHI_ROOT bash "$w/.delphi/exec.sh" bash -c '[ "$PWD" != "$DELPHI_ROOT" ] && [ -f "$DELPHI_ROOT/AGENTS.md" ]') || fail "fresh host command wrapper"
+ok "Codex launcher and per-command bootstrap propagate layout to fresh shells and children while preserving arguments/cwd"
+# Proxy capability selection uses stubs only, without GitHub/network access.
+mkdir -p "$t/proxy-bin"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$t/proxy-bin/gh"
+printf '#!/usr/bin/env bash\nprintf "proxy-response"\n' >"$t/proxy-bin/curl"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$t/proxy-bin/jq"
+chmod +x "$t/proxy-bin/"*
+provider=$src/software/application-software/skills/address-pr-comments/scripts/github.sh
+# shellcheck disable=SC2016 # isolated shell sources helper and expands its variables
+proxy=$(PATH="$t/proxy-bin:$PATH" DELPHI_GITHUB_REST_PROXY=1 CLAUDE_CODE_REMOTE='' bash -c '
+  source "$1"; gh_init test "$2"; [ "$MODE" = rest ]; get repos/example/example
+' _ "$provider" "$w") || fail "explicit REST proxy capability selection"
+[ "$proxy" = proxy-response ] || fail "REST proxy did not use stubbed provider"
+ok "shared GitHub helpers support an explicit REST-proxy capability without harness-specific environment detection"
+# shellcheck disable=SC2016 # child shell expands its positional argument
+on_main "native instruction defaults" bash -c 'printf "# Codex firmware {{name}}\n" >"$1/AGENTS.md"' _ "$FD"
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  tools/new-workspace.sh --harness codex electrical/firmware fw-codex >/dev/null) || fail "Codex new workspace"
+F=software/electrical/firmware/workspaces/fw-codex
+created=new-workspace/electrical/firmware/fw-codex
+o show "$created:$F/workspace.yml" | grep -qx 'harness: codex' || fail "default harness not overridden"
+o show "$created:$F/workspace.yml" | grep -q 'fw: https://example.com/fw.git' || fail "project repos lost"
+o show "$created:$F/AGENTS.md" | grep -qx '# Codex firmware s.electrical.firmware.fw-codex' || fail "Codex native instruction defaults lost"
+{ ! o cat-file -e "$created:$F/CLAUDE.md" 2>/dev/null && ! o cat-file -e "$created:$F/.claude" 2>/dev/null; } || fail "Claude defaults leaked into Codex workspace"
+(cd "$t/dev" && ! tools/new-workspace.sh --harness unknown electrical/firmware bad-harness >/dev/null 2>&1) || fail "unknown authoring harness accepted"
+ok "Codex authoring chooses native template/defaults, preserves project repos and rejects unknown harnesses"
 
 # --- 13. shellcheck, if installed
 if command -v shellcheck >/dev/null; then

@@ -17,7 +17,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   labelled `by: ai` (new-workspace: `--by ai-assisted|human` when the user says so).
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its
-  `plugins/scope`, else its `short-name`, else its name), each workspace's `workspace.yml` `plugins:` defaults (the
+  `plugins/scope`, else its `short-name`, else its name), each Claude Code workspace's `workspace.yml` `plugins:` defaults (the
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
   it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
@@ -31,8 +31,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
   cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
-  `.github/workflows/delphi.yml` every workspace carries unchanged. The general `new-worktree`,
-  `switch-workspace`, `setup-workspace`, and `journal` skills are in `software/workspace-inherit/`.
+  `.github/workflows/delphi.yml` every workspace carries unchanged. The general skills are in `software/skills/`; Codex instructions use the native template under
+  `templates/harnesses/`.
 - `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws-delphi` pane switches
   workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
   `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
@@ -43,6 +43,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
   `workspace.yml` skips a path).
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
+- `ci/harnesses.sh` declares supported adapters and native paths; `ci/inherit.sh` resolves neutral
+  `skills/` and legacy `workspace-inherit/` skill paths for sync and validation. Codex uses
+  `.delphi/codex.sh` for CLI startup and `.delphi/exec.sh` for hosts with independent shells.
 
 ## Rules
 
@@ -56,7 +59,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
   way. Skill scripts (inherited, plugin or workspace) take only names (repo, branch) and read the workspace
   from `$DELPHI_ROOT`, sourcing `$DELPHI_ROOT/.delphi/paths.sh` for every folder; each harness's
-  generated settings set it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
+  bootstrap sets it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
   `ci/plugins.sh`). Never search for the root or default to the cwd's branch.
 - `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
   features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.
