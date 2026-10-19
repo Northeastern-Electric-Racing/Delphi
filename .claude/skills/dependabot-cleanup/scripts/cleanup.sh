@@ -6,7 +6,7 @@ set -euo pipefail
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 [ $# -gt 0 ] || { echo "usage: cleanup.sh <pr>..." >&2 && exit 2; }
-g() { git -C "$DELPHI_REPOS/argos" "$@"; }
+g() { git -C "$DELPHI_WORKTREES/argos/.bare" "$@"; }
 for pr in "$@"; do
   read -r state branch author < <(gh pr view "$pr" -R "$R" --json state,headRefName,author -q '"\(.state) \(.headRefName) \(.author.login)"')
   case $author in *dependabot*) ;; *) echo "#$pr skipped: author is $author" && continue ;; esac

@@ -8,7 +8,7 @@ park:                     # `- <folder>`: root folders that park with this works
   - .playwright-mcp
   - .playwright-cli
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
-repos:                    # `<name>: <git-url>`: code you change; a clone at repos/<name> (worktrees from it: worktrees/<name>/<branch>)
+repos:                    # `<name>: <git-url>`: code you change; a clone at repos/<name>, and separately worktrees/<name>/<branch> (default branch first)
   argos: https://github.com/Northeastern-Electric-Racing/Argos.git
   odyssey-definitions: https://github.com/Northeastern-Electric-Racing/Odyssey-Definitions.git
 references-git:           # `<name>: <git-url> [<tag-or-branch>]`: dependency sources to read, never edit; shallow copy at references/<name>
