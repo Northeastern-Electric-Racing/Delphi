@@ -41,13 +41,13 @@ The Argos repo's `develop` is checked out at `worktrees/argos/develop/`. Paths b
 
 ## PR Convention
 
-- The `/commit` skill applies the commit message format.
-- Open PRs against `develop` as drafts. The `/open-pr` skill runs the pre-PR checks (lint, conflict check), pushes, and opens the draft; `/update-pr` refreshes the description.
-- Keep PR descriptions tight: at most three backtick usages in the body, and never commit screenshots (`/open-pr` asks before attaching them to the PR).
+- The `commit` skill applies the commit message format.
+- Open PRs against `develop` as drafts. The `open-pr` skill runs the pre-PR checks (lint, conflict check), pushes, and opens the draft; `update-pr` refreshes the description.
+- Keep PR descriptions tight: at most three backtick usages in the body, and never commit screenshots (`open-pr` asks before attaching them to the PR).
 
 ## Screenshots
 
-Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root, using kebab-case descriptive filenames. The `pictures/` folder is git-ignored, so screenshots are never committed; `/open-pr` offers to attach them to the PR with `gh --attach` (drag-drop them on gh older than v2.99.0).
+Save all Playwright screenshots under `pictures/<branch-name>/` at the repo root, using kebab-case descriptive filenames. The `pictures/` folder is git-ignored, so screenshots are never committed; `open-pr` offers to attach them to the PR with `gh --attach` (drag-drop them on gh older than v2.99.0).
 
 ## Code Conventions
 

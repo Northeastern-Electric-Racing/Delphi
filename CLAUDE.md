@@ -19,7 +19,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its
   `plugins/scope`, else its `short-name`, else its name), each Claude Code workspace's `workspace.yml` `plugins:` defaults (the
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
-  it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
+  it by hand). `ci/render.sh` calls it on main before recording managed outputs.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
@@ -38,13 +38,17 @@ source of truth; `docs/goals.md` lists what any change must keep.
   `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
 - `software/…/workspaces/<leaf>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
-  (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the
-  `ws/*` root of every workspace below on each refresh, never proposed; `opt-out:` in a
-  `workspace.yml` skips a path).
+  (translated once into a new workspace there). Source bundles declare `format:` in `source.yml`
+  and keep their payload under `files/`. Any org/project folder may add `workspace-inherit/`;
+  `ci/render.sh` materializes managed native copies on main, and refresh copies them to ws branches.
+  `workspace.generated` records ownership; `opt-out:` transfers a native path to the workspace.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
-- `ci/harnesses.sh` declares supported adapters and native paths; `ci/inherit.sh` resolves neutral
-  `skills/` and legacy `workspace-inherit/` skill paths for sync and validation. Codex uses
+- `ci/render.sh [--check]`: prepare native workspace output on main (or check freshness). Run it
+  after shared-source, harness, ownership or plugin changes and include outputs in the same PR.
+  `ci/harnesses.sh` declares targets; `ci/sources.sh` reads independent source formats;
+  `ci/inherit.sh` resolves sources. `ci/managed.sh` shares ownership logic with sync, which does no
+  harness conversion during refresh. Every workspace must explicitly declare its harness. Codex uses
   `.delphi/exec.sh` to initialize helper commands in independent shells.
 
 ## Rules

@@ -1,13 +1,7 @@
 #!/usr/bin/env bash
-# tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness <adapter>] <org-path under software/> <leaf>: propose a new
-# workspace as a PR to main, labelled `by: <who>` (default ai: who wrote it, as the PR template asks).
-# In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
-# project's software/<org-path>/workspace-defaults/ (matching native instructions appended to the template's) to
-# software/<org-path>/workspaces/<leaf>/, sets `name: <name>` in its workspace.yml (its dotted name from
-# .delphi/names.sh, like s.app.argos.argos-dev; the workspace-inherit/ folders above it reach ws/<name>
-# on each sync), and generates adapter-owned files through ci/harnesses.sh,
-# checks it, pushes branch new-workspace/<org-path>/<leaf>, and opens the PR with gh. Your checkout is
-# untouched. After merge, ci/sync.sh creates ws/<name>.
+# tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness <adapter>] <org-path> <leaf>:
+# prepare a main-side PR with native defaults and managed output for its explicitly recorded harness.
+# Uses a temporary checkout of origin/main; never changes the caller's checkout.
 set -euo pipefail
 die() { echo "new-workspace: $*" >&2 && exit 1; }
 by=ai
@@ -37,21 +31,27 @@ trap 'git worktree remove --force "$wt"' EXIT
 defaults=$wt/software/$org/workspace-defaults
 [ ! -e "$wt/$folder" ] || die "$folder already exists on main"
 mkdir -p "$wt/$folder"
-# shellcheck source=ci/harnesses.sh
-source "$wt/ci/harnesses.sh"
-[ -n "$adapter" ] || adapter=$(awk '/^harness:/ { print $2; exit }' "$defaults/workspace.yml" 2>/dev/null || true)
+# shellcheck source=ci/inherit.sh
+source "$wt/ci/inherit.sh"
+[ -n "$adapter" ] || adapter=$(awk '/^harness:/ { print $2; exit }' "$defaults/files/workspace.yml" 2>/dev/null || true)
 harness "${adapter:-claude-code}" || die "unsupported harness"
 adapter=${adapter:-claude-code}
 cp -R "$wt/templates/workspace/." "$wt/$folder/"
-[ ! -d "$defaults" ] || cp -R "$defaults/." "$wt/$folder/"
-# Native instruction defaults are harness-specific; other project defaults are preserved.
 rm -f "$wt/$folder/CLAUDE.md" "$wt/$folder/AGENTS.md"
 cp "$wt/$instruction_template" "$wt/$folder/$instruction"
-[ ! -f "$defaults/$instruction" ] || { echo; cat "$defaults/$instruction"; } >>"$wt/$folder/$instruction"
-case "$adapter" in
-  codex) rm -rf "$wt/$folder/.claude" ;;
-  claude-code) rm -rf "$wt/$folder/.agents" "$wt/$folder/.codex" ;;
-esac
+if [ -d "$defaults" ]; then
+  records=$(cd "$wt" && bundle_files "" "software/$org/workspace-defaults" "$adapter") || die "cannot read project defaults"
+  while IFS=$'\t' read -r meta path src; do
+    [ -n "$path" ] || continue
+    if [ "$path" = "$instruction" ]; then
+      { echo; cat "$wt/$src"; } >>"$wt/$folder/$instruction"
+    else
+      mkdir -p "$(dirname "$wt/$folder/$path")"
+      cp "$wt/$src" "$wt/$folder/$path"
+      [ "${meta%% *}" != 100755 ] || chmod +x "$wt/$folder/$path"
+    fi
+  done <<<"$records"
+fi
 name=$(cd "$wt" && bash .delphi/names.sh | awk -v f="$folder" '$2 == f { print $1 }')
 taken=$(cd "$wt" && bash .delphi/names.sh | awk -v n="$name" -v f="$folder" '$1 == n && $2 != f { print $2 }')
 [ -z "$taken" ] || die "$taken is already named $name (names are unique); pick another leaf"
@@ -60,15 +60,19 @@ for b in "ws/$name" "ws/software/$org/$leaf"; do # ws/software/…: a workspace'
 done
 sed -i.bak -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/$folder/$instruction" && rm "$wt/$folder/$instruction.bak"
 y=$wt/$folder/workspace.yml
+if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
+  s && /^[[:space:]]+-/ { found = 1 } END { exit !found }' "$y"; then
+  die "$adapter does not support Delphi plugin sets in project defaults"
+fi
 { echo "name: $name"; echo "harness: $adapter"; awk -v adapter="$adapter" '/^name:|^harness:/ { next } adapter != "claude-code" && /^plugins:/ { skip = 1; next } /^[^[:space:]#]/ { skip = 0 } !skip { print }' "$y"; } >"$y.new" && mv "$y.new" "$y"
-generate_harness "$wt" "$folder" "$wt/$folder"
+bash "$wt/ci/render.sh" "$wt"
 "$wt/ci/check.sh" "$wt"
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $name"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
 gh pr create --base main --head "$branch" --title "Add workspace $name" --label "by: $by" --body "## Changes
 
-Adds \`$folder/\` from templates/workspace (plus software/$org/workspace-defaults if present). After merge, CI creates branch ws/$name.
+Adds \`$folder/\` from templates/workspace (plus translated project defaults and managed inheritance). After merge, CI creates branch ws/$name.
 
 ## Testing
 

@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# serve.sh <argos-worktree>: serve that worktree's Angular client with `ng serve` on the first free
+# port in 4200-4210, in the background, and print `<branch> client=<url> pid=<pid> log=<file>` once
+# it has compiled. Re-running for a worktree that is still being served prints its existing client.
+# Runs `npm ci` first if node_modules lacks ng (missing or half-installed). Exits 1, with the log's
+# tail, if the build fails, or with what holds each port if none is free.
+set -euo pipefail
+wt=$(cd "${1:?usage: serve.sh <argos-worktree>}" && pwd)
+branch=$(git -C "$wt" rev-parse --abbrev-ref HEAD)
+state=${TMPDIR:-/tmp}; state=${state%/}/argos-run-local
+mkdir -p "$state"
+key=$state/$(printf %s "$wt" | tr -c 'A-Za-z0-9' _)
+log=$key.log
+up() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null || (exec 3<>"/dev/tcp/::1/$1") 2>/dev/null; } # ng serve binds ::1
+
+if [ -f "$key.pid" ] && kill -0 "$(cat "$key.pid")" 2>/dev/null && up "$(cat "$key.port")"; then
+  echo "$branch client=http://localhost:$(cat "$key.port") pid=$(cat "$key.pid") log=$log (already running)"
+  exit 0
+fi
+
+# Claim the port under a lock, or parallel calls all pick the same one while ng serve starts. A port is
+# taken once a client listens on it or a live serve.sh has claimed it. mkdir is the lock (no flock on
+# macOS); it is held only for the claim, so nothing started below can keep it.
+lock=$state/port.lock
+n=0; until mkdir "$lock" 2>/dev/null; do n=$((n + 1)); [ $n -lt 100 ] || rm -rf "$lock"; sleep 0.1; done # stale after 10s
+trap 'rmdir "$lock" 2>/dev/null || true' EXIT
+claimed() { for f in "$state"/*.port; do [ -f "$f" ] && [ "$(cat "$f")" = "$1" ] && kill -0 "$(cat "${f%.port}.pid")" 2>/dev/null && return; done; return 1; }
+port=
+for p in $(seq 4200 4210); do up "$p" || claimed "$p" || { port=$p && break; }; done
+# Name what holds each port, so a stale client from another checkout can be stopped (lsof, where there is one).
+holders() {
+  for p in $(seq 4200 4210); do
+    pid=$(lsof -nP -iTCP:"$p" -sTCP:LISTEN -t 2>/dev/null | head -1) || true
+    if [ -n "$pid" ]; then echo "  $p pid=$pid $(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"; fi
+  done
+}
+[ -n "$port" ] || { echo "serve: no free port in 4200-4210, held by:" >&2 && holders >&2 && exit 1; }
+echo $$ >"$key.pid" && echo "$port" >"$key.port" # claimed by this script until ng serve's pid replaces it
+rmdir "$lock" && trap - EXIT
+
+cd "$wt/angular-client"
+[ -x node_modules/.bin/ng ] || npm ci --no-audit --no-fund >"$log" 2>&1 ||
+  { echo "serve: npm ci failed in $wt/angular-client:" >&2 && tail -20 "$log" >&2 && exit 1; }
+nohup npx ng serve --port "$port" >"$log" 2>&1 &
+pid=$!
+echo "$pid" >"$key.pid" && echo "$port" >"$key.port"
+
+for _ in $(seq 180); do
+  kill -0 "$pid" 2>/dev/null || { echo "serve: ng serve exited for $branch:" >&2 && tail -20 "$log" >&2 && exit 1; }
+  if grep -q 'bundle generation failed\|\[ERROR\]' "$log"; then
+    echo "serve: $branch failed to compile (still serving on $port, pid $pid):" >&2 && tail -30 "$log" >&2 && exit 1
+  fi
+  if up "$port" && grep -q 'bundle generation complete\|Compiled successfully' "$log"; then
+    echo "$branch client=http://localhost:$port pid=$pid log=$log"
+    exit 0
+  fi
+  sleep 1
+done
+echo "serve: $branch not up after 180s (pid $pid); see $log" >&2 && exit 1

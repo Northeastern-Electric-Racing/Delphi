@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ci/plugins.sh [--check] [<dir>]: write the generated harness files of a main checkout <dir> (default .):
+# ci/plugins.sh [--check] [<dir>]: render.sh uses this on main to write the generated harness files of a main checkout <dir> (default .):
 #   .claude-plugin/marketplace.json: marketplace `delphi`, one plugin per set folder
 #     software/**/plugins/claude/<set>/ outside workspaces, named <scope>, or <scope>.<set> unless the
 #     set is `default`. A folder's scope is the one line in its plugins/scope, else its short-name
@@ -15,7 +15,7 @@
 #     settings go in .claude/settings.local.json, shared ones here or in workspace.yml.
 #   --check writes nothing; it lists each out-of-date file or problem and exits 1 if any.
 # ci/plugins.sh yml|settings <folder> <workspace.yml>: print one workspace's workspace.yml or
-#   settings.json, from <dir> = . (sync uses them for ws/* branches, reading workspace.yml from the branch).
+#   settings.json, from <dir> = . (main-side output only; refresh copies reviewed files).
 set -euo pipefail
 repo=Northeastern-Electric-Racing/Delphi
 
@@ -124,7 +124,7 @@ put() { # <file> <what's stale> <command...>: write <command>'s output to <file>
   "$@" >"$tmp" || { problems=$((problems + 1)) && return; }
   cmp -s "$tmp" "$f" && return
   if [ "$check" = 1 ]; then
-    echo "plugins: $f $what; run ci/plugins.sh" >&2
+    echo "plugins: $f $what; run ci/render.sh" >&2
     problems=$((problems + 1))
   else
     mkdir -p "$(dirname "$f")" && cp "$tmp" "$f" && echo "plugins: wrote $f"

@@ -6,7 +6,8 @@ named by the **short name** of each folder above it, from `software/` down, then
 name, joined by dots: `software/application-software/argos/workspaces/argos-dev` is
 `s.app.argos.argos-dev` (a folder's short name is its `short-name` file, else its name;
 `.delphi/names.sh` prints them all). For each one, CI keeps a branch **`ws/<name>`**
-whose repo root *is* that folder, so people and agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
+whose repo root *is* that folder. Each workspace explicitly declares its harness, and its folder on
+`main` already contains native files for that harness. People and agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
 
 ## How it works
 
@@ -83,8 +84,9 @@ references are there too (a workspace inside another's `workspaces/` skips its o
 edited from the workspace that links them; to change one, work in its own clone or switch to it.
 
 The workspace's dotted name is repeated in `name:` so a checkout knows which workspace it is; names
-are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Every other file in the folder is the workspace's own, at its normal harness
-path, except `.github/workflows/delphi.yml` (a copy of the template's). The scripts, `.delphi/*.sh`
+are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Files live at normal harness paths. `workspace.generated` records main-owned rendered files;
+workspace instructions, docs and opted-out copies remain workspace-owned. The workflow comes from
+the template. The scripts, `.delphi/*.sh`
 (listed in `.delphi/manifest.yml`), live once at main's root: sync puts
 `.delphi/` on every `ws/*` branch, so change them only through PRs to main.
 
@@ -106,7 +108,8 @@ workspace doesn't depend on a particular cloud environment. Codex does not enabl
 plugin sets or install MCP servers. Use tools already available in the selected host.
 
 `harness:` is validated against `ci/harnesses.sh`. Authoring selects its native instruction template
-and skill destination while preserving shared project defaults. See `docs/design.md` for adding
+and skill destination while preserving translated project defaults. Shared source format and
+workspace harness selection are independent. See `docs/design.md` for adding
 another adapter.
 
 ## Versions
@@ -128,17 +131,26 @@ Once it merges, CI creates `ws/<name>` (its dotted name).
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and
 `workspace-defaults/` (what a new workspace there starts with).
 
-**Shared skills.** Put reusable workflows in `skills/<name>/` at an org or project folder.
-Sync renders them into the native skill directory declared in `ci/harnesses.sh`, with one source
-across harnesses. Edit these on `main`; workspace edits are reset on refresh. `opt-out:` uses
-the destination path in the selected harness.
+**Source bundles.** `workspace-defaults/` and `workspace-inherit/` contain `source.yml`
+(`format: claude-code` today) and a `files/` payload. Defaults seed workspace-owned files once;
+inheritance stays managed. Every workspace independently declares `harness:` in its own manifest.
+Unsupported native conversions fail instead of dropping settings.
 
-**Inherited files.** Any folder under `software/`, `software/` itself included, can hold
-`workspace-inherit/`: files at their workspace paths (never native workspace instructions) that CI writes onto the `ws/*` branch
-of every workspace below it on each sync. Edit them on `main`; a workspace's own edit is undone. To
-keep its own copy, a workspace lists the path under `opt-out:` in its `workspace.yml`.
-A workspace that lists `main` under `workspaces:` reads them at `workspaces/main/` (recommended for every
-new workspace); to change them, switch to `main`.
+**Shared skills.** Keep reusable Agent Skills under `skills/<name>/` at an org or project folder.
+The main-side renderer copies them unchanged into each workspace's native skill directory.
+
+**Render before merging.** After changing shared sources, harness selections, opt-outs or plugin
+configuration, run `bash ci/render.sh` on a main-based branch and include its native output in the
+PR. `bash ci/render.sh --check` checks freshness without writing; `ci/check.sh` includes it.
+Workspaces on main already contain their native instructions, skills and supported settings.
+Branch refresh copies those reviewed files without running adapters. Workspace configuration
+edits are rendered in the proposal to main and arrive back after merge.
+
+**Ownership.** Edit shared sources on main. `workspace.generated` records managed copies and
+origins; don't edit it or those copies directly. To keep a workspace's own copy, list its native
+path under `opt-out:` in `workspace.yml`, then render on main or use the normal workspace proposal
+flow. Workspace-owned files stay editable and proposable. A workspace can read shared sources by
+listing `main` under `workspaces:`.
 
 ## CI (`.github/workflows/delphi.yml`)
 

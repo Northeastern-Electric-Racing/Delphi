@@ -4,7 +4,8 @@ What Delphi must achieve, not how. Any change must keep these. Details: `docs/de
 
 ## Purpose
 
-Store NER's AI context (instructions, skills, docs, settings) once, organized by the org chart. Let
+Author reusable AI context once, organized by the org chart, and keep reviewable native copies
+in each workspace on main. Let
 anyone, person or agent, work on a workspace with plain git and send improvements back.
 
 ## Goals

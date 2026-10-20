@@ -1,31 +1,12 @@
 #!/usr/bin/env bash
-# ci/sync.sh [refresh|propose] [<name>]: sync each workspace folder software/**/workspaces/<leaf>/ on
-# origin/main (or just <name>) with its branch ws/<name>, whose root is the folder. A workspace's
-# <name> is .delphi/names.sh's: its folders' short names and <leaf>, joined by dots
-# (software/application-software/argos/workspaces/argos-dev -> s.app.argos.argos-dev). CI runs it
-# with no direction (both) on every push to main or ws/**.
-#   refresh: merge main into ws/<name> (-Xsubtree=<folder>), then make its .delphi/ main's root
-#            .delphi/ (a "delphi: sync" commit if that changed it), write over it the files it inherits
-#            from main (every workspace-inherit/ folder from software/ down to its project folder,
-#            less its workspace.yml's opt-out: paths) and remove those it inherited from the main it
-#            last merged but no longer does (a "delphi: sync inherited" commit), list main's default plugin sets
-#            above it under its workspace.yml's plugins: and regenerate its .claude/settings.json from
-#            that (ci/plugins.sh; a "delphi: generate" commit if that changed either), and push if the
-#            tree changed. While ws/<old> (the branch's name when workspaces were named by their
-#            folder's path, software/application-software/argos/argos-dev) is ahead of ws/<name> or
-#            ws/<name> is missing, it starts from ws/<old> (so its history and unproposed edits carry
-#            over) and pushes the result to both, so clones still on ws/<old> get the version that
-#            moves them. A missing ws/<name> with no ws/<old> is created as one commit: tree = the
-#            folder plus main's .delphi/ and inherited files, parent = main.
-#   propose: build propose/<name> = main + a subtree merge of ws/<name> without <folder>/.delphi/
-#            or its inherited files (both managed on main); if that changes main and isn't already on propose/<name>, check it (against main),
-#            force-push it, and open or update its PR.
-# A conflict is reported with its files and that workspace skipped; exits 1 if any failed. ws/*
-# branches without a folder, old names included, get a notice, never deleted. Merges run in a temporary worktree.
+# ci/sync.sh [refresh|propose] [<name>]: subtree-sync native workspace folders on main with ws/<name>.
+# Refresh copies reviewed generated files and main's runtime; it never reads source formats or runs
+# harness adapters. Propose prepares a main checkout, renders its managed output, validates and opens a PR.
+# Temporary worktrees keep the caller untouched. Conflicts in workspace-owned files are reported.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-# shellcheck source=ci/inherit.sh
-source "$here/inherit.sh"
+# shellcheck source=ci/managed.sh
+source "$here/managed.sh"
 dir=both
 case "${1:-}" in refresh | propose) dir=$1 && shift ;; esac
 only=${1:-}
@@ -35,12 +16,11 @@ case "$only" in *[!a-z0-9.-]*) echo "usage: ci/sync.sh [refresh|propose] [<name>
 git fetch --quiet --prune origin
 main=$(git rev-parse origin/main)
 wt=$(mktemp -d)
-mw=$(mktemp -d) # main, for ci/plugins.sh to read the plugin sets from
 git worktree add --quiet --detach "$wt" "$main"
-git worktree add --quiet --detach "$mw" "$main"
-trap 'git worktree remove --force "$wt"; git worktree remove --force "$mw"; rm -f "$wt.yml" "$wt.settings" "$wt.err"' EXIT
+trap 'git worktree remove --force "$wt"; rm -f "$wt.index"' EXIT
 failed=0 names=" "
 tree() { git -C "$wt" rev-parse --quiet --verify "$1^{tree}" || true; } # empty if <rev> is missing
+file_entry() { git ls-tree "$1" -- "$2" | awk '$1 == "100644" || $1 == "100755" { print $1 " " $3 }'; }
 
 with_delphi() { # <commit> [<folder>/]: its tree with <folder>/.delphi/ dropped, or (no folder) its
   # .delphi/ replaced by main's. Built in a temporary index, so the worktree is untouched.
@@ -54,47 +34,76 @@ with_delphi() { # <commit> [<folder>/]: its tree with <folder>/.delphi/ dropped,
   rm -f "$i"
 }
 
-optouts() { # <rev:path of a workspace.yml>: its opt-out: entries, space-separated
-  git show "$1" 2>/dev/null | awk '/^opt-out:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
-    s && /^[[:space:]]+-[[:space:]]+/ { sub(/^[[:space:]]+-[[:space:]]+/, ""); sub(/[[:space:]]*#.*$/, ""); sub(/\/$/, ""); printf "%s ", $0 }'
-}
-
-inherited() { # <revision> <folder> <opt-outs> <harness>: mode blob<TAB>native destination
-  inherited_files "$1" "$2" "$4" | awk -F'\t' -v out="$3" 'BEGIN { n = split(out, o, " ") }
-    { for (i = 1; i <= n; i++) if ($2 == o[i] || index($2, o[i] "/") == 1) next
-      print $1 "\t" $2 }'
-}
-
-with_inherited() { # <tree-ish> <folder> <old main or ''> <rev:path of its workspace.yml> [<prefix>/]: without
-  # <prefix>, its tree with what the workspace inherits from main written over it, and what it
-  # inherited from <old> but no longer does removed; with <prefix> (a proposal), those paths under
-  # <prefix> put back to main's. Opt-outs come from that workspace.yml.
-  local i=$wt.index out old_out="" now p ms adapter old_adapter old_manifest pre=${5:-}
-  out=$(optouts "$4")
-  adapter=$(git show "$4" | awk '/^harness:/ { print $2; exit }')
-  old_adapter=$adapter
-  if [ -n "$3" ]; then
-    old_manifest=$3:$2/workspace.yml
-    git cat-file -e "$old_manifest" 2>/dev/null || old_manifest=$3:workspace.yml
-    old_adapter=$(git show "$old_manifest" | awk '/^harness:/ { print $2; exit }')
-    old_out=$(optouts "$old_manifest")
+previous_records() { # <workspace commit> <folder>: ownership from the main revision it last merged
+  local base
+  base=$(git merge-base "$1" "$main" || true)
+  if [ -n "$base" ]; then
+    if git cat-file -e "$base:$2/$generated" 2>/dev/null; then ledger "$base:$2/$generated"
+    else ledger "$base:$generated"; fi
   fi
-  now=$(inherited "$main" "$2" "$out" "$adapter")
+}
+
+managed_records() { # <workspace commit> <folder>: trusted previous ownership, restricted by branch ownership
+  local old trusted
+  old=$(ledger "$1:$generated") || return 1
+  trusted=$(previous_records "$1" "$2") || return 1
+  # Dropping an entry after an opt-out records the ownership transfer, even before its proposal merges.
+  printf '%s\n' "$old" | awk -F'\t' -v trusted="$trusted" 'BEGIN {
+    n = split(trusted, rows, "\n"); for (i = 1; i <= n; i++) { split(rows[i], f, "\t"); owned[f[2]] = 1 }
+  } $2 in owned'
+}
+
+with_generated() { # <workspace commit> <folder>: copy reviewed native output; no source resolution
+  local i=$wt.index now old out meta path src entry blob
+  now=$(ledger "$main:$2/$generated") || return 1
+  old=$(managed_records "$1" "$2") || return 1
+  out=$(git show "$1:workspace.yml" | optouts)
   rm -f "$i"
   GIT_INDEX_FILE=$i git read-tree "$1"
-  { [ -z "$3" ] || inherited "$3" "$2" "$out $old_out" "$old_adapter"; [ -z "$pre" ] || printf '%s\n' "$now"; } | cut -f2 | sort -u |
-    while IFS= read -r p; do
-      [ -z "$p" ] && continue
-      [ -n "$pre" ] || ! printf '%s\n' "$now" | cut -f2 | grep -qxF "$p" || continue # still inherited: written below
-      GIT_INDEX_FILE=$i git rm -qf --cached --ignore-unmatch -- "$pre$p" >/dev/null
-      [ -z "$pre" ] || { ms=$(git ls-tree "$main" -- "$pre$p" | cut -f1) && [ -z "$ms" ]; } ||
-        GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${ms%% *},${ms##* },$pre$p"
+  printf '%s\n%s\n' "$old" "$now" | cut -f2 | LC_ALL=C sort -u |
+    while IFS= read -r path; do
+      [ -n "$path" ] || continue
+      opted_out "$path" "$out" && continue
+      GIT_INDEX_FILE=$i git update-index --force-remove -- "$path"
+      entry=$(file_entry "$main" "$2/$path")
+      [ -z "$entry" ] || GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${entry%% *},${entry##* },$path"
     done
-  [ -n "$pre" ] || printf '%s\n' "$now" | while IFS=$'\t' read -r ms p; do
-    [ -z "$p" ] || GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${ms% *},${ms#* },$p"
-  done
+  blob=$({ ledger_header
+    while IFS=$'\t' read -r meta path src; do
+      [ -n "$path" ] || continue
+      opted_out "$path" "$out" || printf '%s\t%s\t%s\n' "$meta" "$path" "$src"
+    done <<<"$now"
+  } | git hash-object -w --stdin)
+  GIT_INDEX_FILE=$i git update-index --add --cacheinfo "100644,$blob,$generated"
   GIT_INDEX_FILE=$i git write-tree
   rm -f "$i"
+}
+
+resolve_generated_conflicts() { # <workspace commit> <folder> <prefix>: only explicit managed ownership resolves automatically
+  local now old previous out paths path relative entry meta src
+  now=$(ledger "$main:$2/$generated") || return 1
+  old=$(managed_records "$1" "$2") || return 1
+  previous=$(previous_records "$1" "$2") || return 1
+  out=$(git show "$1:workspace.yml" | optouts)
+  paths=" $(printf '%s\n%s\n' "$old" "$now" | cut -f2 | tr '\n' ' ') $generated "
+  while IFS=$'\t' read -r meta path src; do
+    [ -z "$path" ] || ! opted_out "$path" "$out" || paths="$paths$path "
+  done <<<"$previous"
+  while IFS= read -r path; do
+    relative=${path#"$3"}
+    [ "$path" = "$3$relative" ] || continue
+    case "$paths" in *" $relative "*) ;; *) continue ;; esac
+    git -C "$wt" update-index --force-remove -- "$path"
+    if [ "$relative" = "$generated" ] || opted_out "$relative" "$out"; then
+      entry=$(file_entry "$1" "$relative")
+    else
+      entry=$(file_entry "$main" "$2/$relative")
+    fi
+    [ -z "$entry" ] || git -C "$wt" update-index --add --cacheinfo "${entry%% *},${entry##* },$path"
+  done < <(git -C "$wt" diff --name-only --diff-filter=U)
+  [ -z "$(git -C "$wt" diff --name-only --diff-filter=U)" ] || return 1
+  git -C "$wt" commit --quiet --no-edit
+  git -C "$wt" reset --quiet --hard HEAD
 }
 
 conflict() { # <message>: report the conflicted files, abort the merge, skip this workspace
@@ -112,51 +121,33 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   fi
   if [ -z "$(tree "$from")" ]; then
     git -C "$wt" checkout --quiet --detach \
-      "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(with_inherited "$(with_delphi "$main:$2")" "$2" "" "$main:$2/workspace.yml")")"
-    if ! generate_harness "$mw" "$2" "$wt" 2>"$wt.err"; then
-      echo "ws/$1: $(cat "$wt.err"); not created" >&2
-      git -C "$wt" reset --quiet --hard HEAD
-      git -C "$wt" clean -qfd
-      failed=1 ok=0
-      return
-    fi
-    git -C "$wt" add -A
-    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(git -C "$wt" write-tree)")"
+      "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$(with_delphi "$main:$2")")"
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
     echo "ws/$1: created from $2"
     return
   fi
-  git -C "$wt" checkout --quiet --detach "$from"
-  local old head t
-  old=$(git merge-base "$from" "$main" || true) # the main it last merged: what it inherited then
-  # --no-ff: once ws commits are in main, a fast-forward would put main's whole tree on ws/<name>.
-  if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$main" >/dev/null; then
-    conflict "ws/$1: CONFLICT refreshing from main; merge main into ws/$1 in a PR (see README)."
-    return
+  local head t ws
+  t=$(with_generated "$from" "$2") || { failed=1 ok=0; return; }
+  ws=$from
+  if [ "$t" != "$(tree "$from")" ]; then
+    ws=$(git commit-tree -p "$from" -m "delphi: sync generated files from main" "$t")
   fi
-  head=$(git -C "$wt" rev-parse HEAD) && t=$(with_delphi "$head")
+  git -C "$wt" checkout --quiet --detach "$ws"
+  if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$main" >/dev/null; then
+    if ! resolve_generated_conflicts "$ws" "$2" ""; then
+      conflict "ws/$1: CONFLICT refreshing from main; merge main into ws/$1 in a PR (see README)."
+      return
+    fi
+  fi
+  head=$(git -C "$wt" rev-parse HEAD)
+  t=$(with_delphi "$head")
   if [ "$t" != "$(tree "$head")" ]; then
     git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$head" -m "delphi: sync .delphi/ from main" "$t")"
   fi
-  head=$(git -C "$wt" rev-parse HEAD) && t=$(with_inherited "$head" "$2" "$old" "$head:workspace.yml")
-  if [ "$t" != "$(tree "$head")" ]; then
-    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$head" -m "delphi: sync inherited files from main" "$t")"
-  fi
-  if ! generate_harness "$mw" "$2" "$wt" 2>"$wt.err"; then
-    echo "ws/$1: $(cat "$wt.err"); not refreshed" >&2
-    git -C "$wt" reset --quiet --hard HEAD
-    git -C "$wt" clean -qfd
-    failed=1 ok=0
-    return
-  fi
-  if [ -n "$(git -C "$wt" status --porcelain)" ]; then
-    git -C "$wt" add -A # only the adapter has written since the inherited tree was committed
-    git -C "$wt" commit --quiet -m "delphi: generate plugins: defaults and .claude/settings.json"
-  fi
-  if [ "$from" = "$was" ]; then
+  if [ "$from" != "refs/remotes/origin/ws/$1" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1" "HEAD:refs/heads/ws/$3"
     echo "ws/$1: from ws/$3, its old name (pushed to both)"
-  elif [ "$(tree HEAD)" != "$(tree "$ws")" ]; then
+  elif [ "$(git -C "$wt" rev-parse HEAD)" != "$(git rev-parse "refs/remotes/origin/ws/$1")" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1"
     echo "ws/$1: refreshed"
   fi
@@ -165,18 +156,27 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
 propose() { # <name> <folder>: PR the worktree's ws/<name> into main if it changes anything
   local ws title="ws/$1 → main" body pr
   ws=$(git -C "$wt" rev-parse HEAD)
+  local t
+  t=$(with_generated "$ws" "$2") || { failed=1 ok=0; return; }
+  [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: prepare managed files for proposal" "$t")
   git -C "$wt" checkout --quiet --detach "$main"
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: propose ws/$1 to main" "$ws" >/dev/null; then
-    conflict "ws/$1: CONFLICT proposing to main; merge main into ws/$1 in a PR (see README)."
-    return
+    if ! resolve_generated_conflicts "$ws" "$2" "$2/"; then
+      conflict "ws/$1: CONFLICT proposing to main; merge main into ws/$1 in a PR (see README)."
+      return
+    fi
   fi
-  local t
-  t=$(with_delphi "$(git -C "$wt" rev-parse HEAD)" "$2/") # .delphi/ and inherited files are managed on main, never proposed
-  t=$(with_inherited "$t" "$2" "$(git merge-base "$ws" "$main" || true)" "$ws:workspace.yml" "$2/")
-  [ "$t" = "$(tree HEAD)" ] ||
-    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
+  t=$(with_delphi "$(git -C "$wt" rev-parse HEAD)" "$2/")
+  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
+  if ! bash "$wt/ci/render.sh" "$wt"; then
+    echo "ws/$1: main-side rendering failed; not proposed" >&2
+    failed=1; return
+  fi
+  git -C "$wt" add -A
+  t=$(git -C "$wt" write-tree)
+  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
   case "$(tree HEAD)" in "$(tree "$main")" | "$(tree "refs/remotes/origin/propose/$1")") return ;; esac
-  "$wt/ci/check.sh" "$wt" "$main" || { echo "ws/$1: check failed; not proposed" >&2 && failed=1 && return; }
+  "$wt/ci/check.sh" "$wt" "$main" || { echo "ws/$1: check failed; not proposed" >&2; failed=1; return; }
   git -C "$wt" push --quiet --force origin "HEAD:refs/heads/propose/$1"
   body="## Changes
 
