@@ -13,20 +13,20 @@ full model; this is the Argos-specific short version.
 Don't edit `.delphi/`, `.github/workflows/delphi.yml`, or `.claude/settings.json`: Delphi manages
 them (`.delphi/` comes from main's root and sync resets it; `settings.json` is rendered on main from
 `workspace.yml`'s `plugins:`, where CI lists any folder's `default` plugin set; add other sets below them), nor the skills
-inherited from `skills/` or `workspace-inherit/` (sync overwrites them: change them on `main`, or list one under `opt-out:` to keep your own).
+inherited from `workspace-inherit/` (sync overwrites them: change them on `main`, or list one under `opt-out:` to keep your own).
 Personal settings go in `.claude/settings.local.json`.
 
 ## Create a new Argos workspace
 
 From a Delphi checkout: `tools/new-workspace.sh [--harness codex] application-software/argos <name>`. It copies
-Delphi's template, then `workspace-defaults/` (its declared source format is translated into the selected harness), and opens
+Delphi's template, then `workspace-defaults/` (its Claude source format is translated into the selected harness), and opens
 a PR to `main`. Trim what the new workspace doesn't need before merging.
 
 ## Change the defaults or this folder
 
 Edit on a branch of `main` and open a PR to `main` (from a workspace: `bash .delphi/switch.sh main`;
 don't edit `workspaces/main/` from a workspace). `workspace-defaults/`
-only affects workspaces created afterwards; to change existing ones, PR each workspace too. `skills/` and `workspace-inherit/` reach
+only affects workspaces created afterwards; to change existing ones, PR each workspace too. `workspace-inherit/` reaches
 every Argos workspace through managed native copies on main. Run `bash ci/render.sh` and include
 its outputs in the same PR; refresh then copies those reviewed files to workspace branches.
 
@@ -35,9 +35,10 @@ its outputs in the same PR; refresh then copies those reviewed files to workspac
 - Keep the Delphi section of the native instruction file as generated; put project rules below it.
 - One skill per repeatable workflow, with a `description` that says when to use it.
 - Agent context (glossary, conventions, skills) lives in the workspace; the glossary goes in `docs/`.
-  Shared skills go in this project's `skills/<name>/`, or the relevant org folder's `skills/`.
-  The main-side renderer writes them into each workspace's native directory; change them through PRs to `main`.
-  Ordinary inherited docs go in `workspace-inherit/files/`, with the source format in `workspace-inherit/source.yml`. Context only some workspaces need goes in
+  Shared Claude skills stay in `workspace-inherit/.claude/skills/<name>/` at the project or org level.
+  The main-side renderer preserves Claude metadata and translates Codex copies into its native
+  directory; change sources through PRs to `main`. Ordinary inherited docs go in `workspace-inherit/`.
+  Optional `source.yml` selects a different authoring format. Context only some workspaces need goes in
   the workspace, or in a supported plugin set selected under `plugins:`. Codex does not load the
   Claude plugin sets. Workspace-owned native skills remain editable and proposable; use a native
   destination under `opt-out:` when taking ownership of an inherited skill.

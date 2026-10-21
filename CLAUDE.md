@@ -31,15 +31,15 @@ source of truth; `docs/goals.md` lists what any change must keep.
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
   cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
-  `.github/workflows/delphi.yml` every workspace carries unchanged. The general skills are in `software/skills/`; Codex instructions use the native template under
+  `.github/workflows/delphi.yml` every workspace carries unchanged. The general skills are in `software/workspace-inherit/.claude/skills/`; Codex instructions use the native template under
   `templates/harnesses/`.
 - `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws-delphi` pane switches
   workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
   `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
 - `software/…/workspaces/<leaf>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
-  (translated once into a new workspace there). Source bundles declare `format:` in `source.yml`
-  and keep their payload under `files/`. Any org/project folder may add `workspace-inherit/`;
+  (translated once into a new workspace there). Existing source layouts stay intact; optional
+  `source.yml` declares a different authoring format. Any org/project folder may add `workspace-inherit/`;
   `ci/render.sh` materializes managed native copies on main, and refresh copies them to ws branches.
   `workspace.generated` records ownership; `opt-out:` transfers a native path to the workspace.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
@@ -59,7 +59,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   headers): name the file or key that holds them ("the folders in `.delphi/park.list`", "each repo
   under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
-- Preserve existing native skill metadata and behavior, including allowed-tools and invocation flags.
+- Keep Claude skill sources under workspace-inherit/.claude/skills with their metadata intact.
   Harness adaptations belong in ci/harnesses.sh and affect only that target's generated output.
   Skill scripts stay harness-independent (SKILL.md uses the Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same

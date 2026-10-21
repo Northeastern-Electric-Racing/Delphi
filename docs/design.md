@@ -16,7 +16,7 @@ folder name (`workspaces/<name>`, `.delphi/parked/<name>`), and no branch can be
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
-only on main. Shared `skills/` and source bundles remain editable on main. `ci/render.sh`
+only on main. Shared `workspace-inherit/` and `workspace-defaults/` sources remain editable on main. `ci/render.sh`
 materializes their managed native copies inside each workspace folder before merge. The workspace's
 required `harness:` selects its target independently of the source bundle's `format:`. Branch
 refresh copies those reviewed files; it never reads source formats or runs harness adapters.
@@ -53,8 +53,7 @@ checks out other branches to read, and harness plugins carry what workspaces opt
 
 ```
 software/<org>/…/<project>/           project context and optional workspace-defaults/ source bundle
-software/[<org>/…/]skills/<name>/     reusable Agent Skills, rendered to the native skill directory
-software/[<org>/…/]workspace-inherit/  source.yml plus files/: managed inheritance source bundle
+software/[<org>/…/]workspace-inherit/  existing native sources, including .claude/skills/<name>/
 software/<org>/…/plugins/<harness>/<set>/   a plugin set for the workspaces under that folder (optional, main only)
 software/<org>/…/short-name           the folder's short name in workspace names (optional; default: its name)
 software/<org>/…/plugins/scope        its scope in plugin names (optional; default: its short name)
@@ -89,27 +88,27 @@ clones.
 `.github/CODEOWNERS` assigns reviewers per org folder.
 
 The folder holding a `workspaces/` directory is a project folder. It may hold shared context
-and a `workspace-defaults/` source bundle. Every source bundle has `source.yml` with
-`format: claude-code` or `format: codex`; its payload lives under `files/`. Source metadata never
-appears in rendered workspaces. The optional `files/workspace.yml` in a defaults bundle supplies
-creation defaults without a workspace name. Its optional `harness:` is only a creation suggestion;
-the creation tool always records an explicit harness in the new workspace.
+and `workspace-defaults/`. Files keep their existing native source paths; Claude Code is the
+legacy source format. An optional `source.yml` with `format: claude-code` or `format: codex`
+selects the authoring format independently of every workspace's harness. Source metadata never
+appears in rendered workspaces. The optional `workspace-defaults/workspace.yml` supplies creation
+defaults without a workspace name. Its optional `harness:` is only a creation suggestion; the
+creation tool always records an explicit harness in the new workspace.
 
 A workspace's harness does not depend on its branch name, the source format, or a repository-wide
 runtime default. Each folder on main already contains its declared harness's native files, and
 `ws/<name>` exposes that folder at the root. A harness change is an explicit workspace change.
 
-Any org or project folder may hold `workspace-inherit/`. `ci/inherit.sh` resolves those bundles
-from `software/` down to a workspace's project, together with portable `skills/` sources at those
-levels. `ci/sources.sh` reads a bundle's declared source format; `ci/harnesses.sh` selects native
-destinations. Claude skill definitions pass through unchanged, including tool permissions,
-invocation flags and plugin reload guidance. The Codex content adapter changes instruction-file
-references and workspace-switch guidance only in Codex output, and normalizes descriptions that
-need YAML block scalars. Skill metadata is preserved; each harness interprets the fields it supports.
-Supporting files pass through unchanged. Instruction
-filenames and skill directories have explicit mappings. Unmapped native settings fail instead of
-being silently discarded or guessed. A future source reader can feed the same file records without
-changing workspace harness selections or branch sync.
+Any org or project folder may hold `workspace-inherit/`. `ci/inherit.sh` resolves these sources
+from `software/` down to a workspace's project. Existing Claude skills stay in
+`workspace-inherit/.claude/skills/`, including their native metadata and instructions.
+`ci/sources.sh` reads the source format; `ci/harnesses.sh` selects native destinations and adapts
+content for the consuming workspace. Claude output passes through unchanged. Codex output omits
+Claude-only skill fields, adapts instruction references and workspace-switch guidance, and
+normalizes descriptions that need YAML block scalars. Supporting files pass through unchanged.
+Instruction filenames and skill directories have explicit mappings. Unmapped native settings
+fail instead of being silently discarded or guessed. A future source reader can feed the same
+file records without changing workspace harness selections or branch sync.
 
 Run `bash ci/render.sh` on a main-based branch after changing shared sources, workspace harnesses,
 opt-outs or generated settings inputs. Include the native outputs in the same PR. `--check` writes
@@ -270,7 +269,7 @@ it prints them as an export line. The adapter supplies layout initialization: fo
 skill scripts'. In a terminal, `. .delphi/paths.sh` from the root. `new-worktree.sh` sources it from
 its own folder; every skill script, plugin or workspace, sources `$DELPHI_ROOT/.delphi/paths.sh` and
 takes only names (repo, branch), never a searched-for path, so the model types only the names.
-Skills themselves stay harness-neutral. Codex discovers its native instructions and skills from
+Skill helpers remain harness-independent; native skill metadata is handled by translation. Codex discovers its native instructions and skills from
 the checked-out workspace branch. Agents follow `AGENTS.md`: determine the absolute root once,
 then run skill helpers through that root's
 `.delphi/exec.sh`. It sources the layout on every invocation, preserves the caller's directory,
@@ -350,7 +349,7 @@ unsupported behavior. Keep source-format rules out of inheritance ownership and 
 
 `ci/sources.sh` is the input boundary. A different source format can produce the same records
 (content mode/hash, destination, origin) without choosing the consuming workspace's harness.
-Reusable skills already use the portable Agent Skills format. There is no required primary
+Existing sources can remain Claude-authored while targets evolve. There is no required primary
 harness: every workspace selects its own target, and source bundles independently select their
 format. Creation suggestions can be changed or removed without changing existing workspaces.
 

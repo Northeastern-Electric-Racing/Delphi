@@ -131,13 +131,15 @@ Once it merges, CI creates `ws/<name>` (its dotted name).
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and
 `workspace-defaults/` (what a new workspace there starts with).
 
-**Source bundles.** `workspace-defaults/` and `workspace-inherit/` contain `source.yml`
-(`format: claude-code` today) and a `files/` payload. Defaults seed workspace-owned files once;
-inheritance stays managed. Every workspace independently declares `harness:` in its own manifest.
-Unsupported native conversions fail instead of dropping settings.
+**Source bundles.** Keep the existing `workspace-defaults/` and `workspace-inherit/` layouts.
+They are Claude-authored by default; optional `source.yml` declares another source `format:`.
+Defaults seed workspace-owned files once; inheritance stays managed. Every workspace independently
+declares `harness:` in its own manifest. Unsupported native settings conversions fail explicitly.
 
-**Shared skills.** Keep reusable Agent Skills under `skills/<name>/` at an org or project folder.
-The main-side renderer copies them unchanged into each workspace's native skill directory.
+**Shared skills.** Keep Claude sources under `workspace-inherit/.claude/skills/<name>/` at an org
+or project folder, including their tool permissions and invocation metadata. The main-side renderer
+preserves Claude output and translates Codex output to `.agents/skills/`, omitting Claude-only
+skill fields only from the Codex copies.
 
 **Render before merging.** After changing shared sources, harness selections, opt-outs or plugin
 configuration, run `bash ci/render.sh` on a main-based branch and include its native output in the

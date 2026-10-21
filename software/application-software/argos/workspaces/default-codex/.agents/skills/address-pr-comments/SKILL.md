@@ -1,8 +1,6 @@
 ---
 name: address-pr-comments
 description: Fetch review comments on a PR (Argos, Nero), judge whether each (including outdated ones) still applies, and walk through fixes in the PR's worktree
-allowed-tools: Bash(git:*), Bash(gh issue list:*), Bash(bash ${CLAUDE_SKILL_DIR}/scripts/fetch-feedback.sh *)
-user-invocable: true
 ---
 
 Propose and apply fixes for a PR's unresolved review feedback. **Never reply to threads**; the user does.

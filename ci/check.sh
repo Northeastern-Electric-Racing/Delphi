@@ -149,7 +149,7 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
 while IFS= read -r d; do
   case "$d" in */workspaces/*) bad "$d: belongs in an org or project folder, not under workspaces/" ;; esac
   for f in CLAUDE.md AGENTS.md workspace.yml workspace.generated .delphi .claude/settings.json .codex/config.toml $managed; do
-    [ ! -e "$d/files/$f" ] || bad "$d/files/$f: each workspace has its own; it can't be inherited"
+    [ ! -e "$d/$f" ] || bad "$d/$f: each workspace has its own; it can't be inherited"
   done
 done < <(find software -type d -name workspace-inherit 2>/dev/null | sort)
 while IFS= read -r d; do
@@ -157,15 +157,13 @@ while IFS= read -r d; do
   if format=$(source_format "" "$d" 2>/dev/null); then
     if ! messages=$(bundle_files "" "$d" "$format" 2>&1 >/dev/null); then bad "$messages"; fi
   else bad "$d/source.yml: declare one supported source format"; fi
-  while IFS= read -r f; do bad "$f: source bundle files belong under files/"; done \
-    < <(find "$d" -type f ! -path "$d/files/*" ! -path "$d/source.yml")
 done < <(find software -type d \( -name workspace-defaults -o -name workspace-inherit \) 2>/dev/null | sort)
 while IFS= read -r d; do
   case "$d" in */workspaces/*) continue ;; esac
   for skill in "$d"/*; do
     [ ! -e "$skill" ] || [ -f "$skill/SKILL.md" ] || bad "$skill: shared skills need <name>/SKILL.md"
   done
-done < <(find software -type d -name skills ! -path '*/workspace-inherit/*' ! -path '*/workspace-defaults/*' 2>/dev/null)
+done < <(find software -type d \( -path '*/workspace-inherit/.claude/skills' -o -path '*/workspace-inherit/.agents/skills' \) 2>/dev/null)
 while IFS= read -r d; do
   [ ! -d "${d%/workspaces}/defaults" ] || bad "${d%/workspaces}/defaults: renamed workspace-defaults/"
 done < <(find software -type d -name workspaces 2>/dev/null)
@@ -177,6 +175,10 @@ done < <(find software -name short-name -type f 2>/dev/null | sort)
 all=$(bash .delphi/names.sh 2>/dev/null || true) # <name> <folder>
 folders="" names="" listed=""
 while IFS= read -r f; do
+  case "$f" in
+    */workspaces/*) ;; # a workspace may itself be named workspace-defaults
+    */workspace-inherit/* | */workspace-defaults/*) continue ;;
+  esac
   folder=${f%/workspace.yml}
   case "$(dirname "$folder")" in */workspaces) ;; *)
     bad "$f: must be at software/**/workspaces/<leaf>/workspace.yml" && continue ;;
@@ -196,9 +198,9 @@ while IFS= read -r f; do
   [ ! -e "$folder/.delphi" ] || bad "$folder/.delphi: managed in the root .delphi/ on main; remove it"
   for m in $managed; do cmp -s "$tpl/$m" "$folder/$m" || bad "$folder/$m: differs from $tpl/$m"; done
   manifest "$f" "$name"
-done < <(find software -name workspace.yml -type f ! -path '*/workspace-inherit/*' ! -path '*/workspace-defaults/files/*' 2>/dev/null | sort)
+done < <(find software -name workspace.yml -type f 2>/dev/null | sort)
 while IFS= read -r f; do manifest "$f"; done \
-  < <(find software -path '*/workspace-defaults/files/workspace.yml' ! -path '*/workspaces/workspace-defaults/*' -type f 2>/dev/null)
+  < <(find software -path '*/workspace-defaults/workspace.yml' ! -path '*/workspaces/workspace-defaults/*' -type f 2>/dev/null)
 for l in $listed; do
   case " $names " in *" ${l#*|} "*) ;; *) bad "${l%%|*}: workspaces: lists ${l#*|}, which isn't a workspace on main" ;; esac
 done

@@ -3,7 +3,7 @@ name: open-pr
 description: Run pre-PR checks, push the branch, and open a draft pull request on an application-software repo (Argos, Nero)
 ---
 
-First load the project's `pr-conventions` skill (inherited from the project's `skills/`) for its base branch, commit format, checks, labels, and screenshots.
+First load the project's `pr-conventions` skill (inherited from the project's `workspace-inherit/`) for its base branch, commit format, checks, labels, and screenshots.
 
 1. **Check:** `bash scripts/pr-checks.sh <repo> <branch> origin/<base> '<commit format>'` (clean tree, commit subjects match the project's format, merges cleanly into the base), then the project's own checks. Stop and fix on any FAIL.
 2. **Media:** if the diff touches the UI, ask the user whether to add screenshots to the PR, listing any already in the project's screenshot folder for this branch so they can pick those instead of new ones; on no, skip this step. For new ones, use the project's UI QA to take Playwright screenshots of the changed views into its screenshot folder, or, when the change adds or changes an animation, record a short video instead (a browser context with `recordVideo: { dir }` saves a `.webm` when it closes). Images must be under 10 MB; video under 10 MB on a Free plan, 100 MB on a paid one.

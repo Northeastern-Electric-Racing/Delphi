@@ -17,7 +17,12 @@ harness_file() { # <target harness> <source file>: Claude passes through; Codex 
         NR == 1 && /^---$/ { front = 1; print; next }
         front && /^---$/ { front = 0; print; next }
         front {
-          # Preserve tool/invocation metadata. Quote multiline-style descriptions for native YAML.
+          # Claude-only fields are omitted from Codex output, including block values.
+          if (/^(allowed-tools|user-invocable|disable-model-invocation):/) { skip = 1; next }
+          if (skip && /^[[:space:]]/) next
+          if (/^[^[:space:]#]/) skip = 0
+          if (skip) next
+          # Quote descriptions that need a native YAML block scalar.
           if (/^description: / && substr($0, 14) ~ /: / && substr($0, 14) !~ /^["\047>|]/) {
             print "description: >-"; print "  " substr($0, 14)
           } else print

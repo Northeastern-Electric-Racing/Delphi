@@ -47,9 +47,9 @@ cp "$src/software/short-name" "$t/seed/software/" && cp "$src/software/applicati
 cp -R "$src/$A/." "$t/seed/$A/"
 cp -R "$src/templates/workspace/." "$t/seed/$B/"
 sed -i.bak "s|{{name}}|$BN|" "$t/seed/$B/workspace.yml" && rm "$t/seed/$B/workspace.yml.bak"
-FD=software/electrical/firmware/workspace-defaults/files # project defaults for new workspaces under electrical/firmware
+FD=software/electrical/firmware/workspace-defaults # project defaults for new workspaces under electrical/firmware
 mkdir -p "$t/seed/$FD/.claude/skills/fw"
-printf "format: claude-code\n" >"$t/seed/${FD%/files}/source.yml"
+printf "format: claude-code\n" >"$t/seed/$FD/source.yml"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
 printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
 echo "fw skill" >"$t/seed/$FD/.claude/skills/fw/SKILL.md"
@@ -186,8 +186,8 @@ on_main() { # <message> <command...>: a change on main, pushed
   local m=$1 && shift
   (cd "$t/dev" && git fetch -q && git checkout -q -B tmp-main origin/main && "$@" && bash ci/render.sh >/dev/null && git add -A && git commit -qm "$m" && git push -q origin HEAD:main)
 }
-TI=software/workspace-inherit/files/.claude/skills/top AI=software/application-software/workspace-inherit/files/notes
-on_main "inherit" sh -c "mkdir -p $TI $AI && echo 'top v1' >$TI/SKILL.md && echo 'app v1' >$AI/app.md && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml"
+TI=software/workspace-inherit/.claude/skills/top AI=software/application-software/workspace-inherit/notes
+on_main "inherit" sh -c "mkdir -p $TI $AI && echo 'top v1' >$TI/SKILL.md && echo 'app v1' >$AI/app.md && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml"
 sync >"$t/out" 2>&1 || fail "sync after adding workspace-inherit/ failed: $(cat "$t/out")"
 for n in "$AN" "$BN"; do o show "ws/$n:.claude/skills/top/SKILL.md" | grep -qx "top v1" || fail "ws/$n lacks software/workspace-inherit/"; done
 o show "ws/$AN:notes/app.md" | grep -qx "app v1" || fail "ws/$AN lacks application-software/workspace-inherit/"
@@ -222,12 +222,12 @@ o show "ws/$AN:notes/layout/guide.md" | grep -qx after || fail "refresh lost nes
 ok "native managed paths can change from files to directories without creating sparse-index entries"
 
 # Source retirement must preserve ownership claimed on a workspace branch before its proposal merges.
-on_main "unmerged ownership fixture" sh -c 'mkdir -p software/skills/unmerged; echo shared >software/skills/unmerged/SKILL.md'
+on_main "unmerged ownership fixture" sh -c 'mkdir -p software/workspace-inherit/.claude/skills/unmerged; echo shared >software/workspace-inherit/.claude/skills/unmerged/SKILL.md'
 sync refresh "$BN" >/dev/null
 commit_on "ws/$BN" workspace.yml "  - .claude/skills/unmerged"
 commit_on "ws/$BN" .claude/skills/unmerged/SKILL.md "workspace-owned unmerged"
 sync refresh "$BN" >/dev/null
-on_main "retire unmerged source" git rm -rq software/skills/unmerged
+on_main "retire unmerged source" git rm -rq software/workspace-inherit/.claude/skills/unmerged
 sync refresh "$BN" >"$t/out" 2>&1 || fail "retiring an unmerged opt-out conflicted: $(cat "$t/out")"
 (cd "$t/dev" && git fetch -q && git checkout -q -B retire-owned "origin/ws/$BN" &&
   sed -i.bak '\|^  - .claude/skills/unmerged$|d' workspace.yml && rm workspace.yml.bak &&
@@ -280,14 +280,14 @@ expect_bad unknown-harness "unknown harness 'unknown'" sed -i.bak 's/harness: co
 expect_bad codex-plugin "codex does not support Delphi plugin sets" sh -c "printf 'plugins:\n  - delphi\n' >>$CX/workspace.yml"
 expect_bad codex-no-instructions "AGENTS.md: required for codex" rm "$CX/AGENTS.md"
 expect_bad codex-wrong-native "CLAUDE.md: belongs to a different harness" touch "$CX/CLAUDE.md"
-expect_bad codex-inherited-wrong-native "has no mapping to codex" sh -c "mkdir -p software/workspace-inherit/files/.claude && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/files/.claude/extra.json"
-expect_bad neutral-collision "also inherits it from a folder above" sh -c "mkdir -p software/application-software/skills/journal && echo x >software/application-software/skills/journal/SKILL.md"
+expect_bad codex-inherited-wrong-native "has no mapping to codex" sh -c "mkdir -p software/workspace-inherit/.claude && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/.claude/extra.json"
+expect_bad inherited-collision "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
 expect_bad missing-native-output "$CX/.agents/skills/journal/SKILL.md: inherited from" rm "$CX/.agents/skills/journal/SKILL.md"
-expect_bad changed-shared-source "out of date; run ci/render.sh" sh -c "echo changed >>software/skills/journal/SKILL.md"
+expect_bad changed-shared-source "out of date; run ci/render.sh" sh -c "echo changed >>software/workspace-inherit/.claude/skills/journal/SKILL.md"
 expect_bad missing-ownership-record "$CX/workspace.generated: ownership record is out of date" rm "$CX/workspace.generated"
 expect_bad unknown-source-format "declare one supported source format" sh -c "echo 'format: unknown' >${A%/workspaces/*}/workspace-defaults/source.yml"
-expect_bad mixed-source-formats "AGENTS.md does not belong to the declared claude-code format" touch "${A%/workspaces/*}/workspace-defaults/files/AGENTS.md"
-expect_bad owned-output-collision "workspace-owned file collides" sh -c "mkdir -p software/skills/collision $CX/.agents/skills/collision && echo shared >software/skills/collision/SKILL.md && echo own >$CX/.agents/skills/collision/SKILL.md"
+expect_bad mixed-source-formats "AGENTS.md does not belong to the declared claude-code format" touch "${A%/workspaces/*}/workspace-defaults/AGENTS.md"
+expect_bad owned-output-collision "workspace-owned file collides" sh -c "mkdir -p software/workspace-inherit/.claude/skills/collision $CX/.agents/skills/collision && echo shared >software/workspace-inherit/.claude/skills/collision/SKILL.md && echo own >$CX/.agents/skills/collision/SKILL.md"
 
 d=$t/chk-owned-output-collision
 if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer overwrote an owned collision"; fi
@@ -302,7 +302,7 @@ expect_bad reference-repo-clash "duplicate repo: argos" sh -c "printf 'reference
 expect_bad bad-key "unexpected line" sh -c "printf 'color: x\n' >>$A/workspace.yml"
 expect_bad wrong-name "(.delphi/names.sh)" sh -c "sed -i.bak 's/^name:.*/name: other/' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad no-name "name is missing" sh -c "sed -i.bak '/^name:/d' $A/workspace.yml && rm $A/workspace.yml.bak"
-expect_bad defaults-name "workspace-defaults/files/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/workspace-defaults/files/workspace.yml"
+expect_bad defaults-name "workspace-defaults/workspace.yml: unexpected line: name:" sh -c "printf 'name: x\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
 expect_bad park-path "bad park entry" sh -c "printf 'park:\n  - a/b\n' >>$A/workspace.yml"
 expect_bad park-git "bad park entry" sh -c "printf 'park:\n  - .git\n' >>$A/workspace.yml"
 expect_bad park-duplicate "duplicate park entry: pictures" sh -c "printf 'park:\n  - pictures\n  - pictures\n' >>$A/workspace.yml"
@@ -339,19 +339,19 @@ expect_bad migration-header "start it with" sh -c "echo 'echo hi' >.delphi/migra
 expect_bad history-rewritten "only add lines" sed -i.bak 's/linked/LINKED/' .delphi/versions
 expect_bad released-migration-changed "add a new version's migration instead" sh -c "echo '# x' >>.delphi/migrations/0.0.1-linked-worktrees-to-clones.sh"
 expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -c "echo x >>$A/.github/workflows/delphi.yml"
-expect_bad defaults-manifest "workspace-defaults/files/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/workspace-defaults/files/workspace.yml"
+expect_bad defaults-manifest "workspace-defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
 expect_bad defaults-named-workspace "workspace-defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/workspace-defaults/.delphi && cp -R $A/. software/x/workspaces/workspace-defaults/"
 expect_bad old-defaults "defaults: renamed workspace-defaults/" mkdir -p "${A%/workspaces/*}/defaults"
-expect_bad inherited-file-kept "$A/.claude/skills/journal/SKILL.md: inherited from software/skills/journal/" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
+expect_bad inherited-file-kept "$A/.claude/skills/journal/SKILL.md: inherited from software/workspace-inherit/.claude/skills/journal/" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
 d=$t/chk-inherited-file-kept
-rm -r "$d/software/skills/journal"
+rm -r "$d/software/workspace-inherit/.claude/skills/journal"
 if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer deleted edited retired output"; fi
 grep -q 'retired managed file has local edits' "$t/err" || fail "retired edit not reported"
 [ "$(cat "$d/$A/.claude/skills/journal/SKILL.md")" = x ] || fail "retired edited output deleted"
 ok "main-side generation reports edited retired files and leaves their content intact"
 
-expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/files/.claude/skills/journal && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml && echo x >software/application-software/workspace-inherit/files/.claude/skills/journal/SKILL.md"
-expect_bad inherited-claude-md "software/workspace-inherit/files/CLAUDE.md: each workspace has its own" sh -c "mkdir -p software/workspace-inherit/files && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/files/CLAUDE.md"
+expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
+expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "mkdir -p software/workspace-inherit && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/CLAUDE.md"
 expect_bad inherit-in-workspace "belongs in an org or project folder" sh -c "mkdir -p $A/workspace-inherit && echo x >$A/workspace-inherit/f"
 expect_bad bad-opt-out "bad opt-out entry" sh -c "printf 'opt-out:\n  - ../x\n' >>$A/workspace.yml"
 expect_bad opt-out-nothing "opt-out: nope is nothing it inherits" sh -c "printf 'opt-out:\n  - nope\n' >>$A/workspace.yml"
@@ -574,7 +574,7 @@ ok "new-worktree.sh makes new branches from the default or <base>, checks out ex
   fail "paths.sh layout"
 [ "$(cd "$t" && eval "$(bash "$w/.delphi/paths.sh")" && echo "$(printenv DELPHI_ROOT) $(printenv DELPHI_WORKSPACES)")" = "$w $w/workspaces" ] ||
   fail "paths.sh's export line doesn't reach child processes"
-cap=$src/software/skills/journal/scripts/capture.sh
+cap=$src/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh
 { e=$(cd "$t" && DELPHI_ROOT=$w bash "$cap" -c ideas "a note") && [ "${e#"$w/.journal/ideas/"}" != "$e" ] && grep -q "a note" "$e"; } ||
   fail "capture.sh from \$DELPHI_ROOT: $e"
 ! (unset DELPHI_ROOT && bash "$cap" "a note") >/dev/null 2>&1 || fail "capture.sh ran without DELPHI_ROOT"
@@ -815,7 +815,9 @@ cat >"$t/native-metadata.md" <<'SKILL'
 ---
 name: native-metadata
 description: "Preserve: existing tool permissions and invocation settings."
-allowed-tools: Bash(git:*), Bash(bash ${CLAUDE_SKILL_DIR}/scripts/helper.sh *)
+allowed-tools:
+  - Bash(git:*)
+  - Bash(bash ${CLAUDE_SKILL_DIR}/scripts/helper.sh *)
 user-invocable: false
 disable-model-invocation: true
 metadata:
@@ -825,17 +827,17 @@ Read CLAUDE.md before making changes.
 SKILL
 C=software/application-software/argos/workspaces/sandbox-codex CN=s.app.argos.sandbox-codex
 # shellcheck disable=SC2016 # child shell expands its positional arguments
-on_main "add Codex and neutral skills" bash -c '
-  mkdir -p "$1" software/skills/portable/scripts software/skills/native-metadata software/skills/switch-workspace
+on_main "add Codex and inherited Claude skills" bash -c '
+  mkdir -p "$1" software/workspace-inherit/.claude/skills/portable/scripts software/workspace-inherit/.claude/skills/native-metadata software/workspace-inherit/.claude/skills/switch-workspace
   cp "$2/templates/harnesses/codex/AGENTS.md" "$1/AGENTS.md"
   cp "$2/templates/workspace/.gitattributes" "$1/.gitattributes"
   mkdir -p "$1/.github/workflows"
   cp .github/workflows/delphi.yml "$1/.github/workflows/delphi.yml"
   printf "name: %s\nharness: codex\n" "$3" >"$1/workspace.yml"
-  printf "portable v1\n" >software/skills/portable/SKILL.md
-  printf "helper v1\n" >software/skills/portable/scripts/helper.sh
-  cp "$4" software/skills/native-metadata/SKILL.md
-  cp "$2/software/skills/switch-workspace/SKILL.md" software/skills/switch-workspace/SKILL.md
+  printf "portable v1\n" >software/workspace-inherit/.claude/skills/portable/SKILL.md
+  printf "helper v1\n" >software/workspace-inherit/.claude/skills/portable/scripts/helper.sh
+  cp "$4" software/workspace-inherit/.claude/skills/native-metadata/SKILL.md
+  cp "$2/software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md" software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md
 ' _ "$C" "$src" "$CN" "$t/native-metadata.md"
 sync "$CN" >"$t/out" 2>&1 || fail "Codex creation: $(cat "$t/out")"
 for skill in top portable; do
@@ -843,18 +845,27 @@ for skill in top portable; do
 done
 ! o cat-file -e "ws/$CN:.claude" 2>/dev/null || fail "Codex inherited Claude files"
 [ "$(o rev-parse "ws/$CN^")" = "$(o rev-parse main)" ] || fail "Codex creation parent"
-ok "main-side rendering maps portable and declared Claude-source skills to Codex native paths"
+ok "main-side rendering translates existing inherited Claude skills to Codex native paths"
 o diff --quiet "main:$C" "ws/$CN" -- ':!.delphi' || fail "Codex branch requires native generation after main"
 ok "Codex files on main exactly match the workspace branch before runtime injection"
 
 sync refresh "$AN" >/dev/null
 cmp -s "$t/native-metadata.md" <(o show "main:$A/.claude/skills/native-metadata/SKILL.md") || fail "main changed Claude metadata or instructions"
 cmp -s "$t/native-metadata.md" <(o show "ws/$AN:.claude/skills/native-metadata/SKILL.md") || fail "refresh changed Claude metadata"
+cmp -s "$t/native-metadata.md" <(o show "main:software/workspace-inherit/.claude/skills/native-metadata/SKILL.md") || fail "translation changed the inherited Claude source"
 ok "Claude source metadata, allowed-tools and invocation flags survive main rendering and refresh byte for byte"
-sed 's/CLAUDE[.]md/AGENTS.md/g' "$t/native-metadata.md" >"$t/codex-metadata.md"
-cmp -s "$t/codex-metadata.md" <(o show "main:$C/.agents/skills/native-metadata/SKILL.md") || fail "Codex discarded native metadata or kept the wrong instruction reference"
-ok "Codex output preserves metadata while adapting its own instruction-file reference"
-cmp -s "$src/software/skills/switch-workspace/SKILL.md" <(o show "main:$A/.claude/skills/switch-workspace/SKILL.md") || fail "Claude switching instructions changed"
+cat >"$t/codex-metadata.md" <<'SKILL'
+---
+name: native-metadata
+description: "Preserve: existing tool permissions and invocation settings."
+metadata:
+  custom-setting: unchanged
+---
+Read AGENTS.md before making changes.
+SKILL
+cmp -s "$t/codex-metadata.md" <(o show "main:$C/.agents/skills/native-metadata/SKILL.md") || fail "Codex translation changed portable metadata or retained Claude-only fields"
+ok "Codex translation omits Claude-only fields and block values while preserving portable metadata"
+cmp -s "$src/software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md" <(o show "main:$A/.claude/skills/switch-workspace/SKILL.md") || fail "Claude switching instructions changed"
 o show "main:$A/.claude/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude lost its hot reload workflow"
 o show "main:$C/.agents/skills/switch-workspace/SKILL.md" | grep -q 'Start a fresh Codex session' || fail "Codex lacks native restart guidance"
 ! o show "main:$C/.agents/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude reload behavior leaked into Codex"
@@ -868,20 +879,16 @@ o show "propose/$CN:$C/AGENTS.md" | grep -qx "workspace-owned instructions" || f
 sync refresh "$CN" >/dev/null
 [ "$(o show "ws/$CN:.agents/skills/portable/SKILL.md")" = "portable v1" ] || fail "Codex inherited edit not reset"
 ok "Codex proposals preserve native instructions and retain reviewed native skills; refresh resets inherited edits"
-on_main "move legacy skill source, remove helper" bash -c '
-  mkdir -p software/skills
-  git mv software/workspace-inherit/files/.claude/skills/top software/skills/top
-  git rm -q software/skills/portable/scripts/helper.sh
-'
+on_main "remove shared helper" git rm -q software/workspace-inherit/.claude/skills/portable/scripts/helper.sh
 mkdir "$t/adapters"
 for script in harnesses sources inherit render; do mv "$t/ci/ci/$script.sh" "$t/adapters/"; done
-sync refresh "$CN" >"$t/out" 2>&1 || fail "source migration: $(cat "$t/out")"
+sync refresh "$CN" >"$t/out" 2>&1 || fail "shared source update: $(cat "$t/out")"
 for script in harnesses sources inherit render; do mv "$t/adapters/$script.sh" "$t/ci/ci/"; done
 ok "refresh delivers changed native files without loading source readers or harness adapters"
 
 ! o cat-file -e "ws/$CN:.agents/skills/portable/scripts/helper.sh" 2>/dev/null || fail "stale inherited helper survived"
-o show "ws/$CN:.agents/skills/top/SKILL.md" | grep -qx "top v3" || fail "legacy source move lost skill"
-ok "neutral source migration keeps native paths stable and removes obsolete inherited files"
+o show "ws/$CN:.agents/skills/top/SKILL.md" | grep -qx "top v3" || fail "shared source update lost skill"
+ok "shared source updates keep native paths stable and remove obsolete inherited files"
 # shellcheck disable=SC2016 # child shell expands its positional arguments
 on_main "switch Codex workspace to Claude" bash -c '
   git mv "$1/AGENTS.md" "$1/CLAUDE.md"
@@ -931,7 +938,7 @@ sync refresh "$CN" >/dev/null
 # A formerly opted-out skill is workspace-owned even after its shared source and opt-out are removed.
 # shellcheck disable=SC2016 # child expands its arguments
 on_main "retire shared skill without deleting owned copy" bash -c '
-  git rm -rq software/skills/portable
+  git rm -rq software/workspace-inherit/.claude/skills/portable
   printf "name: %s\nharness: codex\n" "$2" >"$1/workspace.yml"
 ' _ "$C" "$CN"
 sync "$CN" >"$t/out" 2>&1 || fail "retire owned skill source: $(cat "$t/out")"
@@ -956,7 +963,7 @@ printf '#!/usr/bin/env bash\nexit 1\n' >"$t/proxy-bin/gh"
 printf '#!/usr/bin/env bash\nprintf "proxy-response"\n' >"$t/proxy-bin/curl"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$t/proxy-bin/jq"
 chmod +x "$t/proxy-bin/"*
-provider=$src/software/application-software/skills/address-pr-comments/scripts/github.sh
+provider=$src/software/application-software/workspace-inherit/.claude/skills/address-pr-comments/scripts/github.sh
 # shellcheck disable=SC2016 # isolated shell sources helper and expands its variables
 proxy=$(PATH="$t/proxy-bin:$PATH" DELPHI_GITHUB_REST_PROXY=1 CLAUDE_CODE_REMOTE='' bash -c '
   source "$1"; gh_init test "$2"; [ "$MODE" = rest ]; get repos/example/example
@@ -989,14 +996,14 @@ F=software/electrical/firmware/workspaces/fw-project-codex
 created=new-workspace/electrical/firmware/fw-project-codex
 o show "$created:$F/workspace.yml" | grep -qx 'harness: codex' || fail "project suggestion ignored"
 o show "$created:$F/AGENTS.md" | grep -qx '# Firmware for s.electrical.firmware.fw-project-codex' || fail "translated defaults lost"
-o show "main:${FD%/files}/source.yml" | grep -qx 'format: claude-code' || fail "creation suggestion changed source format"
+o show "main:$FD/source.yml" | grep -qx 'format: claude-code' || fail "creation suggestion changed source format"
 o show "main:$A/workspace.yml" | grep -qx 'harness: claude-code' || fail "existing workspace harness changed"
 ok "creation suggestions stay independent of source format and existing workspace harnesses"
 
 # A different source format feeds the same target adapters and unchanged branch model.
 # shellcheck disable=SC2016 # child shell migrates the source bundle
 on_main "author defaults in Codex format" bash -c '
-  printf "format: codex\n" >"${1%/files}/source.yml"
+  printf "format: codex\n" >"$1/source.yml"
   git mv "$1/CLAUDE.md" "$1/AGENTS.md"
   mkdir -p "$1/.agents/skills"
   git mv "$1/.claude/skills/fw" "$1/.agents/skills/fw"

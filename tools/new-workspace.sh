@@ -33,7 +33,7 @@ defaults=$wt/software/$org/workspace-defaults
 mkdir -p "$wt/$folder"
 # shellcheck source=ci/inherit.sh
 source "$wt/ci/inherit.sh"
-[ -n "$adapter" ] || adapter=$(awk '/^harness:/ { print $2; exit }' "$defaults/files/workspace.yml" 2>/dev/null || true)
+[ -n "$adapter" ] || adapter=$(awk '/^harness:/ { print $2; exit }' "$defaults/workspace.yml" 2>/dev/null || true)
 harness "${adapter:-claude-code}" || die "unsupported harness"
 adapter=${adapter:-claude-code}
 cp -R "$wt/templates/workspace/." "$wt/$folder/"

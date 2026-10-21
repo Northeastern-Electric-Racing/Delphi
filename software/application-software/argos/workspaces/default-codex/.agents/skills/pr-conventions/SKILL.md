@@ -1,7 +1,6 @@
 ---
 name: pr-conventions
 description: Argos specifics for pull requests (base branch, commit format, checks, labels, screenshots, UI QA). Load before opening, updating, or reviewing an Argos PR, alongside open-pr, update-pr, and review.
-user-invocable: false
 ---
 
 # Argos PR conventions

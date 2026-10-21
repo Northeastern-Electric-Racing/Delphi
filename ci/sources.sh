@@ -4,10 +4,15 @@ set -euo pipefail
 # shellcheck source=ci/harnesses.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/harnesses.sh"
 
-source_format() { # <revision or '' for disk> <bundle>: print its declared format
+source_format() { # <revision or '' for disk> <bundle>: legacy bundles are Claude-authored
   local config format
-  if [ -n "$1" ]; then config=$(git show "$1:$2/source.yml" 2>/dev/null || true)
-  else config=$(cat "$2/source.yml" 2>/dev/null || true); fi
+  if [ -n "$1" ]; then
+    if ! git cat-file -e "$1:$2/source.yml" 2>/dev/null; then echo claude-code; return; fi
+    config=$(git show "$1:$2/source.yml")
+  else
+    if [ ! -e "$2/source.yml" ]; then echo claude-code; return; fi
+    config=$(cat "$2/source.yml")
+  fi
   format=$(printf '%s\n' "$config" | awk '
     /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
     /^format:[[:space:]]+(claude-code|codex)[[:space:]]*(#.*)?$/ { if (!n++) value = $2; next }
@@ -48,13 +53,14 @@ source_path() { # <format> <target harness> <source path>: native destination; n
 bundle_files() { # <revision or '' for disk> <bundle> <target harness>: mode blob<TAB>destination<TAB>source
   local format records record meta path dest
   format=$(source_format "$1" "$2") || return 1
-  records=$(source_files "$1" "$2/files") || return 1
+  records=$(source_files "$1" "$2") || return 1
   while IFS= read -r record; do
     [ -n "$record" ] || continue
     meta=${record%%$'\t'*}; path=${record#*$'\t'}
+    [ "$path" != source.yml ] || continue
     meta="${meta%% *} ${meta##* }"
     dest=$(source_path "$format" "$3" "$path") || return 1
-    printf '%s\t%s\t%s\n' "$meta" "$dest" "$2/files/$path"
+    printf '%s\t%s\t%s\n' "$meta" "$dest" "$2/$path"
   done <<<"$records"
 }
 

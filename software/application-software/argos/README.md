@@ -18,5 +18,5 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 | `plugins/claude/<set>/` | Claude Code plugin sets a workspace lists under `plugins:` (none yet) |
 | `AUTHORING.md` | How to create and change Argos workspaces |
 
-Shared workflows belong in `skills/`. Shared facts belong here or in `workspace-inherit/`;
+Shared Claude workflows stay in `workspace-inherit/.claude/skills/`. Shared facts belong here or in `workspace-inherit/`;
 `workspace-defaults/` seeds new workspaces. Facts that one workspace needs belong in that workspace.
