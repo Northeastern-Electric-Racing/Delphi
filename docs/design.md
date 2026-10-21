@@ -102,7 +102,11 @@ runtime default. Each folder on main already contains its declared harness's nat
 Any org or project folder may hold `workspace-inherit/`. `ci/inherit.sh` resolves those bundles
 from `software/` down to a workspace's project, together with portable `skills/` sources at those
 levels. `ci/sources.sh` reads a bundle's declared source format; `ci/harnesses.sh` selects native
-destinations. Portable skill bodies and supporting files pass through unchanged. Instruction
+destinations. Claude skill definitions pass through unchanged, including tool permissions,
+invocation flags and plugin reload guidance. The Codex content adapter changes instruction-file
+references and workspace-switch guidance only in Codex output, and normalizes descriptions that
+need YAML block scalars. Skill metadata is preserved; each harness interprets the fields it supports.
+Supporting files pass through unchanged. Instruction
 filenames and skill directories have explicit mappings. Unmapped native settings fail instead of
 being silently discarded or guessed. A future source reader can feed the same file records without
 changing workspace harness selections or branch sync.

@@ -1,6 +1,7 @@
 ---
 name: ticket-conventions
 description: Argos specifics for tickets (repo, area labels, vocabulary, diagrams). Load before drafting or filing an Argos issue, alongside create-ticket.
+user-invocable: false
 ---
 
 # Argos ticket conventions

@@ -1,6 +1,7 @@
 ---
 name: verify-graph
 description: Playwright CLI verification of the graph page — modes, controls, topic selection, and data rendering. Use after any change to graph-page components, graph rendering, data flow, or mode switching logic.
+user-invocable: true
 ---
 
 Get the branch's client running with `run-local <branch>`; its URL is `BASE_URL`. The scripts need `playwright-cli` (`npm i -g @playwright/cli`, then `playwright-cli install-browser chromium`; cloud containers use their preinstalled Chromium). Then run the base checks:

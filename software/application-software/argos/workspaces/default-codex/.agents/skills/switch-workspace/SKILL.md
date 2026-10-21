@@ -14,6 +14,6 @@ bash .delphi/switch.sh main          # Delphi's main: project folders, templates
 - It refuses while tracked files have changes: commit them on a branch (and PR them) first. Then it fetches, switches, fast-forwards, and runs the new workspace's `.delphi/setup.sh`.
 - The post-checkout hook parks this workspace's `repos/`, `worktrees/`, `references/` and `workspaces/` in `.delphi/parked/<name>/` (git-ignored; `<name>` as in its `workspace.yml`) and brings the other's back at the same paths, so worktrees and the work in them return as they were. Switch back the same way. Never run `git clean -X` or `git stash --all` at the workspace root: they take ignored files, parked work included.
 - Before switching, stop anything running from `worktrees/` (dev servers, Docker builds): its folder moves.
-- Start a fresh harness session after switching so its instructions and skills match the new workspace. A harness integration may explicitly support reloading in place; follow its documented behavior.
+- Start a fresh Codex session after switching so its instructions and skills match the new workspace.
 - To change the workspace you switched to: `git switch -c <branch>`, commit, push, and open a PR into `ws/<name>` (or `main`).
 - To only read another workspace or main without leaving this one, list it under `workspaces:` instead (`setup-workspace` skill).

@@ -47,7 +47,7 @@ if [ -d "$defaults" ]; then
       { echo; cat "$wt/$src"; } >>"$wt/$folder/$instruction"
     else
       mkdir -p "$(dirname "$wt/$folder/$path")"
-      cp "$wt/$src" "$wt/$folder/$path"
+      harness_file "$adapter" "$wt/$src" >"$wt/$folder/$path"
       [ "${meta%% *}" != 100755 ] || chmod +x "$wt/$folder/$path"
     fi
   done <<<"$records"

@@ -46,6 +46,10 @@ render_workspace() { # <workspace folder>
       if opted_out "$path" "$o"; then used="$used $o"; fi
     done
     opted_out "$path" "$out" && continue
+    if [ "$adapter" = codex ] && [ "${src##*/}" = SKILL.md ]; then
+      harness_file "$adapter" "$src" >"$tmp/native"
+      meta="${meta%% *} $(git hash-object -- "$tmp/native")"
+    fi
     printf '%s\t%s\t%s\n' "$meta" "$path" "$src" >>"$tmp/records"
   done <<<"$records"
   for o in $out; do
@@ -105,7 +109,7 @@ render_workspace() { # <workspace folder>
     [ -n "$path" ] || continue
     [ "$src" != ci/plugins.sh ] || continue
     mkdir -p "$(dirname "$folder/$path")"
-    cp "$src" "$folder/$path"
+    harness_file "$adapter" "$src" >"$folder/$path"
     if [ "${meta%% *}" = 100755 ]; then chmod +x "$folder/$path"; else chmod -x "$folder/$path"; fi
   done <"$tmp/sorted"
   cp "$tmp/ledger" "$folder/$generated"

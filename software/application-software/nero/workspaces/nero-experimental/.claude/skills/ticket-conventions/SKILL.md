@@ -1,6 +1,7 @@
 ---
 name: ticket-conventions
 description: Nero specifics for tickets (repo, area labels, vocabulary, diagrams). Load before drafting or filing a Nero issue, alongside create-ticket.
+user-invocable: false
 ---
 
 # Nero ticket conventions

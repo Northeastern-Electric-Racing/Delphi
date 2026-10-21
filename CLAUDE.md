@@ -59,7 +59,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
   headers): name the file or key that holds them ("the folders in `.delphi/park.list`", "each repo
   under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
-- Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
+- Preserve existing native skill metadata and behavior, including allowed-tools and invocation flags.
+  Harness adaptations belong in ci/harnesses.sh and affect only that target's generated output.
+  Skill scripts stay harness-independent (SKILL.md uses the Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
   way. Skill scripts (inherited, plugin or workspace) take only names (repo, branch) and read the workspace
   from `$DELPHI_ROOT`, sourcing `$DELPHI_ROOT/.delphi/paths.sh` for every folder; each harness's

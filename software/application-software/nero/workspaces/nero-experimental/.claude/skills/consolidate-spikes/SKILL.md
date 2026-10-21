@@ -1,7 +1,6 @@
 ---
 name: consolidate-spikes
-description: >-
-  Turn finished spikes into implementation tickets: an idea's spikes, once all are done, into dev work, under an epic when it comes from an idea or splits. Use when the user wants to wrap up, settle, or consolidate an idea or spike on an application-software repo (Argos, Nero).
+description: Turn finished spikes into implementation tickets: an idea's spikes, once all are done, into dev work, under an epic when it comes from an idea or splits. Use when the user wants to wrap up, settle, or consolidate an idea or spike on an application-software repo (Argos, Nero).
 ---
 
 Drafts and files by the `create-ticket` rules; load it and the project's `ticket-conventions` first. Takes an idea or a standalone spike.

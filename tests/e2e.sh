@@ -811,10 +811,22 @@ commit_on "ws/$CO" CLAUDE.md "old side" && commit_on "ws/$CN" .gitattributes "# 
 ok "an old name with commits of its own is reported, never merged"
 
 # --- 13. portable harnesses: native main-side output, round trips, transitions, bootstrap and authoring
+cat >"$t/native-metadata.md" <<'SKILL'
+---
+name: native-metadata
+description: "Preserve: existing tool permissions and invocation settings."
+allowed-tools: Bash(git:*), Bash(bash ${CLAUDE_SKILL_DIR}/scripts/helper.sh *)
+user-invocable: false
+disable-model-invocation: true
+metadata:
+  custom-setting: unchanged
+---
+Read CLAUDE.md before making changes.
+SKILL
 C=software/application-software/argos/workspaces/sandbox-codex CN=s.app.argos.sandbox-codex
 # shellcheck disable=SC2016 # child shell expands its positional arguments
 on_main "add Codex and neutral skills" bash -c '
-  mkdir -p "$1" software/skills/portable/scripts
+  mkdir -p "$1" software/skills/portable/scripts software/skills/native-metadata software/skills/switch-workspace
   cp "$2/templates/harnesses/codex/AGENTS.md" "$1/AGENTS.md"
   cp "$2/templates/workspace/.gitattributes" "$1/.gitattributes"
   mkdir -p "$1/.github/workflows"
@@ -822,7 +834,9 @@ on_main "add Codex and neutral skills" bash -c '
   printf "name: %s\nharness: codex\n" "$3" >"$1/workspace.yml"
   printf "portable v1\n" >software/skills/portable/SKILL.md
   printf "helper v1\n" >software/skills/portable/scripts/helper.sh
-' _ "$C" "$src" "$CN"
+  cp "$4" software/skills/native-metadata/SKILL.md
+  cp "$2/software/skills/switch-workspace/SKILL.md" software/skills/switch-workspace/SKILL.md
+' _ "$C" "$src" "$CN" "$t/native-metadata.md"
 sync "$CN" >"$t/out" 2>&1 || fail "Codex creation: $(cat "$t/out")"
 for skill in top portable; do
   o cat-file -e "ws/$CN:.agents/skills/$skill/SKILL.md" || fail "Codex lacks native $skill"
@@ -832,6 +846,19 @@ done
 ok "main-side rendering maps portable and declared Claude-source skills to Codex native paths"
 o diff --quiet "main:$C" "ws/$CN" -- ':!.delphi' || fail "Codex branch requires native generation after main"
 ok "Codex files on main exactly match the workspace branch before runtime injection"
+
+sync refresh "$AN" >/dev/null
+cmp -s "$t/native-metadata.md" <(o show "main:$A/.claude/skills/native-metadata/SKILL.md") || fail "main changed Claude metadata or instructions"
+cmp -s "$t/native-metadata.md" <(o show "ws/$AN:.claude/skills/native-metadata/SKILL.md") || fail "refresh changed Claude metadata"
+ok "Claude source metadata, allowed-tools and invocation flags survive main rendering and refresh byte for byte"
+sed 's/CLAUDE[.]md/AGENTS.md/g' "$t/native-metadata.md" >"$t/codex-metadata.md"
+cmp -s "$t/codex-metadata.md" <(o show "main:$C/.agents/skills/native-metadata/SKILL.md") || fail "Codex discarded native metadata or kept the wrong instruction reference"
+ok "Codex output preserves metadata while adapting its own instruction-file reference"
+cmp -s "$src/software/skills/switch-workspace/SKILL.md" <(o show "main:$A/.claude/skills/switch-workspace/SKILL.md") || fail "Claude switching instructions changed"
+o show "main:$A/.claude/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude lost its hot reload workflow"
+o show "main:$C/.agents/skills/switch-workspace/SKILL.md" | grep -q 'Start a fresh Codex session' || fail "Codex lacks native restart guidance"
+! o show "main:$C/.agents/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude reload behavior leaked into Codex"
+ok "existing Claude plugin and hot reload guidance stays intact while Codex gets its own switch guidance"
 
 commit_on "ws/$CN" .agents/skills/portable/SKILL.md "workspace edit"
 commit_on "ws/$CN" AGENTS.md "workspace-owned instructions"
