@@ -14,17 +14,19 @@ harness_file() { # <target harness> <source file>: Claude passes through; Codex 
   case "$1:$2" in
     codex:*/SKILL.md)
       awk '
+        { sub(/\r$/, "") }
         NR == 1 && /^---$/ { front = 1; print; next }
         front && /^---$/ { front = 0; print; next }
         front {
+          line = $0; sub(/^ */, "", line); indent = length($0) - length(line)
+          if (!root && line !~ /^(#|$)/) { root = 1; level = indent }
           # Claude-only fields are omitted from Codex output, including block values.
-          if (/^(allowed-tools|user-invocable|disable-model-invocation):/) { skip = 1; next }
-          if (skip && /^[[:space:]]/) next
-          if (/^[^[:space:]#]/) skip = 0
-          if (skip) next
+          if (indent == level && line ~ /^["\047]?(allowed-tools|user-invocable|disable-model-invocation)["\047]?[[:space:]]*:/) { skip = 1; next }
+          if (skip && (indent > level || line ~ /^(#|$|-([[:space:]]|$))/)) next
+          skip = 0
           # Quote descriptions that need a native YAML block scalar.
-          if (/^description: / && substr($0, 14) ~ /: / && substr($0, 14) !~ /^["\047>|]/) {
-            print "description: >-"; print "  " substr($0, 14)
+          if (indent == level && line ~ /^description: / && substr(line, 14) ~ /: / && substr(line, 14) !~ /^["\047>|]/) {
+            print substr($0, 1, level) "description: >-"; print substr($0, 1, level) "  " substr(line, 14)
           } else print
           next
         }

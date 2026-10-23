@@ -38,7 +38,7 @@ render_workspace() { # <workspace folder>
     if ! safe_path "$path" || ! safe_path "$src"; then
       bad "$src: unsafe inherited destination '$path'"; continue
     fi
-    case "$path" in CLAUDE.md | AGENTS.md | workspace.yml | workspace.generated | .delphi | .delphi/* | .claude/settings.json | .codex/config.toml | .github/workflows/delphi.yml)
+    case "$path" in "$instruction" | CLAUDE.md | AGENTS.md | workspace.yml | workspace.generated | .delphi | .delphi/* | .claude/settings.json | .codex/config.toml | .github/workflows/delphi.yml)
       bad "$src: each workspace has its own $path; it can't be inherited"; continue ;;
     esac
     case " $seen " in *" $path "*) bad "$src: $folder also inherits it from a folder above; keep one" ;; esac

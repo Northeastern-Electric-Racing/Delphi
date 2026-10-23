@@ -828,6 +828,48 @@ commit_on "ws/$CO" CLAUDE.md "old side" && commit_on "ws/$CN" .gitattributes "# 
 ok "an old name with commits of its own is reported, never merged"
 
 # --- 13. portable harnesses: native main-side output, round trips, transitions, bootstrap and authoring
+mkdir -p "$t/metadata-variants"
+cat >"$t/metadata-variants/source.md" <<'SKILL'
+---
+name: metadata-variants
+allowed-tools:
+- Read
+- Bash
+# A comment within the omitted value.
+"user-invocable" : false
+'disable-model-invocation': true
+metadata:
+  allowed-tools: preserve nested metadata
+description: |-
+  First line: useful
+  Second line
+---
+Read CLAUDE.md.
+SKILL
+cat >"$t/metadata-variants/expected.md" <<'SKILL'
+---
+name: metadata-variants
+metadata:
+  allowed-tools: preserve nested metadata
+description: |-
+  First line: useful
+  Second line
+---
+Read AGENTS.md.
+SKILL
+for indent in '' '  '; do
+  sed "/^---$/!s/^/$indent/" "$t/metadata-variants/source.md" >"$t/metadata-variants/lf.md"
+  sed "/^---$/!s/^/$indent/" "$t/metadata-variants/expected.md" >"$t/metadata-variants/want.md"
+  for eol in lf crlf; do
+    if [ "$eol" = crlf ]; then awk '{ printf "%s\r\n", $0 }' "$t/metadata-variants/lf.md" >"$t/metadata-variants/SKILL.md"
+    else cp "$t/metadata-variants/lf.md" "$t/metadata-variants/SKILL.md"; fi
+    bash -c 'source "$1"; harness_file codex "$2"' _ "$src/ci/harnesses.sh" "$t/metadata-variants/SKILL.md" >"$t/metadata-variants/actual.md"
+    cmp -s "$t/metadata-variants/want.md" "$t/metadata-variants/actual.md" || fail "Codex metadata indentation/quotes/$eol"
+    bash -c 'source "$1"; harness_file claude-code "$2"' _ "$src/ci/harnesses.sh" "$t/metadata-variants/SKILL.md" |
+      cmp -s - "$t/metadata-variants/SKILL.md" || fail "Claude metadata bytes changed"
+  done
+done
+ok "Codex metadata handles CRLF, quoted keys, indentless lists and root indentation; Claude stays byte-identical"
 cat >"$t/native-metadata.md" <<'SKILL'
 ---
 name: native-metadata
@@ -1115,6 +1157,12 @@ grep -qx '# fixture output' "$d/$F/.fixture/skills/journal/SKILL.md" || fail "ne
 grep -qx '# fixture output' "$d/$F/.fixture/skills/journal/scripts/capture.sh" || fail "new target helper was not adapted"
 [ -x "$d/$F/.fixture/skills/journal/scripts/capture.sh" ] || fail "new target lost executable mode"
 ok "new target content rules cover skills and helpers without renderer or validator changes"
+rm "$d/$F/TASKS.md"
+echo 'must remain workspace-owned' >"$d/software/workspace-inherit/TASKS.md"
+if (cd "$d" && bash ci/render.sh) >"$t/out" 2>"$t/err"; then fail "new target inherited its root instructions"; fi
+grep -q "each workspace has its own TASKS.md" "$t/err" || fail "new target root protection not reported"
+[ ! -e "$d/$F/TASKS.md" ] || fail "new target wrote inherited root instructions"
+ok "registry-only targets protect their own instruction path even when its workspace file is missing"
 
 
 # --- 14. shellcheck, if installed
