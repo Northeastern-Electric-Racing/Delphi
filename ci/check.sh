@@ -132,14 +132,9 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
     fi
     if [ -n "${2:-}" ]; then
       [ -f "${1%/*}/$instruction" ] || bad "${1%/*}/$instruction: required for $adapter"
-      case "$adapter" in
-        codex) for incompatible in CLAUDE.md .claude; do
-          [ ! -e "${1%/*}/$incompatible" ] || bad "${1%/*}/$incompatible: belongs to a different harness"
-        done ;;
-        claude-code) for incompatible in AGENTS.md .agents .codex; do
-          [ ! -e "${1%/*}/$incompatible" ] || bad "${1%/*}/$incompatible: belongs to a different harness"
-        done ;;
-      esac
+      for incompatible in $foreign; do
+        [ ! -e "${1%/*}/$incompatible" ] || bad "${1%/*}/$incompatible: belongs to a different harness"
+      done
     fi
   fi
   while IFS= read -r v; do listed="$listed $1|$v"; done < <(awk '/^workspaces:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
@@ -154,8 +149,8 @@ while IFS= read -r d; do
 done < <(find software -type d -name workspace-inherit 2>/dev/null | sort)
 while IFS= read -r d; do
   case "$d" in */workspaces/*) continue ;; esac
-  if format=$(source_format "" "$d" 2>/dev/null); then
-    if ! messages=$(bundle_files "" "$d" "$format" 2>&1 >/dev/null); then bad "$messages"; fi
+  if format=$(source_format "$d" 2>/dev/null); then
+    if ! messages=$(bundle_files "$d" "$format" 2>&1 >/dev/null); then bad "$messages"; fi
   else bad "$d/source.yml: declare one supported source format"; fi
 done < <(find software -type d \( -name workspace-defaults -o -name workspace-inherit \) 2>/dev/null | sort)
 while IFS= read -r d; do

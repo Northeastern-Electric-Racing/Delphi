@@ -100,17 +100,10 @@ cd delphi
 bash .delphi/setup.sh
 ```
 
-Open the checked-out workspace in Codex normally; it discovers `AGENTS.md` and `.agents/skills/`
-from the workspace branch. Follow `AGENTS.md` and use `.delphi/exec.sh` for helper commands; it sets the layout for every command
-and its child processes, even when shell exports do not persist. Start a fresh session after a
-workspace switch. Host dependencies and credentials are configured by the user or host; the
-workspace doesn't depend on a particular cloud environment. Codex does not enable Delphi's Claude
-plugin sets or install MCP servers. Use tools already available in the selected host.
-
-`harness:` is validated against `ci/harnesses.sh`. Authoring selects its native instruction template
-and skill destination while preserving translated project defaults. Shared source format and
-workspace harness selection are independent. See `docs/design.md` for adding
-another adapter.
+Open the workspace in Codex and follow `AGENTS.md`. It discovers native skills under `.agents/skills/`.
+Use `.delphi/exec.sh` for helper commands so each shell receives the workspace layout. Start a fresh
+session after switching workspaces. The host supplies dependencies, credentials and integrations;
+Codex workspaces do not enable Delphi's Claude plugin sets.
 
 ## Versions
 
@@ -131,28 +124,20 @@ Once it merges, CI creates `ws/<name>` (its dotted name).
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and
 `workspace-defaults/` (what a new workspace there starts with).
 
-**Source bundles.** Keep the existing `workspace-defaults/` and `workspace-inherit/` layouts.
-They are Claude-authored by default; optional `source.yml` declares another source `format:`.
-Defaults seed workspace-owned files once; inheritance stays managed. Every workspace independently
-declares `harness:` in its own manifest. Unsupported native settings conversions fail explicitly.
+**Shared sources.** Keep Claude skills and their metadata in
+`workspace-inherit/.claude/skills/<name>/`. The optional `source.yml` selects a different authoring
+format; each workspace's `harness:` independently selects its target. `workspace-defaults/` seeds
+workspace-owned files once; `workspace-inherit/` stays managed.
 
-**Shared skills.** Keep Claude sources under `workspace-inherit/.claude/skills/<name>/` at an org
-or project folder, including their tool permissions and invocation metadata. The main-side renderer
-preserves Claude output and translates Codex output to `.agents/skills/`, omitting Claude-only
-skill fields only from the Codex copies.
+**Prepare on main.** After changing shared sources, harness selections, opt-outs or plugins, run
+`bash ci/render.sh` and include its native output in the PR. `ci/check.sh` includes the read-only
+freshness check. Workspace branches receive those reviewed files through refresh. Workspace edits
+are rendered in the proposal to main and return after merge.
 
-**Render before merging.** After changing shared sources, harness selections, opt-outs or plugin
-configuration, run `bash ci/render.sh` on a main-based branch and include its native output in the
-PR. `bash ci/render.sh --check` checks freshness without writing; `ci/check.sh` includes it.
-Workspaces on main already contain their native instructions, skills and supported settings.
-Branch refresh copies those reviewed files without running adapters. Workspace configuration
-edits are rendered in the proposal to main and arrive back after merge.
-
-**Ownership.** Edit shared sources on main. `workspace.generated` records managed copies and
-origins; don't edit it or those copies directly. To keep a workspace's own copy, list its native
-path under `opt-out:` in `workspace.yml`, then render on main or use the normal workspace proposal
-flow. Workspace-owned files stay editable and proposable. A workspace can read shared sources by
-listing `main` under `workspaces:`.
+**Ownership.** `workspace.generated` records managed copies; edit their sources instead. To keep
+an editable workspace copy, list its native path under `opt-out:` and render or use the normal
+workspace proposal. Collisions with workspace-owned files are reported. See `docs/design.md` for
+the adapter contract and ownership rules.
 
 ## CI (`.github/workflows/delphi.yml`)
 

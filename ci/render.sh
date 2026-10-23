@@ -28,9 +28,10 @@ render_workspace() { # <workspace folder>
     bad "$folder/workspace.yml: $adapter does not support Delphi plugin sets"; return
   fi
   out=$(optouts <"$folder/workspace.yml")
-  records=$(inherited_files "" "$folder" "$adapter") || { bad "$folder: cannot resolve inherited sources"; return; }
+  records=$(inherited_files "$folder" "$adapter") || { bad "$folder: cannot resolve inherited sources"; return; }
   old=""
   [ ! -f "$folder/$generated" ] || old=$(generated_records <"$folder/$generated") || { bad "$folder/$generated: invalid ownership record"; return; }
+  rm -rf "$tmp/native"
   : >"$tmp/records"
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
@@ -46,16 +47,15 @@ render_workspace() { # <workspace folder>
       if opted_out "$path" "$o"; then used="$used $o"; fi
     done
     opted_out "$path" "$out" && continue
-    if [ "$adapter" = codex ] && [ "${src##*/}" = SKILL.md ]; then
-      harness_file "$adapter" "$src" >"$tmp/native"
-      meta="${meta%% *} $(git hash-object -- "$tmp/native")"
-    fi
+    mkdir -p "$(dirname "$tmp/native/$path")"
+    harness_file "$adapter" "$src" >"$tmp/native/$path"
+    meta="${meta%% *} $(git hash-object -- "$tmp/native/$path")"
     printf '%s\t%s\t%s\n' "$meta" "$path" "$src" >>"$tmp/records"
   done <<<"$records"
   for o in $out; do
     case " $used " in *" $o "*) ;; *) bad "$folder/workspace.yml: opt-out: $o is nothing it inherits" ;; esac
   done
-  if [ "$adapter" = claude-code ] && [ -f "$folder/.claude/settings.json" ]; then
+  if [ "$plugins" = claude ] && [ -f "$folder/.claude/settings.json" ]; then
     printf '100644 %s\t.claude/settings.json\tci/plugins.sh\n' "$(git hash-object -- "$folder/.claude/settings.json")" >>"$tmp/records"
   fi
   LC_ALL=C sort -t $'\t' -k2,2 "$tmp/records" >"$tmp/sorted"
@@ -109,7 +109,7 @@ render_workspace() { # <workspace folder>
     [ -n "$path" ] || continue
     [ "$src" != ci/plugins.sh ] || continue
     mkdir -p "$(dirname "$folder/$path")"
-    harness_file "$adapter" "$src" >"$folder/$path"
+    cp "$tmp/native/$path" "$folder/$path"
     if [ "${meta%% *}" = 100755 ]; then chmod +x "$folder/$path"; else chmod -x "$folder/$path"; fi
   done <"$tmp/sorted"
   cp "$tmp/ledger" "$folder/$generated"

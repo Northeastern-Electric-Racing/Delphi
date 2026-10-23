@@ -16,8 +16,8 @@ folder name (`workspaces/<name>`, `.delphi/parked/<name>`), and no branch can be
 merges (`git merge -Xsubtree=<folder>`), so the histories stay joined and edits on either side meet
 in normal three-way merges. The one thing shared is main's root `.delphi/` (the scripts): sync
 puts it at the root of every `ws/*` branch, so it is on every branch, main included, and is edited
-only on main. Shared `workspace-inherit/` and `workspace-defaults/` sources remain editable on main. `ci/render.sh`
-materializes their managed native copies inside each workspace folder before merge. The workspace's
+only on main. Shared sources remain editable on main. Creation seeds defaults once; `ci/render.sh` maintains
+inherited native copies inside each workspace folder before merge. The workspace's
 required `harness:` selects its target independently of the source bundle's `format:`. Branch
 refresh copies those reviewed files; it never reads source formats or runs harness adapters.
 A project's `workspace-defaults/` seeds workspace-owned files once at creation. `workspaces:` still
@@ -87,52 +87,44 @@ workspace folder (nor the template) has a `.delphi/` of its own. Each manifest f
 clones.
 `.github/CODEOWNERS` assigns reviewers per org folder.
 
-The folder holding a `workspaces/` directory is a project folder. It may hold shared context
-and `workspace-defaults/`. Files keep their existing native source paths; Claude Code is the
-legacy source format. An optional `source.yml` with `format: claude-code` or `format: codex`
-selects the authoring format independently of every workspace's harness. Source metadata never
-appears in rendered workspaces. The optional `workspace-defaults/workspace.yml` supplies creation
-defaults without a workspace name. Its optional `harness:` is only a creation suggestion; the
-creation tool always records an explicit harness in the new workspace.
+The folder holding `workspaces/` is a project folder. Its optional `workspace-defaults/` seeds
+workspace-owned files once. Any ancestor org or project may provide managed `workspace-inherit/`
+files. Existing Claude skills stay under `workspace-inherit/.claude/skills/` with their metadata
+intact. A source bundle is Claude-authored unless its optional `source.yml` declares another
+`format:`. Source metadata is never copied into a workspace. A defaults manifest's optional
+`harness:` suggests a creation target; every workspace records its own explicit target.
 
-A workspace's harness does not depend on its branch name, the source format, or a repository-wide
-runtime default. Each folder on main already contains its declared harness's native files, and
-`ws/<name>` exposes that folder at the root. A harness change is an explicit workspace change.
+`ci/render.sh` prepares native workspace files on main. `ci/inherit.sh` selects ancestor sources,
+`ci/sources.sh` maps their paths, and `ci/harnesses.sh` adapts their contents for the target. Each
+payload is prepared once; its hash and written bytes come from that same result. Claude content
+passes through unchanged. Codex adapts skill metadata, instruction references and switch guidance;
+helper scripts pass through unchanged. Unsupported native settings mappings fail.
 
-Any org or project folder may hold `workspace-inherit/`. `ci/inherit.sh` resolves these sources
-from `software/` down to a workspace's project. Existing Claude skills stay in
-`workspace-inherit/.claude/skills/`, including their native metadata and instructions.
-`ci/sources.sh` reads the source format; `ci/harnesses.sh` selects native destinations and adapts
-content for the consuming workspace. Claude output passes through unchanged. Codex output omits
-Claude-only skill fields, adapts instruction references and workspace-switch guidance, and
-normalizes descriptions that need YAML block scalars. Supporting files pass through unchanged.
-Instruction filenames and skill directories have explicit mappings. Unmapped native settings
-fail instead of being silently discarded or guessed. A future source reader can feed the same
-file records without changing workspace harness selections or branch sync.
+Run `bash ci/render.sh` after source, harness, ownership or plugin changes and include the outputs
+in the same PR. `ci/check.sh` runs its read-only freshness check. Workspace creation and proposals
+prepare output before their PRs; refresh copies it without running source readers or adapters.
 
-Run `bash ci/render.sh` on a main-based branch after changing shared sources, workspace harnesses,
-opt-outs or generated settings inputs. Include the native outputs in the same PR. `--check` writes
-nothing and rejects stale or missing outputs; `ci/check.sh` runs it. Defaults are translated only
-when creating a workspace, then become its own files. Inheritance is rendered into every applicable
-workspace folder on main and refreshed when its source changes.
-
-Each workspace's `workspace.generated` records managed destinations, source paths, modes and blob
-hashes. It is generated metadata, never an editable source. The renderer uses previous records to
-remove retired outputs, refuses to overwrite workspace-owned collisions, and reports edited retired
-files rather than deleting them. `opt-out:` uses native destination paths: it transfers a file or
-folder to workspace ownership and removes its records. Such copies remain editable and proposable.
-Shared edits go to their source; managed copies on main and workspace branches are reset from that
-source. Source bundles cannot supply workspace identity, native root instructions, runtime or workflow
-files through inheritance. Duplicate inherited destinations fail validation.
+`workspace.generated` records managed destinations, origins, modes and native hashes. Edit sources,
+not the ledger or managed copies. `opt-out:` transfers a native path to workspace ownership. The
+renderer reports owned collisions, edited retirement and duplicate destinations. Sync preserves
+branch-owned additions; pre-ledger copies are adopted only when they match reviewed output or
+previous main provenance. Ambiguous edits are reported for resolution in a workspace PR.
+Inheritance cannot replace a workspace's identity, native root instructions, runtime or workflow.
 
 ```mermaid
+---
+config:
+  htmlLabels: false
+  flowchart:
+    htmlLabels: false
+---
 flowchart TD
-    S["Shared sources on main<br/>Defaults, inheritance, skills"] --> T["Separate main-side rendering<br/>Source reader and target adapter"]
-    W["Each workspace.yml<br/>Explicit harness"] --> T
-    T -->|"Reviewed PR"| C["main: Codex workspace folder<br/>AGENTS.md and .agents/skills"]
-    T -->|"Reviewed PR"| A["main: Claude workspace folder<br/>CLAUDE.md and .claude/skills"]
-    C <-->|"Refresh / propose"| CB["ws/name<br/>Codex workspace root"]
-    A <-->|"Refresh / propose"| AB["ws/name<br/>Claude workspace root"]
+    S["Shared sources on main"] --> R["ci/render.sh"]
+    W["workspace.yml: harness"] --> R
+    R --> C["Native Codex folder on main"]
+    R --> A["Native Claude folder on main"]
+    C <-->|"refresh / propose"| CB["Codex workspace branch"]
+    A <-->|"refresh / propose"| AB["Claude workspace branch"]
 ```
 
 A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
@@ -269,16 +261,11 @@ it prints them as an export line. The adapter supplies layout initialization: fo
 skill scripts'. In a terminal, `. .delphi/paths.sh` from the root. `new-worktree.sh` sources it from
 its own folder; every skill script, plugin or workspace, sources `$DELPHI_ROOT/.delphi/paths.sh` and
 takes only names (repo, branch), never a searched-for path, so the model types only the names.
-Skill helpers remain harness-independent; native skill metadata is handled by translation. Codex discovers its native instructions and skills from
-the checked-out workspace branch. Agents follow `AGENTS.md`: determine the absolute root once,
-then run skill helpers through that root's
-`.delphi/exec.sh`. It sources the layout on every invocation, preserves the caller's directory,
-and exports it to children; pass this explicit root/wrapper to independently started sub-agents.
-No session hook, shared shell state, or particular managed environment is assumed. Setup and
-worktree scripts already source the layout from their own known location. Host credentials and
-dependencies remain host concerns; existing authenticated GitHub tools can be used, and an
-explicit `DELPHI_GITHUB_REST_PROXY` capability enables the existing REST-proxy fallback. No
-credential or permission settings are generated for Codex.
+Codex uses `AGENTS.md` and `.agents/skills/` from its checked-out branch. Run helper commands through
+`bash <root>/.delphi/exec.sh <command> ...`; it initializes the layout without changing the caller's
+directory and exports it to children. Pass the root and this rule to sub-agents. The host supplies
+dependencies, credentials and integrations. `DELPHI_GITHUB_REST_PROXY` enables the shared helper's
+REST-proxy fallback; existing Claude remote sessions retain their fallback.
 
 `.delphi/switch.sh <workspace>|main` moves the clone to `ws/<workspace>` (or `main`): it refuses while
 tracked files have changes, fetches the branch, switches (the hook parks and restores), fast-forwards
@@ -342,21 +329,16 @@ once it merges; creation never depends on branch-side translation.
 
 ### Adding a harness or source format
 
-`ci/harnesses.sh` owns target-native paths, instruction templates and plugin capabilities. Add a
-harness there and its native template under `templates/`, then add explicit mappings in
-`ci/sources.sh` and validation for foreign native files or new generated capabilities. Reject
-unsupported behavior. Keep source-format rules out of inheritance ownership and branch sync.
+Register the target's native paths, template, plugin capability and foreign-file exclusions in
+`ci/harnesses.sh`, then add its instruction template. Put content adaptation in `harness_file()`.
+Select it in a workspace manifest, render, and run the sandbox suite. Ordinary targets need no
+renderer, validator or sync changes. Add explicit settings mappings or new capability validation
+only when the target introduces them.
 
-`ci/sources.sh` is the input boundary. A different source format can produce the same records
-(content mode/hash, destination, origin) without choosing the consuming workspace's harness.
-Existing sources can remain Claude-authored while targets evolve. There is no required primary
-harness: every workspace selects its own target, and source bundles independently select their
-format. Creation suggestions can be changed or removed without changing existing workspaces.
-
-Test native authoring, refresh/propose ownership, opt-outs, old/new destination cleanup and layout
-propagation in `tests/e2e.sh`, including transitions from an existing adapter. Runtime changes use
-the normal manifest version release. Environment provisioning is independent: adding a harness
-must not require a particular cloud host or account.
+A new source format supplies the same file records (mode/hash, destination, origin) through
+`ci/sources.sh`. It does not select a workspace's target. Creation suggestions and source formats
+can change independently of existing workspaces. Runtime changes follow the normal version rules;
+adding a harness does not require a particular host or account.
 
 ## 7. CI (`.github/workflows/delphi.yml`)
 

@@ -40,7 +40,7 @@ cp -R "$wt/templates/workspace/." "$wt/$folder/"
 rm -f "$wt/$folder/CLAUDE.md" "$wt/$folder/AGENTS.md"
 cp "$wt/$instruction_template" "$wt/$folder/$instruction"
 if [ -d "$defaults" ]; then
-  records=$(cd "$wt" && bundle_files "" "software/$org/workspace-defaults" "$adapter") || die "cannot read project defaults"
+  records=$(cd "$wt" && bundle_files "software/$org/workspace-defaults" "$adapter") || die "cannot read project defaults"
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
     if [ "$path" = "$instruction" ]; then
@@ -64,7 +64,7 @@ if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { 
   s && /^[[:space:]]+-/ { found = 1 } END { exit !found }' "$y"; then
   die "$adapter does not support Delphi plugin sets in project defaults"
 fi
-{ echo "name: $name"; echo "harness: $adapter"; awk -v adapter="$adapter" '/^name:|^harness:/ { next } adapter != "claude-code" && /^plugins:/ { skip = 1; next } /^[^[:space:]#]/ { skip = 0 } !skip { print }' "$y"; } >"$y.new" && mv "$y.new" "$y"
+{ echo "name: $name"; echo "harness: $adapter"; awk -v plugins="$plugins" '/^name:|^harness:/ { next } plugins == "none" && /^plugins:/ { skip = 1; next } /^[^[:space:]#]/ { skip = 0 } !skip { print }' "$y"; } >"$y.new" && mv "$y.new" "$y"
 bash "$wt/ci/render.sh" "$wt"
 "$wt/ci/check.sh" "$wt"
 git -C "$wt" add -A "$folder"

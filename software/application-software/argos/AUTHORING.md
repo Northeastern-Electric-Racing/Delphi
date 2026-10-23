@@ -10,17 +10,14 @@ full model; this is the Argos-specific short version.
 2. Edit at normal harness paths: the native instruction file and skill paths for its `harness:` (`AGENTS.md` and `.agents/skills/` for Codex), or `docs/`.
 3. Push the branch and open a PR into `ws/<name>`. After it merges, CI proposes it to `main`.
 
-Don't edit `.delphi/`, `.github/workflows/delphi.yml`, or `.claude/settings.json`: Delphi manages
-them (`.delphi/` comes from main's root and sync resets it; `settings.json` is rendered on main from
-`workspace.yml`'s `plugins:`, where CI lists any folder's `default` plugin set; add other sets below them), nor the skills
-inherited from `workspace-inherit/` (sync overwrites them: change them on `main`, or list one under `opt-out:` to keep your own).
-Personal settings go in `.claude/settings.local.json`.
+Delphi manages `.delphi/`, the workflow and generated settings. Edit shared skills through their
+`workspace-inherit/` sources on main. To keep an editable workspace copy, list its native path
+under `opt-out:`. Claude personal settings belong in `.claude/settings.local.json`.
 
 ## Create a new Argos workspace
 
 From a Delphi checkout: `tools/new-workspace.sh [--harness codex] application-software/argos <name>`. It copies
-Delphi's template, then `workspace-defaults/` (its Claude source format is translated into the selected harness), and opens
-a PR to `main`. Trim what the new workspace doesn't need before merging.
+the selected harness template and translated `workspace-defaults/`, then opens a PR to `main`.
 
 ## Change the defaults or this folder
 
@@ -48,9 +45,6 @@ its outputs in the same PR; refresh then copies those reviewed files to workspac
 
 ## Codex
 
-The `default-codex` leaf is `ws/s.app.argos.default-codex`. Open that workspace branch in Codex
-normally, then follow `AGENTS.md` and use `.delphi/exec.sh` for skill
-helpers in fresh shells and sub-agents. This workspace carries Argos workflows and dependency
-references without prescribing a cloud environment, credentials or Codex permission settings.
-Check required local tooling before running a workflow; use available browser/GitHub integrations
-and report verification that could not run. Start a fresh Codex session after changing workspaces.
+Open `ws/s.app.argos.default-codex` in Codex and follow `AGENTS.md`. Use `.delphi/exec.sh` for skill
+helpers in fresh shells and sub-agents. The host supplies tooling and credentials. Restart the
+Codex session after switching workspaces.

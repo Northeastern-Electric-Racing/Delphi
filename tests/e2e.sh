@@ -221,6 +221,23 @@ o show "main:$A/notes/layout/guide.md" | grep -qx after || fail "main lacks nati
 o show "ws/$AN:notes/layout/guide.md" | grep -qx after || fail "refresh lost nested output"
 ok "native managed paths can change from files to directories without creating sparse-index entries"
 
+# New inheritance must not replace a file owned only on the workspace branch.
+commit_on "ws/$AN" notes/collision.txt "workspace-owned"
+on_main "new inherited collision" sh -c "echo shared >$AI/collision.txt"
+owned_head=$(o rev-parse "ws/$AN") proposal_head=$(o rev-parse "propose/$AN")
+for direction in refresh propose; do
+  if sync "$direction" "$AN" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned collision"; fi
+  grep -q 'workspace-owned notes/collision.txt collides' "$t/err" || fail "$direction did not report ownership"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the workspace branch"
+  [ "$(o rev-parse "propose/$AN")" = "$proposal_head" ] || fail "$direction published the collision"
+done
+o show "ws/$AN:notes/collision.txt" | grep -qx workspace-owned || fail "owned content was lost"
+ok "refresh and propose report new inherited collisions without changing workspace-owned content"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-inheritance "origin/ws/$AN" &&
+  git rm -q notes/collision.txt && git commit -qm "accept shared note" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+
+
 # Source retirement must preserve ownership claimed on a workspace branch before its proposal merges.
 on_main "unmerged ownership fixture" sh -c 'mkdir -p software/workspace-inherit/.claude/skills/unmerged; echo shared >software/workspace-inherit/.claude/skills/unmerged/SKILL.md'
 sync refresh "$BN" >/dev/null
@@ -1032,6 +1049,73 @@ ok "unsupported native settings fail explicitly and leave the caller checkout un
   bash ci/render.sh --check && [ -z "$(git status --porcelain)" ] &&
   bash ci/render.sh >/dev/null && [ -z "$(git status --porcelain)" ]) || fail "main-side render was not idempotent"
 ok "render checks do not write and repeated rendering leaves a valid main checkout unchanged"
+
+# A pre-render branch has native copies but no ledger. Prove their old source provenance.
+legacy_dev=$t/legacy-dev legacy_origin=$t/legacy-origin.git
+git clone -q "$t/seed" "$legacy_dev"
+(cd "$legacy_dev" && git rm -q "$A/workspace.generated" "$B/workspace.generated" &&
+  mkdir -p software/workspace-inherit/notes && echo old >software/workspace-inherit/notes/adoption.txt &&
+  git add -A && git commit -qm "legacy main without managed ledgers")
+legacy_base=$(git -C "$legacy_dev" rev-parse HEAD)
+git clone -q --bare "$legacy_dev" "$legacy_origin"
+git -C "$legacy_dev" remote set-url origin "$legacy_origin"
+for legacy_name in "$AN" "$BN"; do
+  legacy_folder=$A; [ "$legacy_name" != "$BN" ] || legacy_folder=$B
+  legacy_blob=$(printf 'old\n' | git -C "$legacy_dev" hash-object -w --stdin)
+  [ "$legacy_name" != "$BN" ] || legacy_blob=$(printf 'owned edit\n' | git -C "$legacy_dev" hash-object -w --stdin)
+  GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" read-tree "$legacy_base:$legacy_folder"
+  GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" read-tree --prefix=.delphi/ "$legacy_base:.delphi"
+  GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" update-index --add --cacheinfo "100644,$legacy_blob,notes/adoption.txt"
+  legacy_tree=$(GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" write-tree)
+  legacy_head=$(printf 'legacy workspace\n' | git -C "$legacy_dev" commit-tree -p "$legacy_base" "$legacy_tree")
+  git -C "$legacy_dev" push -q origin "$legacy_head:refs/heads/ws/$legacy_name"
+done
+(cd "$legacy_dev" && echo new >software/workspace-inherit/notes/adoption.txt &&
+  bash ci/render.sh && git add -A && git commit -qm "prepare native output" && git push -q origin main &&
+  bash ci/sync.sh refresh "$AN") >"$t/out" 2>"$t/err" || fail "legacy adoption: $(cat "$t/err")"
+git -C "$legacy_origin" show "ws/$AN:notes/adoption.txt" | grep -qx new || fail "legacy source was not refreshed"
+git -C "$legacy_origin" cat-file -e "ws/$AN:workspace.generated" || fail "legacy branch lacks ownership metadata"
+ok "pre-ledger branches adopt unchanged old source copies before applying reviewed updates"
+if (cd "$legacy_dev" && bash ci/sync.sh refresh "$BN") >"$t/out" 2>"$t/err"; then fail "ambiguous legacy edit overwritten"; fi
+git -C "$legacy_origin" show "ws/$BN:notes/adoption.txt" | grep -qx 'owned edit' || fail "legacy edit was lost"
+ok "ambiguous pre-ledger edits report a conflict and retain their content"
+
+# Add a target only in its registry/template; adaptations of helpers must also be hashed natively.
+d=$t/adapter-extension
+mkdir "$d"
+cp -R "$src/ci" "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
+(cd "$d" && git init -q && git add -A && git commit -qm base)
+cat >>"$d/ci/harnesses.sh" <<'ADAPTER'
+eval "$(declare -f harness | sed '1s/harness/base_harness/')"
+harness() {
+  if [ "$1" = fixture ]; then
+    instruction=TASKS.md; instruction_template=templates/harnesses/fixture/TASKS.md
+    skills=.fixture/skills; plugins=none; foreign="CLAUDE.md .claude AGENTS.md .agents .codex"
+  else base_harness "$1"; fi
+}
+eval "$(declare -f harness_file | sed '1s/harness_file/base_harness_file/')"
+harness_file() {
+  if [ "$1" = fixture ]; then
+    cat "$2"
+    case "$2" in */SKILL.md | */scripts/*.sh) printf '\n# fixture output\n' ;; esac
+  else base_harness_file "$@"; fi
+}
+ADAPTER
+F=software/application-software/argos/workspaces/fixture
+mkdir -p "$d/$F" "$d/templates/harnesses/fixture"
+cp -R "$d/templates/workspace/." "$d/$F/"
+rm "$d/$F/CLAUDE.md"
+printf 'Fixture instructions\n' >"$d/templates/harnesses/fixture/TASKS.md"
+cp "$d/templates/harnesses/fixture/TASKS.md" "$d/$F/TASKS.md"
+printf 'name: s.app.argos.fixture\nharness: fixture\n' >"$d/$F/workspace.yml"
+chmod +x "$d/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh"
+(cd "$d" && bash ci/render.sh && git add -A && bash ci/check.sh . HEAD &&
+  bash ci/render.sh && git diff --quiet) >"$t/out" 2>"$t/err" || fail "adapter extension: $(cat "$t/err")"
+grep -qx '# fixture output' "$d/$F/.fixture/skills/journal/SKILL.md" || fail "new target skill was not adapted"
+grep -qx '# fixture output' "$d/$F/.fixture/skills/journal/scripts/capture.sh" || fail "new target helper was not adapted"
+[ -x "$d/$F/.fixture/skills/journal/scripts/capture.sh" ] || fail "new target lost executable mode"
+ok "new target content rules cover skills and helpers without renderer or validator changes"
+
 
 # --- 14. shellcheck, if installed
 if command -v shellcheck >/dev/null; then

@@ -54,20 +54,36 @@ managed_records() { # <workspace commit> <folder>: trusted previous ownership, r
 }
 
 with_generated() { # <workspace commit> <folder>: copy reviewed native output; no source resolution
-  local i=$wt.index now old out meta path src entry blob
+  local i=$wt.index now old out meta path src entry blob base legacy=0 branch_entry
   now=$(ledger "$main:$2/$generated") || return 1
   old=$(managed_records "$1" "$2") || return 1
   out=$(git show "$1:workspace.yml" | optouts)
+  base=$(git merge-base "$1" "$main" || true)
+  if [ -n "$base" ] && ! git cat-file -e "$base:$2/$generated" 2>/dev/null &&
+    ! git cat-file -e "$base:$generated" 2>/dev/null; then legacy=1; fi
+  while IFS=$'\t' read -r meta path src; do
+    [ -n "$path" ] || continue
+    opted_out "$path" "$out" && continue
+    printf '%s\n' "$old" | awk -F'\t' -v p="$path" '$2 == p { found = 1 } END { exit !found }' && continue
+    branch_entry=$(git ls-tree "$1" -- "$path" | awk '{ print $1 " " $3 }')
+    [ -n "$branch_entry" ] || continue
+    # Pre-ledger clones can adopt copies proven by reviewed output or previous main provenance.
+    if [ "$legacy" = 1 ] && { [ "$branch_entry" = "$meta" ] ||
+      [ "$branch_entry" = "$(file_entry "$base" "$src")" ] ||
+      [ "$branch_entry" = "$(file_entry "$base" "$2/$path")" ]; }; then continue; fi
+    echo "sync: $2: CONFLICT: workspace-owned $path collides with managed output; opt out or resolve it in a workspace PR" >&2
+    return 1
+  done <<<"$now"
   rm -f "$i"
   GIT_INDEX_FILE=$i git read-tree "$1"
   printf '%s\n%s\n' "$old" "$now" | cut -f2 | LC_ALL=C sort -u |
     while IFS= read -r path; do
       [ -n "$path" ] || continue
       opted_out "$path" "$out" && continue
-      GIT_INDEX_FILE=$i git update-index --force-remove -- "$path"
+      GIT_INDEX_FILE=$i git update-index --force-remove -- "$path" || return 1
       entry=$(file_entry "$main" "$2/$path")
-      [ -z "$entry" ] || GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${entry%% *},${entry##* },$path"
-    done
+      [ -z "$entry" ] || GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${entry%% *},${entry##* },$path" || return 1
+    done || return 1
   blob=$({ ledger_header
     while IFS=$'\t' read -r meta path src; do
       [ -n "$path" ] || continue
