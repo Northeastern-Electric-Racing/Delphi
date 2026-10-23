@@ -226,30 +226,30 @@ o show "ws/$AN:notes/layout" | grep -qx final || fail "refresh lost replacement 
 ok "native managed paths can change back from directories to files in refresh and propose"
 
 # Ancestor files and owned directory siblings must be reported before any index writes.
-NI=software/workspace-inherit/notes
-commit_on "ws/$AN" notes/blocked "owned ancestor"
+NI=software/workspace-inherit/docs
+commit_on "ws/$AN" docs/blocked "owned ancestor"
 on_main "inherited descendant collision" sh -c "mkdir -p $NI/blocked && echo shared >$NI/blocked/guide.md"
 owned_head=$(o rev-parse "ws/$AN")
 for direction in refresh propose; do
   if sync "$direction" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned ancestor"; fi
-  grep -q 'workspace-owned notes/blocked collides' "$t/err" || fail "$direction did not report the owned ancestor"
+  grep -q 'workspace-owned docs/blocked collides' "$t/err" || fail "$direction did not report the owned ancestor"
   [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the owned ancestor"
 done
-o show "ws/$BN:notes/blocked/guide.md" | grep -qx shared || fail "ancestor collision blocked another workspace"
+o show "ws/$BN:docs/blocked/guide.md" | grep -qx shared || fail "ancestor collision blocked another workspace"
 (cd "$t/dev" && git fetch -q && git checkout -q -B accept-descendant "origin/ws/$AN" &&
-  git rm -q notes/blocked && git commit -qm "accept managed descendant" && git push -q origin "HEAD:ws/$AN")
+  git rm -q docs/blocked && git commit -qm "accept managed descendant" && git push -q origin "HEAD:ws/$AN")
 sync refresh "$AN" >/dev/null
-commit_on "ws/$AN" notes/blocked/own.md "owned sibling"
+commit_on "ws/$AN" docs/blocked/own.md "owned sibling"
 on_main "replace inherited directory around an owned sibling" sh -c "rm -r $NI/blocked && echo replacement >$NI/blocked"
 owned_head=$(o rev-parse "ws/$AN")
 for direction in refresh propose; do
   if sync "$direction" "$AN" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned sibling"; fi
-  grep -q 'workspace-owned notes/blocked/own.md collides' "$t/err" || fail "$direction did not report the owned sibling"
+  grep -q 'workspace-owned docs/blocked/own.md collides' "$t/err" || fail "$direction did not report the owned sibling"
   [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the owned sibling"
 done
-o show "ws/$AN:notes/blocked/own.md" | grep -qx 'owned sibling' || fail "owned sibling was lost"
+o show "ws/$AN:docs/blocked/own.md" | grep -qx 'owned sibling' || fail "owned sibling was lost"
 (cd "$t/dev" && git fetch -q && git checkout -q -B accept-replacement "origin/ws/$AN" &&
-  git rm -q notes/blocked/own.md && git commit -qm "accept managed replacement" && git push -q origin "HEAD:ws/$AN")
+  git rm -q docs/blocked/own.md && git commit -qm "accept managed replacement" && git push -q origin "HEAD:ws/$AN")
 sync refresh "$AN" >/dev/null
 ok "owned ancestors and directory siblings conflict explicitly while other workspaces keep refreshing"
 
