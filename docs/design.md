@@ -106,8 +106,9 @@ prepare output before their PRs; refresh copies it without running source reader
 
 `workspace.generated` records managed destinations, origins, modes and native hashes. Edit sources,
 not the ledger or managed copies. `opt-out:` transfers a native path to workspace ownership. The
-renderer reports owned collisions, edited retirement and duplicate destinations. Sync preserves
-branch-owned additions; pre-ledger copies are adopted only when they match reviewed output or
+renderer rejects duplicate destinations. Rendering and sync report owned collisions and refuse
+retirement of files with edited content or executable mode. Sync preserves branch-owned additions;
+pre-ledger copies are adopted only when they match reviewed output or
 previous main provenance. Ambiguous edits are reported for resolution in a workspace PR.
 Inheritance cannot replace a workspace's identity, native root instructions, runtime or workflow.
 
