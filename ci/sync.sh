@@ -49,12 +49,12 @@ managed_records() { # <workspace commit> <folder>: trusted previous ownership, r
   trusted=$(previous_records "$1" "$2") || return 1
   # Dropping an entry after an opt-out records the ownership transfer, even before its proposal merges.
   printf '%s\n' "$old" | awk -F'\t' -v trusted="$trusted" 'BEGIN {
-    n = split(trusted, rows, "\n"); for (i = 1; i <= n; i++) { split(rows[i], f, "\t"); owned[f[2]] = 1 }
-  } $2 in owned'
+    n = split(trusted, rows, "\n"); for (i = 1; i <= n; i++) { split(rows[i], f, "\t"); owned[f[2]] = rows[i] }
+  } $2 in owned { print owned[$2] }'
 }
 
 with_generated() { # <workspace commit> <folder>: copy reviewed native output; no source resolution
-  local i=$wt.index now old out meta path src entry blob base legacy=0 branch_entry
+  local i=$wt.index now old out meta path src entry blob base legacy=0 branch_entry child parent paths
   now=$(ledger "$main:$2/$generated") || return 1
   old=$(managed_records "$1" "$2") || return 1
   out=$(git show "$1:workspace.yml" | optouts)
@@ -64,26 +64,51 @@ with_generated() { # <workspace commit> <folder>: copy reviewed native output; n
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
     opted_out "$path" "$out" && continue
-    printf '%s\n' "$old" | awk -F'\t' -v p="$path" '$2 == p { found = 1 } END { exit !found }' && continue
-    branch_entry=$(git ls-tree "$1" -- "$path" | awk '{ print $1 " " $3 }')
-    [ -n "$branch_entry" ] || continue
-    # Pre-ledger clones can adopt copies proven by reviewed output or previous main provenance.
-    if [ "$legacy" = 1 ] && { [ "$branch_entry" = "$meta" ] ||
-      [ "$branch_entry" = "$(file_entry "$base" "$src")" ] ||
-      [ "$branch_entry" = "$(file_entry "$base" "$2/$path")" ]; }; then continue; fi
-    echo "sync: $2: CONFLICT: workspace-owned $path collides with managed output; opt out or resolve it in a workspace PR" >&2
-    return 1
+    while IFS=$'\t' read -r branch_entry child; do
+      [ -n "$child" ] || continue
+      if recorded "$child" "$old" && ! opted_out "$child" "$out"; then continue; fi
+      branch_entry="${branch_entry%% *} ${branch_entry##* }"
+      # Pre-ledger clones can adopt copies proven by reviewed output or previous main provenance.
+      if [ "$legacy" = 1 ] && [ "$child" = "$path" ] && { [ "$branch_entry" = "$meta" ] ||
+        [ "$branch_entry" = "$(file_entry "$base" "$src")" ] ||
+        [ "$branch_entry" = "$(file_entry "$base" "$2/$path")" ]; }; then continue; fi
+      echo "sync: $2: CONFLICT: workspace-owned $child collides with managed output $path; opt out or resolve it in a workspace PR" >&2
+      return 1
+    done < <(git ls-tree -r "$1" -- "$path")
+    parent=$(dirname "$path")
+    while [ "$parent" != . ]; do
+      branch_entry=$(git ls-tree "$1" -- "$parent" | awk '$1 != "040000" { print $1 " " $3 }')
+      if [ -n "$branch_entry" ] && { ! recorded "$parent" "$old" || opted_out "$parent" "$out"; }; then
+        echo "sync: $2: CONFLICT: workspace-owned $parent collides with managed output $path; opt out or resolve it in a workspace PR" >&2
+        return 1
+      fi
+      parent=$(dirname "$parent")
+    done
   done <<<"$now"
+  while IFS=$'\t' read -r meta path src; do
+    [ -n "$path" ] || continue
+    opted_out "$path" "$out" && continue
+    recorded "$path" "$now" && continue
+    branch_entry=$(git ls-tree "$1" -- "$path" | awk '$1 != "040000" { print $1 " " $3 }')
+    if [ -n "$branch_entry" ] && [ "$branch_entry" != "$meta" ]; then
+      echo "sync: $2: CONFLICT: retired managed $path has local edits; preserve it at another path or resolve it explicitly in a workspace PR" >&2
+      return 1
+    fi
+  done <<<"$old"
   rm -f "$i"
   GIT_INDEX_FILE=$i git read-tree "$1"
-  printf '%s\n%s\n' "$old" "$now" | cut -f2 | LC_ALL=C sort -u |
-    while IFS= read -r path; do
-      [ -n "$path" ] || continue
-      opted_out "$path" "$out" && continue
-      GIT_INDEX_FILE=$i git update-index --force-remove -- "$path" || return 1
-      entry=$(file_entry "$main" "$2/$path")
-      [ -z "$entry" ] || GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${entry%% *},${entry##* },$path" || return 1
-    done || return 1
+  paths=$(printf '%s\n%s\n' "$old" "$now" | cut -f2 | LC_ALL=C sort -u)
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    opted_out "$path" "$out" && continue
+    GIT_INDEX_FILE=$i git update-index --force-remove -- "$path" || return 1
+  done <<<"$paths"
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    opted_out "$path" "$out" && continue
+    entry=$(file_entry "$main" "$2/$path")
+    [ -z "$entry" ] || GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${entry%% *},${entry##* },$path" || return 1
+  done <<<"$paths"
   blob=$({ ledger_header
     while IFS=$'\t' read -r meta path src; do
       [ -n "$path" ] || continue

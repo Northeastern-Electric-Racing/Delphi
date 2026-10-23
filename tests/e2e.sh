@@ -220,6 +220,38 @@ sync refresh "$AN" >"$t/out" 2>&1 || fail "managed file-to-directory refresh: $(
 o show "main:$A/notes/layout/guide.md" | grep -qx after || fail "main lacks native nested output"
 o show "ws/$AN:notes/layout/guide.md" | grep -qx after || fail "refresh lost nested output"
 ok "native managed paths can change from files to directories without creating sparse-index entries"
+on_main "replace inherited directory with file" sh -c "rm -r $AI/layout && echo final >$AI/layout"
+sync "$AN" >"$t/out" 2>&1 || fail "managed directory-to-file round trip: $(cat "$t/out")"
+o show "ws/$AN:notes/layout" | grep -qx final || fail "refresh lost replacement file"
+ok "native managed paths can change back from directories to files in refresh and propose"
+
+# Ancestor files and owned directory siblings must be reported before any index writes.
+NI=software/workspace-inherit/notes
+commit_on "ws/$AN" notes/blocked "owned ancestor"
+on_main "inherited descendant collision" sh -c "mkdir -p $NI/blocked && echo shared >$NI/blocked/guide.md"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned ancestor"; fi
+  grep -q 'workspace-owned notes/blocked collides' "$t/err" || fail "$direction did not report the owned ancestor"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the owned ancestor"
+done
+o show "ws/$BN:notes/blocked/guide.md" | grep -qx shared || fail "ancestor collision blocked another workspace"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-descendant "origin/ws/$AN" &&
+  git rm -q notes/blocked && git commit -qm "accept managed descendant" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+commit_on "ws/$AN" notes/blocked/own.md "owned sibling"
+on_main "replace inherited directory around an owned sibling" sh -c "rm -r $NI/blocked && echo replacement >$NI/blocked"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" "$AN" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned sibling"; fi
+  grep -q 'workspace-owned notes/blocked/own.md collides' "$t/err" || fail "$direction did not report the owned sibling"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the owned sibling"
+done
+o show "ws/$AN:notes/blocked/own.md" | grep -qx 'owned sibling' || fail "owned sibling was lost"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-replacement "origin/ws/$AN" &&
+  git rm -q notes/blocked/own.md && git commit -qm "accept managed replacement" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+ok "owned ancestors and directory siblings conflict explicitly while other workspaces keep refreshing"
 
 # New inheritance must not replace a file owned only on the workspace branch.
 commit_on "ws/$AN" notes/collision.txt "workspace-owned"
@@ -253,6 +285,47 @@ sync "$BN" >"$t/out" 2>&1 || fail "unmerged owned copy proposal: $(cat "$t/out")
 o show "ws/$BN:.claude/skills/unmerged/SKILL.md" | grep -qx 'workspace-owned unmerged' || fail "unmerged ownership was deleted"
 o show "propose/$BN:$B/.claude/skills/unmerged/SKILL.md" | grep -qx 'workspace-owned unmerged' || fail "unmerged ownership not proposed"
 ok "retiring a source and obsolete opt-out preserves workspace ownership before its proposal merges"
+
+# Retirement compares against reviewed provenance, even if the branch edits its ledger hash.
+RI=software/workspace-inherit/.claude/skills/retire-safety
+on_main "retirement safety fixture" sh -c "mkdir -p $RI && echo shared >$RI/SKILL.md"
+sync refresh >/dev/null
+(cd "$t/dev" && git fetch -q && git checkout -q -B edited-retirement "origin/ws/$AN" &&
+  echo owned >>.claude/skills/retire-safety/SKILL.md &&
+  blob=$(git hash-object .claude/skills/retire-safety/SKILL.md) &&
+  awk -F'\t' -v OFS='\t' -v blob="$blob" '$2 == ".claude/skills/retire-safety/SKILL.md" { $1 = "100644 " blob } { print }' workspace.generated >ledger.tmp &&
+  mv ledger.tmp workspace.generated && git add -A && git commit -qm "edit retired payload and ledger hash" && git push -q origin "HEAD:ws/$AN")
+on_main "retire safety source" git rm -rq "$RI"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" >"$t/out" 2>"$t/err"; then fail "$direction deleted edited retired output"; fi
+  grep -q 'retired managed .claude/skills/retire-safety/SKILL.md has local edits' "$t/err" || fail "$direction did not report retired edits"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed edited retired output"
+done
+o show "ws/$AN:.claude/skills/retire-safety/SKILL.md" | grep -qx owned || fail "edited retired payload was lost"
+! o cat-file -e "ws/$BN:.claude/skills/retire-safety/SKILL.md" 2>/dev/null || fail "retirement failure blocked another workspace"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-retirement "origin/ws/$AN" &&
+  git rm -q .claude/skills/retire-safety/SKILL.md && git commit -qm "accept retirement" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+ok "retired edits refuse refresh and propose against trusted hashes while other workspaces continue"
+
+RI=software/workspace-inherit/.claude/skills/retire-optout
+on_main "unsynced opt-out fixture" sh -c "mkdir -p $RI && echo shared >$RI/SKILL.md"
+sync refresh "$BN" >/dev/null
+commit_on "ws/$BN" workspace.yml "  - .claude/skills/retire-optout"
+commit_on "ws/$BN" .claude/skills/retire-optout/SKILL.md "owned before sync"
+on_main "retire unsynced opt-out source" git rm -rq "$RI"
+(cd "$t/dev" && git fetch -q && git checkout -q -B obsolete-optout "origin/ws/$BN" &&
+  sed -i.bak '\|^  - .claude/skills/retire-optout$|d' workspace.yml && rm workspace.yml.bak &&
+  git commit -qam "drop obsolete opt-out before syncing" && git push -q origin "HEAD:ws/$BN")
+owned_head=$(o rev-parse "ws/$BN")
+if sync refresh "$BN" >"$t/out" 2>"$t/err"; then fail "retirement deleted unsynced ownership"; fi
+[ "$(o rev-parse "ws/$BN")" = "$owned_head" ] || fail "unsynced owned output changed"
+o show "ws/$BN:.claude/skills/retire-optout/SKILL.md" | grep -qx 'owned before sync' || fail "unsynced ownership was lost"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-optout-retirement "origin/ws/$BN" &&
+  git rm -q .claude/skills/retire-optout/SKILL.md && git commit -qm "accept retirement" && git push -q origin "HEAD:ws/$BN")
+sync refresh "$BN" >/dev/null
+ok "retirement preserves an opt-out rescinded before any intermediate sync by reporting the ambiguity"
 
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/$BN CLAUDE.md "ws side"
@@ -366,6 +439,32 @@ if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer deleted ed
 grep -q 'retired managed file has local edits' "$t/err" || fail "retired edit not reported"
 [ "$(cat "$d/$A/.claude/skills/journal/SKILL.md")" = x ] || fail "retired edited output deleted"
 ok "main-side generation reports edited retired files and leaves their content intact"
+expect_bad retired-mode-edit 'retired managed file has local edits' sh -c "chmod +x $A/.claude/skills/journal/SKILL.md && rm -r software/workspace-inherit/.claude/skills/journal"
+d=$t/chk-retired-mode-edit
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer deleted mode-edited retired output"; fi
+[ -x "$d/$A/.claude/skills/journal/SKILL.md" ] || fail "retired executable mode was lost"
+ok "main-side retirement preserves executable-mode edits"
+
+expect_bad managed-file-to-owned-directory 'workspace-owned file collides' sh -c "rm $A/.claude/skills/journal/SKILL.md && mkdir $A/.claude/skills/journal/SKILL.md && echo owned >$A/.claude/skills/journal/SKILL.md/own"
+d=$t/chk-managed-file-to-owned-directory
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer wrote managed output into an owned directory"; fi
+[ "$(cat "$d/$A/.claude/skills/journal/SKILL.md/own")" = owned ] || fail "owned directory contents changed"
+[ -n "$(find "$d/$A/.claude/skills/journal/SKILL.md" -prune -perm -100)" ] || fail "owned directory traversal mode changed"
+ok "main-side generation refuses a managed file replaced by an owned directory without chmod or copy"
+
+expect_bad topology-empty-directory 'workspace-owned file collides' sh -c "mkdir $A/.claude/skills/journal/empty && rm -r software/workspace-inherit/.claude/skills/journal && echo replacement >software/workspace-inherit/.claude/skills/journal"
+d=$t/chk-topology-empty-directory
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer replaced an untracked empty directory"; fi
+[ -d "$d/$A/.claude/skills/journal/empty" ] || fail "untracked empty directory was removed"
+[ -f "$d/$A/.claude/skills/journal/SKILL.md" ] || fail "refused topology change removed managed siblings"
+ok "main-side topology changes preserve untracked empty directories"
+
+expect_bad render-symlink 'symlinks are not allowed' sh -c "cp $A/.claude/skills/journal/SKILL.md outside-symlink-target && rm $A/.claude/skills/journal/SKILL.md && ln -s ../../../../../../../../outside-symlink-target $A/.claude/skills/journal/SKILL.md && echo changed >>software/workspace-inherit/.claude/skills/journal/SKILL.md"
+d=$t/chk-render-symlink
+cp "$d/outside-symlink-target" "$t/symlink-target-before"
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer followed a symlink"; fi
+cmp -s "$d/outside-symlink-target" "$t/symlink-target-before" || fail "renderer changed a symlink target"
+ok "render refuses symlinks before changing any generated output"
 
 expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
 expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "mkdir -p software/workspace-inherit && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/CLAUDE.md"

@@ -13,6 +13,9 @@ tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 problems=0
 bad() { echo "render: $*" >&2; problems=$((problems + 1)); }
+while IFS= read -r path; do bad "$path: symlinks are not allowed under software/"; done \
+  < <(find software -type l 2>/dev/null)
+[ "$problems" = 0 ] || exit 1
 if [ "$check" = 1 ]; then
   bash "$here/plugins.sh" --check . || problems=$((problems + 1))
 else
@@ -20,7 +23,7 @@ else
 fi
 
 render_workspace() { # <workspace folder>
-  local folder=$1 adapter out records old meta path src seen="" used="" o start=$problems previous actual
+  local folder=$1 adapter out records old meta path src seen="" used="" o start=$problems previous actual mode collision child parent
   adapter=$(awk '/^harness:/ { print $2; exit }' "$folder/workspace.yml")
   harness "$adapter" || { bad "$folder/workspace.yml: unknown harness '$adapter'"; return; }
   if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
@@ -66,7 +69,8 @@ render_workspace() { # <workspace folder>
     opted_out "$path" "$out" && continue
     awk -F'\t' -v p="$path" '$2 == p { found = 1 } END { exit !found }' "$tmp/sorted" && continue
     [ -f "$folder/$path" ] || continue
-    if [ "$(git hash-object -- "$folder/$path")" != "${meta#* }" ]; then
+    mode=100644; [ ! -x "$folder/$path" ] || mode=100755
+    if [ "$mode $(git hash-object -- "$folder/$path")" != "$meta" ]; then
       bad "$folder/$path: retired managed file has local edits; preserve it explicitly before rendering"
     elif [ "$check" = 1 ]; then
       bad "$folder/$path: stale managed output; run ci/render.sh"
@@ -75,8 +79,23 @@ render_workspace() { # <workspace folder>
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
     previous=$(printf '%s\n' "$old" | awk -F'\t' -v p="$path" '$2 == p { print $1; exit }')
-    if [ -e "$folder/$path" ] && [ -z "$previous" ] && [ "$src" != ci/plugins.sh ]; then
-      bad "$folder/$path: workspace-owned file collides with $src; opt out or remove it explicitly"
+    collision=""
+    if [ -d "$folder/$path" ]; then
+      while IFS= read -r child; do
+        child=${child#"$folder"/}
+        if [ ! -f "$folder/$child" ] || ! recorded "$child" "$old" || opted_out "$child" "$out"; then collision=$child; break; fi
+      done < <(find "$folder/$path" ! -type d -o -empty)
+    elif [ -e "$folder/$path" ] && [ -z "$previous" ] && [ "$src" != ci/plugins.sh ]; then
+      collision=$path
+    fi
+    parent=$(dirname "$path")
+    while [ "$parent" != . ]; do
+      if [ -e "$folder/$parent" ] && [ ! -d "$folder/$parent" ] &&
+        { ! recorded "$parent" "$old" || opted_out "$parent" "$out"; }; then collision=$parent; break; fi
+      parent=$(dirname "$parent")
+    done
+    if [ -n "$collision" ]; then
+      bad "$folder/$collision: workspace-owned file collides with $src; opt out or remove it explicitly"
       continue
     fi
     actual=""
@@ -108,6 +127,7 @@ render_workspace() { # <workspace folder>
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
     [ "$src" != ci/plugins.sh ] || continue
+    [ ! -d "$folder/$path" ] || { bad "$folder/$path: cannot replace a remaining directory with managed output"; return; }
     mkdir -p "$(dirname "$folder/$path")"
     cp "$tmp/native/$path" "$folder/$path"
     if [ "${meta%% *}" = 100755 ]; then chmod +x "$folder/$path"; else chmod -x "$folder/$path"; fi

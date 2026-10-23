@@ -15,6 +15,10 @@ opted_out() { # <path> <space-separated opt-outs>
   return 1
 }
 
+recorded() { # <path> <records>: exact managed ownership, including files retired by a topology change
+  printf '%s\n' "$2" | awk -F'\t' -v p="$1" '$2 == p { found = 1 } END { exit !found }'
+}
+
 safe_path() {
   case "$1" in '' | /* | *[!A-Za-z0-9._/-]* | */ | *//* ) return 1 ;; esac
   case "/$1/" in */../* | */./* | */.git/*) return 1 ;; esac
