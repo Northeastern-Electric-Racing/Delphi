@@ -346,7 +346,7 @@ for r in lib1 lib2; do
   [ "$(git -C "$t/ws/repos/$r" branch --show-current)" = "$def" ] || fail "repos/$r not on $def"
   [ "$(git -C "$t/ws/worktrees/$r/$def" branch --show-current)" = "$def" ] || fail "$r default worktree not on $def"
   [ "$(git -C "$t/ws/worktrees/$r/.bare" rev-parse --is-bare-repository)" = true ] || fail "worktrees/$r/.bare not a bare store"
-  [ "$(git -C "$t/ws/repos/$r" worktree list | wc -l)" = 1 ] || fail "repos/$r has worktrees"
+  [ "$(git -C "$t/ws/repos/$r" worktree list | wc -l | tr -d " ")" = 1 ] || fail "repos/$r has worktrees"
 done
 [ "$(git -C "$t/ws/repos/lib1" rev-parse --is-bare-repository)" = false ] || fail "repos/lib1 is a bare store"
 grep -q "repos/lib1: already present" "$t/out" || fail "re-run did not skip"
@@ -361,10 +361,10 @@ w=$t/legacy && git clone -q -b ws/$AN "$t/origin.git" "$w" && cp "$t/ws/workspac
   git init -q --bare "$w/repos/lib2" && git -C "$w/repos/lib2" remote add origin "$t/lib2.git" && git -C "$w/repos/lib2" fetch -q origin &&
   git -C "$w/repos/lib2" worktree add -q -b "$def" "$w/worktrees/lib2/$def" "origin/$def" && echo wip >"$w/worktrees/lib2/$def/wip"
 /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "setup.sh failed on older clones: $(cat "$t/out")"
-{ [ "$(git -C "$w/repos/lib2" rev-parse --is-bare-repository)" = true ] && [ "$(git -C "$w/worktrees/lib2/$def" status --porcelain)" = "?? wip" ] &&
-  [ -d "$w/worktrees/lib2/.bare" ] && [ "$(git -C "$w/repos/lib1" branch --show-current)" = "$def" ] && [ -f "$w/repos/lib1/wip" ] &&
-  [ -d "$w/worktrees/lib1/$def" ]; } || fail "an older bare store or plain clone in repos/ was not left as it is: $(cat "$t/out")"
-ok "setup.sh leaves an older bare store or plain clone in repos/ (and its worktrees) as it is, and adds the store in worktrees/"
+{ [ "$(git -C "$w/repos/lib2" rev-parse --is-bare-repository)" = false ] && [ "$(git -C "$w/worktrees/lib2/$def" status --porcelain)" = "?? wip" ] &&
+  [ "$(git -C "$w/worktrees/lib2/.bare" rev-parse --is-bare-repository)" = true ] && [ "$(git -C "$w/repos/lib1" branch --show-current)" = "$def" ] && [ -f "$w/repos/lib1/wip" ] &&
+  [ -d "$w/worktrees/lib1/$def" ]; } || fail "an older plain clone in repos/ was not left as it is, or an older bare store was not moved (2.0.0): $(cat "$t/out")"
+ok "setup.sh leaves an older plain clone in repos/ as it is; 2.0.0 moves an older bare store there to worktrees/ (worktrees intact)"
 git clone -q -c core.autocrlf=true -b ws/$AN "$t/origin.git" "$t/ws-crlf"
 cp "$t/ws/workspace.yml" "$t/ws-crlf/"
 /bin/bash "$t/ws-crlf/.delphi/setup.sh" >/dev/null 2>"$t/err" || fail "setup.sh fails with core.autocrlf=true"
@@ -527,7 +527,7 @@ nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev"
   fail "<base> ignored"
 [ "$(nw code feat)" = "$w/worktrees/code/feat" ] || fail "rerun did not reuse"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
-{ [ "$(git -C "$w/repos/code" branch --show-current)" = "$def" ] && [ "$(git -C "$w/repos/code" worktree list | wc -l)" = 1 ] &&
+{ [ "$(git -C "$w/repos/code" branch --show-current)" = "$def" ] && [ "$(git -C "$w/repos/code" worktree list | wc -l | tr -d " ")" = 1 ] &&
   ! git -C "$w/repos/code" rev-parse -q --verify refs/heads/1-new >/dev/null; } || fail "new-worktree touched the clone at repos/code"
 ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun, never touching repos/<repo>"
 # skill scripts read the workspace from $DELPHI_ROOT (the session hook evals paths.sh's export line) and every folder from paths.sh
@@ -650,6 +650,21 @@ rm -rf "$w/workspaces" && old_copy "$w/linked/main" main && old_copy "$w/linked/
   fail "0.9.0 did not turn old read-only copies into clones on their branch, keeping local changes: $(cat "$t/out")"
 git -C "$w/workspaces/$AN" checkout -q CLAUDE.md
 ok "0.9.0 turns old shallow, detached, push-disabled copies in linked/ into full clones on their branch, keeping what's in them; 1.0.0 moves them to workspaces/"
+git -C "$w" config delphi.$BN.version 1.2.0
+rm -rf "$w/repos/lib1" "$w/worktrees/lib1" && git clone -q --bare "$t/lib1.git" "$w/repos/lib1" && git -C "$w/repos/lib1" worktree add -q "$w/worktrees/lib1/old" -b old 2>/dev/null
+git -C "$w/repos/lib1" worktree add -q --detach "$w/worktrees/lib1/det" && git -C "$w/worktrees/lib1/det" commit -q --allow-empty -m "unpushed"
+{ /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "repos/lib1 has branches or worktree commits not on origin" "$t/err" &&
+  [ "$(git -C "$w/repos/lib1" rev-parse --is-bare-repository)" = true ]; } || fail "2.0.0 moved a bare repos/lib1 with unpushed commits: $(cat "$t/err")"
+git -C "$w/repos/lib1" worktree remove --force "$w/worktrees/lib1/det"
+git -C "$w" config delphi.$BN.version 1.2.0
+/bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 || fail "2.0.0 failed on a bare repos/lib1: $(cat "$t/out")"
+{ grep -q "moved repos/lib1 to worktrees/lib1/.bare" "$t/out" && [ "$(git -C "$w/worktrees/lib1/.bare" rev-parse --is-bare-repository)" = true ] &&
+  [ ! -e "$w/repos/lib1" ] && git -C "$w/worktrees/lib1/old" status >/dev/null &&
+  git -C "$w/worktrees/lib1/.bare" worktree list | grep -q "worktrees/lib1/old" &&
+  git -C "$w/worktrees/lib1/.bare" symbolic-ref -q refs/remotes/origin/HEAD >/dev/null; } || fail "2.0.0 did not move a bare repos/lib1 to .bare, keeping its worktrees: $(cat "$t/out")"
+git -C "$w" config delphi.$BN.version 1.2.0
+{ /bin/bash "$w/.delphi/setup.sh" >"$t/out" 2>&1 && ! grep -q "migrate:" "$t/out"; } || fail "2.0.0 did something on a second run: $(cat "$t/out")"
+ok "2.0.0 moves a bare repos/<name> to worktrees/<name>/.bare with its worktrees, vacating repos/<name> for setup's clone; skips one with unpushed work"
 echo "# local" >>"$w/.delphi/switch.sh"
 { /bin/bash "$w/.delphi/setup.sh" >/dev/null 2>"$t/err" && grep -q "not Delphi $VN as released" "$t/err"; } || fail "setup.sh did not warn about an edited .delphi/"
 git -C "$w" checkout -q .delphi/switch.sh
