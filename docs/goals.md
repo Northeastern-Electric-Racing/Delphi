@@ -4,14 +4,14 @@ What Delphi must achieve, not how. Any change must keep these. Details: `docs/de
 
 ## Purpose
 
-Author reusable AI context once, organized by the org chart, and keep reviewable native copies
-in each workspace on main. Let
-anyone, person or agent, work on a workspace with plain git and send improvements back.
+Author reusable AI context once, organized by the org chart, and deliver native context to each
+workspace branch. Let anyone, person or agent, work with plain git and send improvements back.
 
 ## Goals
 
-- **G1. Workspaces live in Delphi.** Each workspace is a folder on `main` with every file at its
-  normal harness location.
+- **G1. Workspaces live in Delphi.** Each workspace is a folder on `main` with an explicit harness
+  and its owned files at native paths. Shared context lives once in canonical sources; inherited
+  copies exist only on workspace branches.
 - **G2. The workspace is the repo root.** Checking out `ws/<name>` gives exactly that workspace at
   the root. `.delphi/setup.sh` clones the code repos it lists and, separately, checks out their default branch as a worktree.
 - **G3. Both directions, automatically.** Refresh: changes on `main` reach `ws/<name>`. Propose:

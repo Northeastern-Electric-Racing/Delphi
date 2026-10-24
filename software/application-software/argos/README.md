@@ -13,7 +13,7 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 | `workspaces/argos-dev/` | Day-to-day Argos development: tickets, specs, PRs |
 | `workspaces/default-codex/` | Argos development with the Codex harness |
 | `workspace-defaults/` | What a new Argos workspace starts with (see `AUTHORING.md`) |
-| `workspace-inherit/` | Shared workflows and docs rendered on main, then refreshed to workspace branches |
+| `workspace-inherit/` | Shared workflows and docs staged by CI and added only to workspace branches |
 | `plugins/claude/<set>/` | Claude Code plugin sets a workspace lists under `plugins:` (none yet) |
 | `AUTHORING.md` | How to create and change Argos workspaces |
 

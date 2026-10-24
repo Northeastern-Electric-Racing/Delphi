@@ -15,7 +15,7 @@
 #     settings go in .claude/settings.local.json, shared ones here or in workspace.yml.
 #   --check writes nothing; it lists each out-of-date file or problem and exits 1 if any.
 # ci/plugins.sh yml|settings <folder> <workspace.yml>: print one workspace's workspace.yml or
-#   settings.json, from <dir> = . (main-side output only; refresh copies reviewed files).
+#   settings.json, from <dir> = . (also used for temporary branch staging).
 set -euo pipefail
 repo=Northeastern-Electric-Racing/Delphi
 

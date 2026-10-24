@@ -19,7 +19,7 @@ source of truth; `docs/goals.md` lists what any change must keep.
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its
   `plugins/scope`, else its `short-name`, else its name), each Claude Code workspace's `workspace.yml` `plugins:` defaults (the
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
-  it by hand). `ci/render.sh` calls it on main before recording managed outputs.
+  it by hand). `ci/render.sh` calls it for main-side plugin output.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
@@ -40,15 +40,17 @@ source of truth; `docs/goals.md` lists what any change must keep.
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
   (translated once into a new workspace there). Existing source layouts stay intact; optional
   `source.yml` declares a different authoring format. Any org/project folder may add `workspace-inherit/`;
-  `ci/render.sh` materializes managed native copies on main, and refresh copies them to ws branches.
-  `workspace.generated` records ownership; `opt-out:` transfers a native path to the workspace.
+  CI prepares inheritance in temporary staging and refresh copies it only to ws branches.
+  Their `workspace.generated` records ownership; `opt-out:` transfers a native path to the workspace.
+  Main keeps owned native files and canonical sources, never inherited copies or ledgers.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
-- `ci/render.sh [--check]`: prepare native workspace output on main (or check freshness). Run it
-  after shared-source, harness, ownership or plugin changes and include outputs in the same PR.
+- `ci/render.sh [--check] [--workspace <folder>] [<main-checkout> [<staging-output>]]`: update plugin
+  output, or prepare inherited native files and ledgers in optional temporary staging. Main-side
+  checks reject managed copies, ledgers and ownership collisions; inherited output is never committed there.
   `ci/harnesses.sh` declares targets; `ci/sources.sh` reads independent source formats;
-  `ci/inherit.sh` resolves sources. `ci/managed.sh` shares ownership logic with sync, which does no
-  harness conversion during refresh. Every workspace must explicitly declare its harness. Codex uses
+  `ci/inherit.sh` resolves sources. `ci/managed.sh` shares ownership logic with sync, whose refresh
+  copies staged output. Every workspace must explicitly declare its harness. Codex uses
   `.delphi/exec.sh` to initialize helper commands in independent shells.
 
 ## Rules

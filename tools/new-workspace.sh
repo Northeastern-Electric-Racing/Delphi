@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness <adapter>] <org-path> <leaf>:
-# prepare a main-side PR with native defaults and managed output for its explicitly recorded harness.
+# prepare a main-side PR with owned native defaults; CI adds inheritance on the workspace branch.
 # Uses a temporary checkout of origin/main; never changes the caller's checkout.
 set -euo pipefail
 die() { echo "new-workspace: $*" >&2 && exit 1; }
@@ -72,7 +72,7 @@ git -C "$wt" commit --quiet -m "New workspace $name"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
 gh pr create --base main --head "$branch" --title "Add workspace $name" --label "by: $by" --body "## Changes
 
-Adds \`$folder/\` from templates/workspace (plus translated project defaults and managed inheritance). After merge, CI creates branch ws/$name.
+Adds \`$folder/\` from templates/workspace (plus translated project defaults). After merge, CI creates branch ws/$name with its inherited context.
 
 ## Testing
 

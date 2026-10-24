@@ -23,9 +23,10 @@ the selected harness template and translated `workspace-defaults/`, then opens a
 
 Edit on a branch of `main` and open a PR to `main` (from a workspace: `bash .delphi/switch.sh main`;
 don't edit `workspaces/main/` from a workspace). `workspace-defaults/`
-only affects workspaces created afterwards; to change existing ones, PR each workspace too. `workspace-inherit/` reaches
-every Argos workspace through managed native copies on main. Run `bash ci/render.sh` and include
-its outputs in the same PR; refresh then copies those reviewed files to workspace branches.
+only affects workspaces created afterwards; to change existing ones, PR each workspace too.
+`workspace-inherit/` reaches every Argos workspace through temporary CI preparation and refresh.
+Commit its sources, never generated skill copies or `workspace.generated`, to main. Run
+`bash ci/render.sh` for plugin output and `bash ci/check.sh` before opening the PR.
 
 ## Writing good workspace context
 
@@ -33,12 +34,13 @@ its outputs in the same PR; refresh then copies those reviewed files to workspac
 - One skill per repeatable workflow, with a `description` that says when to use it.
 - Agent context (glossary, conventions, skills) lives in the workspace; the glossary goes in `docs/`.
   Shared Claude skills stay in `workspace-inherit/.claude/skills/<name>/` at the project or org level.
-  The main-side renderer preserves Claude metadata and translates Codex copies into its native
-  directory; change sources through PRs to `main`. Ordinary inherited docs go in `workspace-inherit/`.
+  CI preserves Claude metadata and translates Codex copies into its native directory only on
+  workspace branches; change sources through PRs to `main`. Ordinary inherited docs go in `workspace-inherit/`.
   Optional `source.yml` selects a different authoring format. Context only some workspaces need goes in
   the workspace, or in a supported plugin set selected under `plugins:`. Codex does not load the
   Claude plugin sets. Workspace-owned native skills remain editable and proposable; use a native
-  destination under `opt-out:` when taking ownership of an inherited skill.
+  destination under `opt-out:` when taking ownership of an inherited skill. Proposals return that
+  owned copy to main and strip other managed inheritance.
   ADRs about a code repo live in that repo, so `docs/` holds only ADRs about the workspace itself.
   Avoid file paths and code in specs and tickets.
 - Make new branches as worktrees (`new-worktree` skill) unless told otherwise.

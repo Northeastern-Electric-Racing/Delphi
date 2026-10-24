@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ci/check.sh [<dir> [<base>]]: validate workspace identities, explicit harnesses, native main-side
-# output and the runtime release contract. Lists every problem without changing the checkout.
+# ci/check.sh [<dir> [<base>]]: validate main-owned workspaces, staged inheritance and runtime releases.
+# Lists every problem without changing the checkout.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=ci/inherit.sh
@@ -69,7 +69,7 @@ while IFS= read -r at; do bad "$at: names a harness variable; call scripts as \`
     awk 'NR == 1 && /^---$/ { f = 1; next } f && /^---$/ { f = 0; next } !f && /\$\{CLAUDE_/ { print FILENAME ":" FNR; exit }' "$f"
   done)
 if messages=$(bash "$here/render.sh" --check . 2>&1); then :
-elif [ -z "$messages" ]; then bad "native workspace output validation failed"; fi
+elif [ -z "$messages" ]; then bad "inherited output validation failed"; fi
 while IFS= read -r msg; do [ -z "$msg" ] || bad "$msg"; done <<<"$messages"
 
 manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ manifest), `name:` is not allowed

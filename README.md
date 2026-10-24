@@ -6,8 +6,10 @@ named by the **short name** of each folder above it, from `software/` down, then
 name, joined by dots: `software/application-software/argos/workspaces/argos-dev` is
 `s.app.argos.argos-dev` (a folder's short name is its `short-name` file, else its name;
 `.delphi/names.sh` prints them all). For each one, CI keeps a branch **`ws/<name>`**
-whose repo root *is* that folder. Each workspace explicitly declares its harness, and its folder on
-`main` already contains native files for that harness. People and agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
+whose repo root *is* that folder. Each workspace explicitly declares its harness and keeps its owned
+files at native paths on `main`. Shared skills stay in their canonical sources on main; CI adds
+inherited native copies only to `ws/*`. People and agents work with plain git. Design:
+`docs/design.md`. Goals: `docs/goals.md`.
 
 ## How it works
 
@@ -84,8 +86,9 @@ references are there too (a workspace inside another's `workspaces/` skips its o
 edited from the workspace that links them; to change one, work in its own clone or switch to it.
 
 The workspace's dotted name is repeated in `name:` so a checkout knows which workspace it is; names
-are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Files live at normal harness paths. `workspace.generated` records main-owned rendered files;
-workspace instructions, docs and opted-out copies remain workspace-owned. The workflow comes from
+are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Files
+live at normal harness paths. On `ws/*`, `workspace.generated` records managed copies; it never
+returns to main. Instructions, docs and opted-out copies remain workspace-owned. The workflow comes from
 the template. The scripts, `.delphi/*.sh`
 (listed in `.delphi/manifest.yml`), live once at main's root: sync puts
 `.delphi/` on every `ws/*` branch, so change them only through PRs to main.
@@ -129,15 +132,15 @@ can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`
 format; each workspace's `harness:` independently selects its target. `workspace-defaults/` seeds
 workspace-owned files once; `workspace-inherit/` stays managed.
 
-**Prepare on main.** After changing shared sources, harness selections, opt-outs or plugins, run
-`bash ci/render.sh` and include its native output in the PR. `ci/check.sh` includes the read-only
-freshness check. Workspace branches receive those reviewed files through refresh. Workspace edits
-are rendered in the proposal to main and return after merge.
+**Preparation and sync.** CI translates inheritance from main into temporary staging, then refresh
+copies it onto workspace branches. Main contains no inherited copies or ownership ledgers.
+After source or configuration changes, run `bash ci/render.sh` to update plugin settings and
+`bash ci/check.sh` to validate the repo. Commit sources and owned files; CI prepares inheritance.
 
-**Ownership.** `workspace.generated` records managed copies; edit their sources instead. To keep
-an editable workspace copy, list its native path under `opt-out:` and render or use the normal
-workspace proposal. Collisions with workspace-owned files are reported. See `docs/design.md` for
-the adapter contract and ownership rules.
+**Ownership.** Edit shared sources instead of their managed branch copies. To keep an editable
+workspace copy, list its native path under `opt-out:`. Proposals retain owned files and opted-out
+skills while stripping managed copies, `workspace.generated` and the branch's `.delphi/`.
+Collisions are reported. See `docs/design.md` for the adapter contract and ownership rules.
 
 ## CI (`.github/workflows/delphi.yml`)
 
