@@ -49,6 +49,7 @@ cp -R "$src/templates/workspace/." "$t/seed/$B/"
 sed -i.bak "s|{{name}}|$BN|" "$t/seed/$B/workspace.yml" && rm "$t/seed/$B/workspace.yml.bak"
 FD=software/electrical/firmware/workspace-defaults # project defaults for new workspaces under electrical/firmware
 mkdir -p "$t/seed/$FD/.claude/skills/fw"
+printf "format: claude-code\n" >"$t/seed/$FD/source.yml"
 printf 'harness: claude-code\nrepos:\n  fw: https://example.com/fw.git\n' >"$t/seed/$FD/workspace.yml"
 printf '# Firmware for {{name}}\n' >"$t/seed/$FD/CLAUDE.md"
 echo "fw skill" >"$t/seed/$FD/.claude/skills/fw/SKILL.md"
@@ -59,7 +60,7 @@ set_json "$t/seed/software/application-software" default app # its scope: its sh
 set_json "$t/seed/software/application-software/argos" default argos # default sets above argos-dev
 TS=software/application-software/argos/plugins/claude/testing # an extra set a workspace can list under plugins:
 mkdir -p "$t/seed/$TS/.claude-plugin" && printf '{\n  "name": "argos.testing"\n}\n' >"$t/seed/$TS/.claude-plugin/plugin.json"
-(cd "$t/seed" && bash ci/plugins.sh >/dev/null) # the marketplace and each workspace's .claude/settings.json
+(cd "$t/seed" && bash ci/render.sh >/dev/null) # the marketplace and each workspace's .claude/settings.json
 git -C "$t/seed" add -A && git -C "$t/seed" commit -qm init
 git clone -q --bare "$t/seed" "$t/origin.git"
 git clone -q "$t/origin.git" "$t/ci"
@@ -69,7 +70,7 @@ o() { git -C "$t/origin.git" "$@"; }
 # commit_on <branch> <file> <text>: a person's PR into <branch>, merged (edit on a branch, merge --no-ff)
 commit_on() {
   (cd "$t/dev" && git fetch -q && git checkout -q -B "edit" "origin/$1" && printf '%s\n' "$3" >>"$2" &&
-    git commit -qam "edit $2 on $1" && git checkout -q -B "tmp-$1" "origin/$1" &&
+    { [ "$1" != main ] || bash ci/render.sh >/dev/null; } && git add -A && git commit -qm "edit $2 on $1" && git checkout -q -B "tmp-$1" "origin/$1" &&
     git merge -q --no-ff --no-edit edit && git push -q origin "HEAD:$1")
 }
 
@@ -78,11 +79,13 @@ sync >"$t/out"
 main=$(o rev-parse main)
 for w in "$A" "$B"; do
   n=$BN && [ "$w" != "$A" ] || n=$AN
-  o diff --quiet "main:$w" "ws/$n" -- ':!.delphi' || fail "ws/$n root != $w"
+  o diff --quiet "main:$w" "ws/$n" -- ':!.delphi' ':!workspace.generated' || fail "ws/$n root != $w"
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n lacks main's .delphi/"
   [ "$(o rev-parse "ws/$n^")" = "$main" ] || fail "ws/$n parent is not main"
   [ "$(o log -1 --format=%s "ws/$n")" = "delphi: create ws/$n from $w" ] || fail "ws/$n message"
   o cat-file -e "ws/$n:workspace.yml" || fail "ws/$n lacks workspace.yml"
+  o cat-file -e "ws/$n:workspace.generated" || fail "ws/$n lacks staged ownership metadata"
+  ! o cat-file -e "main:$w/workspace.generated" 2>/dev/null || fail "main contains branch ownership metadata"
   { ! o cat-file -e "ws/$n:README.md" 2>/dev/null && ! o cat-file -e "ws/$n:ci" 2>/dev/null; } ||
     fail "ws/$n has Delphi root files"
   [ "$(o rev-parse "ws/$n:.github/workflows/delphi.yml")" = "$(o rev-parse main:.github/workflows/delphi.yml)" ] ||
@@ -135,7 +138,7 @@ o show ws/$AN:docs/CONTEXT.md | grep -qx "ws edit two" || fail "ws edit lost"
 ! o cat-file -e ws/$AN:README.md 2>/dev/null || fail "root file leaked into ws"
 [ "$(o diff --name-only main propose/$AN)" = "$A/docs/CONTEXT.md" ] || fail "propose diff wrong after refresh"
 ok "main-side edit refreshes cleanly alongside ws edits; propose carries only the ws edit"
-o diff --quiet "main:$B" ws/$BN -- ":!.delphi" || fail "bms-dev drifted"
+o diff --quiet "main:$B" ws/$BN -- ":!.delphi" ":!workspace.generated" || fail "bms-dev drifted"
 ok "unrelated main changes leave other ws branches' trees alone"
 
 # --- 4b. .delphi/ lives only at main's root: refresh syncs it onto every ws/*, propose never carries it
@@ -155,63 +158,50 @@ sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "
 [ "$(o diff --name-only main propose/$AN)" = "$A/docs/CONTEXT.md" ] || fail "propose carries .delphi/: $(o diff --name-only main propose/$AN)"
 ok "a ws/* edit to .delphi/ is reset by refresh and never proposed into the folder"
 
-# --- 4c. .claude/settings.json is generated: refresh writes it from the ws branch's workspace.yml
+# --- 4c. native settings are reviewed on main; branch edits are rendered in a main-side proposal
 for p in app argos; do
-  o show "ws/$AN:.claude/settings.json" | grep -q "\"$p@delphi\": true" || fail "argos-dev lacks the $p default set"
+  o show "main:$A/.claude/settings.json" | grep -q "\"$p@delphi\": true" || fail "main lacks the $p default set"
 done
-! o show "ws/$BN:.claude/settings.json" | grep -q enabledPlugins || fail "bms-dev enables plugins with none above it"
+[ "$(o rev-parse "main:$A/.claude/settings.json")" = "$(o rev-parse "ws/$AN:.claude/settings.json")" ] || fail "settings differ from main"
 # shellcheck disable=SC2016 # the hook expands them
-o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\" >> \"$CLAUDE_ENV_FILE\""' ||
-  fail "bms-dev's settings.json lacks the SessionStart hook that sets DELPHI_ROOT"
-ok "each workspace's settings.json enables the default set of every folder above it"
-for p in app argos; do
-  o show "ws/$AN:workspace.yml" | grep -Eq "^  - $p +# default, from " || fail "argos-dev's workspace.yml doesn't list the $p default"
-done
-commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - app   # by hand')"
-(cd "$t/dev" && git fetch -q && git checkout -q -B drop origin/ws/$AN && sed -i.bak '/^  - argos .*# default, from /d' workspace.yml &&
-  rm workspace.yml.bak && git commit -qam "drop the argos default" && git push -q origin HEAD:ws/$AN)
-sync "$AN" >"$t/out" 2>&1 || fail "sync after dropping a default failed: $(cat "$t/out")"
-o show "ws/$AN:workspace.yml" | grep -Eq "^  - argos +# default, from " || fail "dropped default not listed again"
-[ "$(o show "ws/$AN:workspace.yml" | grep -c '^  - app ')" = 1 ] || fail "hand-listed default not folded into the generated line"
-[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate plugins: defaults and .claude/settings.json" ] || fail "no generate commit for the yml"
-ok "refresh lists every default set first under plugins: on ws/*, restoring a removed one and folding in a hand-listed one"
+o show "ws/$BN:.claude/settings.json" | grep -qF '"command": "bash \"$CLAUDE_PROJECT_DIR/.delphi/paths.sh\" >> \"$CLAUDE_ENV_FILE\""' || fail "SessionStart hook missing"
+ok "native settings already exist on main and refresh copies them unchanged"
 commit_on ws/$AN workspace.yml "$(printf 'plugins:\n  - argos.testing')"
-sync "$AN" >"$t/out" 2>&1 || fail "sync after listing a plugin set failed: $(cat "$t/out")"
-o show "ws/$AN:.claude/settings.json" | grep -q '"argos.testing@delphi": true' || fail "listed set not enabled"
-[ "$(o log -1 --format=%s ws/$AN)" = "delphi: generate plugins: defaults and .claude/settings.json" ] || fail "no generate commit"
-o show "propose/$AN:$A/.claude/settings.json" | grep -q argos.testing || fail "proposal lacks the generated settings"
-ok "a set listed under plugins: on ws/* is enabled by refresh's generated settings.json and proposed with it"
+sync "$AN" >"$t/out" 2>&1 || fail "main-side plugin proposal failed: $(cat "$t/out")"
+! o show "ws/$AN:.claude/settings.json" | grep -q argos.testing || fail "refresh generated settings on the workspace branch"
+o show "propose/$AN:$A/.claude/settings.json" | grep -q argos.testing || fail "main proposal lacks generated settings"
+ok "workspace configuration changes generate native settings in the main-side proposal, then wait for merge"
 commit_on ws/$AN .claude/settings.json "hand edit"
-sync "$AN" >"$t/out" 2>&1 || fail "sync after a settings.json hand edit failed: $(cat "$t/out")"
-! o show "ws/$AN:.claude/settings.json" | grep -qx "hand edit" || fail "hand edit to settings.json kept"
-ok "a hand edit to .claude/settings.json on ws/* is reset by refresh"
+sync "$AN" >"$t/out" 2>&1 || fail "settings reset failed: $(cat "$t/out")"
+[ "$(o rev-parse "main:$A/.claude/settings.json")" = "$(o rev-parse "ws/$AN:.claude/settings.json")" ] || fail "hand edit kept"
+ok "refresh resets managed native settings to main's current plugin configuration"
 commit_on ws/$AN workspace.yml "  - argos.nope"
-ws=$(o rev-parse ws/$AN)
-if sync "$AN" >"$t/out" 2>"$t/err"; then fail "sync with an unknown plugin set exited 0"; fi
-grep -q "ws/$AN: plugins: .* lists argos.nope, which isn't a plugin set" "$t/err" || fail "unknown set not reported: $(cat "$t/err")"
+if sync "$AN" >"$t/out" 2>"$t/err"; then fail "unknown plugin set accepted"; fi
+grep -q "lists argos.nope, which isn't a plugin set" "$t/err" || fail "unknown set not reported: $(cat "$t/err")"
 (cd "$t/dev" && git fetch -q && git checkout -q -B fix origin/ws/$AN && sed -i.bak '/nope/d' workspace.yml && rm workspace.yml.bak &&
   git commit -qam "drop unknown set" && git push -q origin HEAD:ws/$AN)
-sync "$AN" >/dev/null 2>&1 || fail "sync after dropping the unknown set failed"
-ok "an unknown set under plugins: is reported, exit 1, until fixed"
+sync "$AN" >/dev/null 2>&1 || fail "sync after dropping unknown set failed"
+ok "a failed main-side render prevents publication of the proposal"
 
-# --- 4d. workspace-inherit/: every workspace below a folder gets its files on refresh, never proposes them, and can opt out
+# --- 4d. inherited copies exist only on workspace branches; opt-outs transfer ownership
 on_main() { # <message> <command...>: a change on main, pushed
   local m=$1 && shift
-  (cd "$t/dev" && git fetch -q && git checkout -q -B tmp-main origin/main && "$@" && git add -A && git commit -qm "$m" && git push -q origin HEAD:main)
+  (cd "$t/dev" && git fetch -q && git checkout -q -B tmp-main origin/main && "$@" && bash ci/render.sh >/dev/null && git add -A && git commit -qm "$m" && git push -q origin HEAD:main)
 }
 TI=software/workspace-inherit/.claude/skills/top AI=software/application-software/workspace-inherit/notes
-on_main "inherit" sh -c "mkdir -p $TI $AI && echo 'top v1' >$TI/SKILL.md && echo 'app v1' >$AI/app.md"
+on_main "inherit" sh -c "mkdir -p $TI $AI && echo 'top v1' >$TI/SKILL.md && echo 'app v1' >$AI/app.md && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml"
 sync >"$t/out" 2>&1 || fail "sync after adding workspace-inherit/ failed: $(cat "$t/out")"
 for n in "$AN" "$BN"; do o show "ws/$n:.claude/skills/top/SKILL.md" | grep -qx "top v1" || fail "ws/$n lacks software/workspace-inherit/"; done
 o show "ws/$AN:notes/app.md" | grep -qx "app v1" || fail "ws/$AN lacks application-software/workspace-inherit/"
 ! o cat-file -e "ws/$BN:notes/app.md" 2>/dev/null || fail "ws/$BN inherited from a folder it isn't under"
-[ "$(o log -1 --format=%s ws/$BN)" = "delphi: sync inherited files from main" ] || fail "no inherit commit on ws/$BN"
-! o cat-file -e "propose/$AN:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "inherited file proposed"
-ok "refresh writes every workspace-inherit/ folder above a workspace onto ws/<name>, and only those"
+! o cat-file -e "main:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "main contains inherited output"
+! o cat-file -e "propose/$AN:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "proposal contains inherited output"
+! o cat-file -e "propose/$AN:$A/workspace.generated" 2>/dev/null || fail "proposal contains branch ownership metadata"
+ok "canonical sources stay on main while applicable native inheritance and ledgers exist only on workspace branches"
 commit_on ws/$AN .claude/skills/top/SKILL.md "ws edit"
 sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws edit to an inherited file failed: $(cat "$t/out")"
 [ "$(o show "ws/$AN:.claude/skills/top/SKILL.md")" = "top v1" ] || fail "ws edit to an inherited file not reset"
-! o cat-file -e "propose/$AN:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "ws edit to an inherited file proposed"
+! o cat-file -e "propose/$AN:$A/.claude/skills/top/SKILL.md" 2>/dev/null || fail "ws edit to managed output proposed"
 on_main "inherit v2, drop app.md" sh -c "echo 'top v2' >$TI/SKILL.md && git rm -q $AI/app.md"
 sync >"$t/out" 2>&1 || fail "sync after changing workspace-inherit/ failed: $(cat "$t/out")"
 o show "ws/$AN:.claude/skills/top/SKILL.md" | grep -qx "top v2" || fail "inherited change not refreshed"
@@ -225,6 +215,138 @@ sync >"$t/out" 2>&1 || fail "sync after an opt-out failed: $(cat "$t/out")"
 o show "propose/$BN:$B/.claude/skills/top/SKILL.md" | grep -qx "bms own" || fail "opted-out copy not proposed as the workspace's own"
 o show "ws/$AN:.claude/skills/top/SKILL.md" | grep -qx "top v3" || fail "argos-dev lost the inherited file"
 ok "a workspace that lists a path under opt-out: keeps and proposes its own copy, and refresh leaves it alone"
+
+on_main "inherited file fixture" sh -c "mkdir -p $AI && echo before >$AI/layout"
+sync refresh "$AN" >/dev/null
+on_main "replace inherited file with directory" sh -c "rm $AI/layout && mkdir $AI/layout && echo after >$AI/layout/guide.md"
+sync refresh "$AN" >"$t/out" 2>&1 || fail "managed file-to-directory refresh: $(cat "$t/out")"
+! o cat-file -e "main:$A/notes/layout/guide.md" 2>/dev/null || fail "main contains native nested output"
+o show "ws/$AN:notes/layout/guide.md" | grep -qx after || fail "refresh lost nested output"
+ok "native managed paths can change from files to directories without creating sparse-index entries"
+on_main "replace inherited directory with file" sh -c "rm -r $AI/layout && echo final >$AI/layout"
+sync "$AN" >"$t/out" 2>&1 || fail "managed directory-to-file round trip: $(cat "$t/out")"
+o show "ws/$AN:notes/layout" | grep -qx final || fail "refresh lost replacement file"
+ok "native managed paths can change back from directories to files in refresh and propose"
+
+# Ancestor files and owned directory siblings must be reported before any index writes.
+NI=software/workspace-inherit/docs
+commit_on "ws/$AN" docs/blocked "owned ancestor"
+on_main "inherited descendant collision" sh -c "mkdir -p $NI/blocked && echo shared >$NI/blocked/guide.md"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned ancestor"; fi
+  grep -q 'workspace-owned docs/blocked collides' "$t/err" || fail "$direction did not report the owned ancestor"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the owned ancestor"
+done
+o show "ws/$BN:docs/blocked/guide.md" | grep -qx shared || fail "ancestor collision blocked another workspace"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-descendant "origin/ws/$AN" &&
+  git rm -q docs/blocked && git commit -qm "accept managed descendant" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+commit_on "ws/$AN" docs/blocked/own.md "owned sibling"
+on_main "replace inherited directory around an owned sibling" sh -c "rm -r $NI/blocked && echo replacement >$NI/blocked"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" "$AN" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned sibling"; fi
+  grep -q 'workspace-owned docs/blocked/own.md collides' "$t/err" || fail "$direction did not report the owned sibling"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the owned sibling"
+done
+o show "ws/$AN:docs/blocked/own.md" | grep -qx 'owned sibling' || fail "owned sibling was lost"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-replacement "origin/ws/$AN" &&
+  git rm -q docs/blocked/own.md && git commit -qm "accept managed replacement" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+ok "owned ancestors and directory siblings conflict explicitly while other workspaces keep refreshing"
+
+# New inheritance must not replace a file owned only on the workspace branch.
+commit_on "ws/$AN" notes/collision.txt "workspace-owned"
+on_main "new inherited collision" sh -c "echo shared >$AI/collision.txt"
+owned_head=$(o rev-parse "ws/$AN") proposal_head=$(o rev-parse "propose/$AN")
+for direction in refresh propose; do
+  if sync "$direction" "$AN" >"$t/out" 2>"$t/err"; then fail "$direction replaced an owned collision"; fi
+  grep -q 'workspace-owned notes/collision.txt collides' "$t/err" || fail "$direction did not report ownership"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed the workspace branch"
+  [ "$(o rev-parse "propose/$AN")" = "$proposal_head" ] || fail "$direction published the collision"
+done
+o show "ws/$AN:notes/collision.txt" | grep -qx workspace-owned || fail "owned content was lost"
+ok "refresh and propose report new inherited collisions without changing workspace-owned content"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-inheritance "origin/ws/$AN" &&
+  git rm -q notes/collision.txt && git commit -qm "accept shared note" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+
+
+# Source retirement must preserve ownership claimed on a workspace branch before its proposal merges.
+on_main "unmerged ownership fixture" sh -c 'mkdir -p software/workspace-inherit/.claude/skills/unmerged; echo shared >software/workspace-inherit/.claude/skills/unmerged/SKILL.md'
+sync refresh "$BN" >/dev/null
+commit_on "ws/$BN" workspace.yml "  - .claude/skills/unmerged"
+commit_on "ws/$BN" .claude/skills/unmerged/SKILL.md "workspace-owned unmerged"
+sync refresh "$BN" >/dev/null
+on_main "retire unmerged source" git rm -rq software/workspace-inherit/.claude/skills/unmerged
+sync refresh "$BN" >"$t/out" 2>&1 || fail "retiring an unmerged opt-out conflicted: $(cat "$t/out")"
+(cd "$t/dev" && git fetch -q && git checkout -q -B retire-owned "origin/ws/$BN" &&
+  sed -i.bak '\|^  - .claude/skills/unmerged$|d' workspace.yml && rm workspace.yml.bak &&
+  git commit -qam "drop obsolete opt-out" && git push -q origin "HEAD:ws/$BN")
+sync "$BN" >"$t/out" 2>&1 || fail "unmerged owned copy proposal: $(cat "$t/out")"
+o show "ws/$BN:.claude/skills/unmerged/SKILL.md" | grep -qx 'workspace-owned unmerged' || fail "unmerged ownership was deleted"
+o show "propose/$BN:$B/.claude/skills/unmerged/SKILL.md" | grep -qx 'workspace-owned unmerged' || fail "unmerged ownership not proposed"
+ok "retiring a source and obsolete opt-out preserves workspace ownership before its proposal merges"
+
+# Retirement compares against reviewed provenance, even if the branch edits its ledger hash.
+RI=software/workspace-inherit/.claude/skills/retire-safety
+on_main "retirement safety fixture" sh -c "mkdir -p $RI && echo shared >$RI/SKILL.md"
+sync refresh >/dev/null
+(cd "$t/dev" && git fetch -q && git checkout -q -B edited-retirement "origin/ws/$AN" &&
+  echo owned >>.claude/skills/retire-safety/SKILL.md &&
+  blob=$(git hash-object .claude/skills/retire-safety/SKILL.md) &&
+  awk -F'\t' -v OFS='\t' -v blob="$blob" '$2 == ".claude/skills/retire-safety/SKILL.md" { $1 = "100644 " blob } { print }' workspace.generated >ledger.tmp &&
+  mv ledger.tmp workspace.generated && git add -A && git commit -qm "edit retired payload and ledger hash" && git push -q origin "HEAD:ws/$AN")
+on_main "retire safety source" git rm -rq "$RI"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" >"$t/out" 2>"$t/err"; then fail "$direction deleted edited retired output"; fi
+  grep -q 'retired managed .claude/skills/retire-safety/SKILL.md has local edits' "$t/err" || fail "$direction did not report retired edits"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed edited retired output"
+done
+o show "ws/$AN:.claude/skills/retire-safety/SKILL.md" | grep -qx owned || fail "edited retired payload was lost"
+! o cat-file -e "ws/$BN:.claude/skills/retire-safety/SKILL.md" 2>/dev/null || fail "retirement failure blocked another workspace"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-retirement "origin/ws/$AN" &&
+  git rm -q .claude/skills/retire-safety/SKILL.md && git commit -qm "accept retirement" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+ok "retired edits refuse refresh and propose against trusted hashes while other workspaces continue"
+
+RI=software/workspace-inherit/.claude/skills/retire-mode
+on_main "retirement mode fixture" sh -c "mkdir -p $RI && echo shared >$RI/SKILL.md && chmod +x $RI/SKILL.md"
+sync refresh "$AN" >/dev/null
+(cd "$t/dev" && git fetch -q && git checkout -q -B edited-retirement-mode "origin/ws/$AN" &&
+  chmod -x .claude/skills/retire-mode/SKILL.md && git commit -qam "edit retired executable mode" && git push -q origin "HEAD:ws/$AN")
+on_main "retire mode source" git rm -rq "$RI"
+owned_head=$(o rev-parse "ws/$AN")
+for direction in refresh propose; do
+  if sync "$direction" "$AN" >"$t/out" 2>"$t/err"; then fail "$direction deleted a mode-edited retired file"; fi
+  grep -q 'retired managed .claude/skills/retire-mode/SKILL.md has local edits' "$t/err" || fail "$direction did not report retired mode edit"
+  [ "$(o rev-parse "ws/$AN")" = "$owned_head" ] || fail "$direction changed a mode-edited retired file"
+done
+[ "$(o ls-tree "ws/$AN" .claude/skills/retire-mode/SKILL.md | cut -d' ' -f1)" = 100644 ] || fail "retired local mode was lost"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-mode-retirement "origin/ws/$AN" &&
+  git rm -q .claude/skills/retire-mode/SKILL.md && git commit -qm "accept mode retirement" && git push -q origin "HEAD:ws/$AN")
+sync refresh "$AN" >/dev/null
+ok "branch retirement preserves executable-mode-only edits in both refresh and propose"
+
+RI=software/workspace-inherit/.claude/skills/retire-optout
+on_main "unsynced opt-out fixture" sh -c "mkdir -p $RI && echo shared >$RI/SKILL.md"
+sync refresh "$BN" >/dev/null
+commit_on "ws/$BN" workspace.yml "  - .claude/skills/retire-optout"
+commit_on "ws/$BN" .claude/skills/retire-optout/SKILL.md "owned before sync"
+on_main "retire unsynced opt-out source" git rm -rq "$RI"
+(cd "$t/dev" && git fetch -q && git checkout -q -B obsolete-optout "origin/ws/$BN" &&
+  sed -i.bak '\|^  - .claude/skills/retire-optout$|d' workspace.yml && rm workspace.yml.bak &&
+  git commit -qam "drop obsolete opt-out before syncing" && git push -q origin "HEAD:ws/$BN")
+owned_head=$(o rev-parse "ws/$BN")
+if sync refresh "$BN" >"$t/out" 2>"$t/err"; then fail "retirement deleted unsynced ownership"; fi
+[ "$(o rev-parse "ws/$BN")" = "$owned_head" ] || fail "unsynced owned output changed"
+o show "ws/$BN:.claude/skills/retire-optout/SKILL.md" | grep -qx 'owned before sync' || fail "unsynced ownership was lost"
+(cd "$t/dev" && git fetch -q && git checkout -q -B accept-optout-retirement "origin/ws/$BN" &&
+  git rm -q .claude/skills/retire-optout/SKILL.md && git commit -qm "accept retirement" && git push -q origin "HEAD:ws/$BN")
+sync refresh "$BN" >/dev/null
+ok "retirement preserves an opt-out rescinded before any intermediate sync by reporting the ambiguity"
 
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/$BN CLAUDE.md "ws side"
@@ -264,6 +386,24 @@ expect_bad() { # <label> <expected message> <setup command...>: copy the real la
   grep -q -- "$want" "$t/err" || fail "check $label: no '$want' in: $(cat "$t/err")"
   ok "check fails: $label ($want)"
 }
+CX=software/application-software/argos/workspaces/default-codex
+expect_bad unknown-harness "unknown harness 'unknown'" sed -i.bak 's/harness: codex/harness: unknown/' "$CX/workspace.yml"
+expect_bad codex-plugin "codex does not support Delphi plugin sets" sh -c "printf 'plugins:\n  - delphi\n' >>$CX/workspace.yml"
+expect_bad codex-no-instructions "AGENTS.md: required for codex" rm "$CX/AGENTS.md"
+expect_bad codex-wrong-native "CLAUDE.md: belongs to a different harness" touch "$CX/CLAUDE.md"
+expect_bad codex-inherited-wrong-native "has no mapping to codex" sh -c "mkdir -p software/workspace-inherit/.claude && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/.claude/extra.json"
+expect_bad inherited-collision "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
+expect_bad main-inherited-copy "workspace-owned file collides" sh -c "mkdir -p $CX/.agents/skills/journal && cp software/workspace-inherit/.claude/skills/journal/SKILL.md $CX/.agents/skills/journal/SKILL.md"
+expect_bad main-ownership-record "ownership records belong only on workspace branches" touch "$CX/workspace.generated"
+expect_bad unknown-source-format "declare one supported source format" sh -c "echo 'format: unknown' >${A%/workspaces/*}/workspace-defaults/source.yml"
+expect_bad mixed-source-formats "AGENTS.md does not belong to the declared claude-code format" touch "${A%/workspaces/*}/workspace-defaults/AGENTS.md"
+expect_bad owned-output-collision "workspace-owned file collides" sh -c "mkdir -p software/workspace-inherit/.claude/skills/collision $CX/.agents/skills/collision && echo shared >software/workspace-inherit/.claude/skills/collision/SKILL.md && echo own >$CX/.agents/skills/collision/SKILL.md"
+
+d=$t/chk-owned-output-collision
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer overwrote an owned collision"; fi
+[ "$(cat "$d/$CX/.agents/skills/collision/SKILL.md")" = own ] || fail "renderer changed the workspace-owned file"
+ok "main-side generation refuses an owned collision and preserves its content"
+
 expect_bad no-harness "harness is missing" sh -c "sed -i.bak 's/^harness:.*//' $A/workspace.yml && rm $A/workspace.yml.bak"
 expect_bad duplicate-harness "duplicate harness" sh -c "printf 'harness: x\n' >>$A/workspace.yml"
 expect_bad bad-repo "bad repos entry" sh -c "awk '{ print } /^repos:/ { print \"  ../x: y\" }' $A/workspace.yml >$A/y && mv $A/y $A/workspace.yml"
@@ -312,15 +452,78 @@ expect_bad workflow-drift "argos-dev/.github/workflows/delphi.yml: differs" sh -
 expect_bad defaults-manifest "workspace-defaults/workspace.yml: unexpected line" sh -c "printf 'x: y\n' >>${A%/workspaces/*}/workspace-defaults/workspace.yml"
 expect_bad defaults-named-workspace "workspace-defaults/.delphi: managed" sh -c "mkdir -p software/x/workspaces/workspace-defaults/.delphi && cp -R $A/. software/x/workspaces/workspace-defaults/"
 expect_bad old-defaults "defaults: renamed workspace-defaults/" mkdir -p "${A%/workspaces/*}/defaults"
-expect_bad inherited-file-kept "$A/.claude/skills/journal/SKILL.md: inherited from software/workspace-inherit/" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
-expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
-expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "echo x >software/workspace-inherit/CLAUDE.md"
+expect_bad inherited-file-kept "workspace-owned file collides" sh -c "mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md"
+d=$t/chk-inherited-file-kept
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer overwrote main-owned output"; fi
+[ "$(cat "$d/$A/.claude/skills/journal/SKILL.md")" = x ] || fail "main-owned output changed"
+ok "main rejects inherited copies and preserves conflicting owned content"
+
+expect_bad managed-file-to-owned-directory 'workspace-owned file collides' sh -c "mkdir -p $A/.claude/skills/journal/SKILL.md && echo owned >$A/.claude/skills/journal/SKILL.md/own"
+d=$t/chk-managed-file-to-owned-directory
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer wrote managed output into an owned directory"; fi
+[ "$(cat "$d/$A/.claude/skills/journal/SKILL.md/own")" = owned ] || fail "owned directory contents changed"
+[ -n "$(find "$d/$A/.claude/skills/journal/SKILL.md" -prune -perm -100)" ] || fail "owned directory traversal mode changed"
+ok "staging refuses an inherited destination occupied by an owned directory without chmod or copy"
+
+expect_bad topology-empty-directory 'workspace-owned file collides' sh -c "mkdir -p $A/.claude/skills/journal/empty && rm -r software/workspace-inherit/.claude/skills/journal && echo replacement >software/workspace-inherit/.claude/skills/journal"
+d=$t/chk-topology-empty-directory
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer replaced an untracked empty directory"; fi
+[ -d "$d/$A/.claude/skills/journal/empty" ] || fail "untracked empty directory was removed"
+ok "staging preserves untracked empty directories at inherited destinations"
+
+expect_bad render-symlink 'symlinks are not allowed' sh -c "mkdir -p $A/.claude/skills/journal && cp software/workspace-inherit/.claude/skills/journal/SKILL.md outside-symlink-target && ln -s ../../../../../../../../outside-symlink-target $A/.claude/skills/journal/SKILL.md && echo changed >>software/workspace-inherit/.claude/skills/journal/SKILL.md"
+d=$t/chk-render-symlink
+cp "$d/outside-symlink-target" "$t/symlink-target-before"
+if "$src/ci/render.sh" "$d" >"$t/out" 2>"$t/err"; then fail "renderer followed a symlink"; fi
+cmp -s "$d/outside-symlink-target" "$t/symlink-target-before" || fail "renderer changed a symlink target"
+ok "render refuses symlinks before changing any generated output"
+
+d=$t/staging
+mkdir "$d"
+cp -R "$src/ci" "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
+(cd "$d" && git init -q && chmod +x software/workspace-inherit/.claude/skills/journal/scripts/capture.sh &&
+  echo changed >>software/workspace-inherit/.claude/skills/journal/SKILL.md && git add -A && git commit -qm source-change &&
+  bash ci/check.sh . && bash ci/render.sh --check . "$t/staged-native" &&
+  bash ci/render.sh . "$t/staged-native-again" && [ -z "$(git status --porcelain)" ]) >"$t/out" 2>"$t/err" || fail "read-only staging: $(cat "$t/err")"
+diff -qr "$t/staged-native" "$t/staged-native-again" >/dev/null || fail "repeated staging changed native output"
+for folder in "$A" "$CX"; do
+  [ -f "$t/staged-native/$folder/workspace.generated" ] || fail "staging lacks ownership metadata"
+  [ ! -e "$d/$folder/workspace.generated" ] || fail "staging wrote a ledger to main"
+done
+[ ! -e "$d/$CX/.agents/skills/journal/SKILL.md" ] || fail "staging wrote inherited skills to main"
+while IFS=$'\t' read -r meta path _; do
+  case "$meta" in '' | '#'* ) continue ;; esac
+  [ "$(git -C "$d" hash-object -- "$t/staged-native/$CX/$path")" = "${meta#* }" ] || fail "staged ledger hash differs from native bytes"
+  if [ "${meta%% *}" = 100755 ]; then [ -x "$t/staged-native/$CX/$path" ] || fail "staged executable mode lost"; fi
+done <"$t/staged-native/$CX/workspace.generated"
+[ -x "$t/staged-native/$CX/.agents/skills/journal/scripts/capture.sh" ] || fail "staged helper lost executable mode"
+ok "source edits validate without main copies; staged native hashes, modes and repeat output are stable and leave main unchanged"
+echo stale-marker >>"$d/$A/.claude/settings.json"
+"$d/ci/render.sh" --workspace "$CX" "$d" "$t/staged-one" >"$t/out" 2>"$t/err" || fail "workspace-only staging: $(cat "$t/err")"
+grep -q stale-marker "$d/$A/.claude/settings.json" || fail "workspace-only staging rewrote global plugin output"
+[ -f "$t/staged-one/$CX/workspace.generated" ] && [ ! -e "$t/staged-one/$A" ] || fail "workspace-only staging included another workspace"
+if "$d/ci/render.sh" --workspace "$CX" "$d" >"$t/out" 2>"$t/err"; then fail "workspace-only staging accepted no output directory"; fi
+if "$d/ci/render.sh" "$d" "$d/staging" >"$t/out" 2>"$t/err"; then fail "staging output inside main was accepted"; fi
+ok "workspace-only staging requires an external output directory and skips global plugin generation"
+git -C "$d" checkout -q -- "$A/.claude/settings.json"
+mkdir "$t/staged-symlink"
+ln -s "$d/software" "$t/staged-symlink/software"
+owned_instruction=$(git -C "$d" hash-object "$CX/AGENTS.md")
+if "$d/ci/render.sh" --workspace "$CX" "$d" "$t/staged-symlink" >"$t/out" 2>"$t/err"; then fail "staging followed an output symlink into main"; fi
+grep -q 'symlink' "$t/err" || fail "unsafe staging symlink was not reported"
+[ "$(git -C "$d" hash-object "$CX/AGENTS.md")" = "$owned_instruction" ] || fail "staging output symlink changed main-owned instructions"
+[ -z "$(git -C "$d" status --porcelain)" ] || fail "refused staging output changed main"
+ok "staging refuses output symlinks before touching main-owned workspace data"
+
+expect_bad inherited-twice "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && printf 'format: claude-code\\n' >software/application-software/workspace-inherit/source.yml && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
+expect_bad inherited-claude-md "software/workspace-inherit/CLAUDE.md: each workspace has its own" sh -c "mkdir -p software/workspace-inherit && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/CLAUDE.md"
 expect_bad inherit-in-workspace "belongs in an org or project folder" sh -c "mkdir -p $A/workspace-inherit && echo x >$A/workspace-inherit/f"
 expect_bad bad-opt-out "bad opt-out entry" sh -c "printf 'opt-out:\n  - ../x\n' >>$A/workspace.yml"
 expect_bad opt-out-nothing "opt-out: nope is nothing it inherits" sh -c "printf 'opt-out:\n  - nope\n' >>$A/workspace.yml"
 d=$t/chk-opt-out && rm -rf "$d" && mkdir "$d" && cp -R "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
 (cd "$d" && git init -q && mkdir -p $A/.claude/skills/journal && echo x >$A/.claude/skills/journal/SKILL.md &&
   printf 'opt-out:\n  - .claude/skills/journal/\n' >>$A/workspace.yml && git add -A && git commit -qm base)
+"$src/ci/render.sh" "$d" >/dev/null 2>&1 || fail "opt-out rendering failed"
 "$src/ci/check.sh" "$d" >/dev/null 2>&1 || fail "check fails on a workspace keeping an inherited path it opts out of"
 ok "a workspace may keep its own copy of an inherited path it lists under opt-out:"
 expect_bad links-renamed "links: is now workspaces:" sh -c "sed -i.bak 's/^workspaces:/links:/' $A/workspace.yml && rm $A/workspace.yml.bak"
@@ -472,7 +675,8 @@ o show "new-workspace/electrical/firmware/fw-dev:$F/CLAUDE.md" | grep -qx "# Fir
   fail "defaults workspace.yml not used, or name: not set"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/fw/SKILL.md" || fail "defaults skill not copied"
 o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/settings.json" || fail "new workspace has no generated settings.json"
-! o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/top/SKILL.md" 2>/dev/null || fail "an inherited skill was copied into the folder"
+! o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/.claude/skills/top/SKILL.md" 2>/dev/null || fail "new workspace PR contains inherited output"
+! o cat-file -e "new-workspace/electrical/firmware/fw-dev:$F/workspace.generated" 2>/dev/null || fail "new workspace PR contains branch ownership metadata"
 grep -q "gh pr create --base main --head new-workspace/electrical/firmware/fw-dev --title Add workspace $FN --label by: ai --body ## Changes" "$t/gh.log" ||
   fail "no PR for new workspace, or not labelled by: ai with the template's sections: $(cat "$t/gh.log")"
 (cd "$t/dev" && tools/new-workspace.sh --by ai-assisted electrical/firmware fw-two >/dev/null) || fail "new-workspace.sh --by failed"
@@ -484,7 +688,7 @@ grep -q "s.electrical.firmware.fw-two --label by: ai-assisted " "$t/gh.log" || f
 (cd "$t/dev" && ! tools/new-workspace.sh ../x ok 2>/dev/null) || fail "bad org path accepted"
 [ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "new-workspace touched the checkout"
 ok "new-workspace.sh opens a PR with the templated folder; rejects duplicates and bad input"
-ok "new-workspace.sh adds the project's workspace-defaults/ (CLAUDE.md appended, placeholders filled), not inherited files"
+ok "new-workspace.sh adds the project's workspace-defaults/ (CLAUDE.md appended, placeholders filled), without inherited copies or ledgers on main"
 ok "new-workspace.sh works when a local new-workspace/<name> branch is left over"
 ok "new-workspace.sh's PR follows the PR template, labelled by: ai unless --by says otherwise"
 
@@ -705,7 +909,8 @@ if command -v python3 >/dev/null && command -v curl >/dev/null; then
   for _ in $(seq 50); do [ -s "$t/web.out" ] && break; sleep 0.1; done
   url=$(head -1 "$t/web.out") port=${url#http://127.0.0.1:} port=${port%%/*}
   get() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
-  { [ "$(get "$url")" = 200 ] && curl -s "$url" | grep -q "<title>Delphi workspaces</title>" &&
+  # Consume the whole HTML response: grep -q can make curl fail with SIGPIPE under pipefail.
+  { [ "$(get "$url")" = 200 ] && curl -s "$url" | grep "<title>Delphi workspaces</title>" >/dev/null &&
     [ "$(get "http://127.0.0.1:$port/")" = 404 ] && [ "$(get "http://127.0.0.1:$port/wrong/api/state")" = 404 ] &&
     [ "$(get -H "Host: evil.example:$port" "${url}api/state")" = 403 ]; } || fail "web/server.py let a request without its token or a local Host through"
   curl -s "${url}api/state" | python3 -c 'import json, sys; s = json.load(sys.stdin); sys.exit(not (s["here"] == sys.argv[1] and s["workspaces"] == ["main", sys.argv[1] + " software/application-software/argos"] and not s["isDirty"]))' "$AN" ||
@@ -734,7 +939,13 @@ C=software/electrical/workspaces/vcu-dev CN=s.electrical.vcu-dev CO=software/ele
 (cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main && mkdir -p "$C" && cp -R templates/workspace/. "$C/" &&
   sed -i.bak "s|{{name}}|$CO|" "$C/workspace.yml" && rm "$C/workspace.yml.bak" && bash ci/plugins.sh >/dev/null &&
   git add -A && git commit -qm "vcu-dev, still named the old way" && git push -q origin main &&
+  bash ci/render.sh --workspace "$C" . "$t/rename-stage" &&
   i=$t/legacy.index && GIT_INDEX_FILE=$i git read-tree "main:$C" && GIT_INDEX_FILE=$i git read-tree --prefix=.delphi/ main:.delphi &&
+  while IFS= read -r stage_file; do
+    stage_mode=100644; [ ! -x "$stage_file" ] || stage_mode=100755
+    stage_blob=$(git hash-object -w -- "$stage_file") &&
+      GIT_INDEX_FILE=$i git update-index --add --cacheinfo "$stage_mode,$stage_blob,${stage_file#"$t/rename-stage/$C/"}" || exit 1
+  done < <(find "$t/rename-stage/$C" -type f | LC_ALL=C sort) &&
   git push -q origin "$(git commit-tree -p main -m "delphi: create ws/$CO" "$(GIT_INDEX_FILE=$i git write-tree)"):refs/heads/ws/$CO" &&
   git push -q origin "origin/main:refs/heads/ws/$CN" && # a stale ws/<name> behind it
   rm "$i" && sed -i.bak "s|^name:.*|name: $CN|" "$C/workspace.yml" && rm "$C/workspace.yml.bak" && git commit -qam "vcu-dev named with dots" && git push -q origin main)
@@ -771,7 +982,381 @@ commit_on "ws/$CO" CLAUDE.md "old side" && commit_on "ws/$CN" .gitattributes "# 
   ! o show "ws/$CN:CLAUDE.md" | grep -qx "old side"; } || fail "a diverged old name was merged or not reported: $(cat "$t/out")"
 ok "an old name with commits of its own is reported, never merged"
 
-# --- 13. shellcheck, if installed
+# --- 13. portable harnesses: staged native output, round trips, transitions, bootstrap and authoring
+mkdir -p "$t/metadata-variants"
+cat >"$t/metadata-variants/source.md" <<'SKILL'
+---
+name: metadata-variants
+allowed-tools:
+- Read
+- Bash
+# A comment within the omitted value.
+"user-invocable" : false
+'disable-model-invocation': true
+metadata:
+  allowed-tools: preserve nested metadata
+description: |-
+  First line: useful
+  Second line
+---
+Read CLAUDE.md.
+SKILL
+cat >"$t/metadata-variants/expected.md" <<'SKILL'
+---
+name: metadata-variants
+metadata:
+  allowed-tools: preserve nested metadata
+description: |-
+  First line: useful
+  Second line
+---
+Read AGENTS.md.
+SKILL
+for indent in '' '  '; do
+  sed "/^---$/!s/^/$indent/" "$t/metadata-variants/source.md" >"$t/metadata-variants/lf.md"
+  sed "/^---$/!s/^/$indent/" "$t/metadata-variants/expected.md" >"$t/metadata-variants/want.md"
+  for eol in lf crlf; do
+    if [ "$eol" = crlf ]; then awk '{ printf "%s\r\n", $0 }' "$t/metadata-variants/lf.md" >"$t/metadata-variants/SKILL.md"
+    else cp "$t/metadata-variants/lf.md" "$t/metadata-variants/SKILL.md"; fi
+    bash -c 'source "$1"; harness_file codex "$2"' _ "$src/ci/harnesses.sh" "$t/metadata-variants/SKILL.md" >"$t/metadata-variants/actual.md"
+    cmp -s "$t/metadata-variants/want.md" "$t/metadata-variants/actual.md" || fail "Codex metadata indentation/quotes/$eol"
+    bash -c 'source "$1"; harness_file claude-code "$2"' _ "$src/ci/harnesses.sh" "$t/metadata-variants/SKILL.md" |
+      cmp -s - "$t/metadata-variants/SKILL.md" || fail "Claude metadata bytes changed"
+  done
+done
+ok "Codex metadata handles CRLF, quoted keys, indentless lists and root indentation; Claude stays byte-identical"
+cat >"$t/native-metadata.md" <<'SKILL'
+---
+name: native-metadata
+description: "Preserve: existing tool permissions and invocation settings."
+allowed-tools:
+  - Bash(git:*)
+  - Bash(bash ${CLAUDE_SKILL_DIR}/scripts/helper.sh *)
+user-invocable: false
+disable-model-invocation: true
+metadata:
+  custom-setting: unchanged
+---
+Read CLAUDE.md before making changes.
+SKILL
+C=software/application-software/argos/workspaces/sandbox-codex CN=s.app.argos.sandbox-codex
+# shellcheck disable=SC2016 # child shell expands its positional arguments
+on_main "add Codex and inherited Claude skills" bash -c '
+  mkdir -p "$1" software/workspace-inherit/.claude/skills/portable/scripts software/workspace-inherit/.claude/skills/native-metadata software/workspace-inherit/.claude/skills/switch-workspace
+  cp "$2/templates/harnesses/codex/AGENTS.md" "$1/AGENTS.md"
+  cp "$2/templates/workspace/.gitattributes" "$1/.gitattributes"
+  mkdir -p "$1/.github/workflows"
+  cp .github/workflows/delphi.yml "$1/.github/workflows/delphi.yml"
+  printf "name: %s\nharness: codex\n" "$3" >"$1/workspace.yml"
+  printf "portable v1\n" >software/workspace-inherit/.claude/skills/portable/SKILL.md
+  printf "helper v1\n" >software/workspace-inherit/.claude/skills/portable/scripts/helper.sh
+  cp "$4" software/workspace-inherit/.claude/skills/native-metadata/SKILL.md
+  cp "$2/software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md" software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md
+' _ "$C" "$src" "$CN" "$t/native-metadata.md"
+sync "$CN" >"$t/out" 2>&1 || fail "Codex creation: $(cat "$t/out")"
+for skill in top portable; do
+  o cat-file -e "ws/$CN:.agents/skills/$skill/SKILL.md" || fail "Codex lacks native $skill"
+done
+! o cat-file -e "ws/$CN:.claude" 2>/dev/null || fail "Codex inherited Claude files"
+[ "$(o rev-parse "ws/$CN^")" = "$(o rev-parse main)" ] || fail "Codex creation parent"
+ok "refresh translates existing inherited Claude skills to Codex native paths only on the workspace branch"
+! o cat-file -e "main:$C/.agents/skills" 2>/dev/null || fail "main contains inherited Codex skills"
+! o cat-file -e "main:$C/workspace.generated" 2>/dev/null || fail "main contains Codex ownership metadata"
+[ "$(o rev-parse "main:$C/AGENTS.md")" = "$(o rev-parse "ws/$CN:AGENTS.md")" ] || fail "Codex owned instructions changed"
+ok "main keeps owned native instructions while refresh adds inherited output and ownership only to the branch"
+
+sync refresh "$AN" >/dev/null
+! o cat-file -e "main:$A/.claude/skills/native-metadata/SKILL.md" 2>/dev/null || fail "main contains an inherited Claude metadata copy"
+cmp -s "$t/native-metadata.md" <(o show "ws/$AN:.claude/skills/native-metadata/SKILL.md") || fail "refresh changed Claude metadata"
+cmp -s "$t/native-metadata.md" <(o show "main:software/workspace-inherit/.claude/skills/native-metadata/SKILL.md") || fail "translation changed the inherited Claude source"
+ok "Claude source metadata, allowed-tools and invocation flags reach the branch byte for byte and remain canonical on main"
+cat >"$t/codex-metadata.md" <<'SKILL'
+---
+name: native-metadata
+description: "Preserve: existing tool permissions and invocation settings."
+metadata:
+  custom-setting: unchanged
+---
+Read AGENTS.md before making changes.
+SKILL
+cmp -s "$t/codex-metadata.md" <(o show "ws/$CN:.agents/skills/native-metadata/SKILL.md") || fail "Codex translation changed portable metadata or retained Claude-only fields"
+ok "Codex translation omits Claude-only fields and block values while preserving portable metadata"
+cmp -s "$src/software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md" <(o show "ws/$AN:.claude/skills/switch-workspace/SKILL.md") || fail "Claude switching instructions changed"
+o show "ws/$AN:.claude/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude lost its hot reload workflow"
+o show "ws/$CN:.agents/skills/switch-workspace/SKILL.md" | grep -q 'Start a fresh Codex session' || fail "Codex lacks native restart guidance"
+! o show "ws/$CN:.agents/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude reload behavior leaked into Codex"
+ok "existing Claude plugin and hot reload guidance stays intact while Codex gets its own switch guidance"
+
+# A workspace's target can change before its proposal merges; ownership must use that native recipe on every refresh.
+for branch_target in claude-code codex; do
+  if [ "$branch_target" = claude-code ]; then
+    branch_instruction=CLAUDE.md; branch_previous=AGENTS.md; branch_skills=.claude/skills
+  else
+    branch_instruction=AGENTS.md; branch_previous=CLAUDE.md; branch_skills=.agents/skills
+  fi
+  (cd "$t/dev" && git fetch -q && git checkout -q -B branch-target "origin/ws/$CN" &&
+    git mv "$branch_previous" "$branch_instruction" &&
+    sed -i.bak "s/^harness:.*/harness: $branch_target/" workspace.yml && rm workspace.yml.bak &&
+    printf '\nbranch-only target %s\n' "$branch_target" >>"$branch_instruction" &&
+    git commit -qam "select branch-only $branch_target" && git push -q origin "HEAD:ws/$CN")
+  sync refresh "$CN" >"$t/out" 2>&1 || fail "branch-only $branch_target refresh: $(cat "$t/out")"
+  target_head=$(o rev-parse "ws/$CN")
+  sync refresh "$CN" >"$t/out" 2>&1 || fail "repeated branch-only $branch_target refresh: $(cat "$t/out")"
+  [ "$(o rev-parse "ws/$CN")" = "$target_head" ] || fail "repeated branch-only target refresh changed refs"
+  commit_on "ws/$CN" "$branch_skills/portable/SKILL.md" "reset generated target edit"
+  sync refresh "$CN" >"$t/out" 2>&1 || fail "branch-only target reset: $(cat "$t/out")"
+  [ "$(o show "ws/$CN:$branch_skills/portable/SKILL.md")" = "portable v1" ] || fail "branch-only target lost trusted native ownership"
+  sync propose "$CN" >"$t/out" 2>&1 || fail "branch-only $branch_target proposal: $(cat "$t/out")"
+  ! o cat-file -e "propose/$CN:$C/$branch_skills/portable/SKILL.md" 2>/dev/null || fail "branch-only target proposed inherited output"
+  ! o cat-file -e "propose/$CN:$C/workspace.generated" 2>/dev/null || fail "branch-only target proposed ownership metadata"
+  o show "propose/$CN:$C/workspace.yml" | grep -qx "harness: $branch_target" || fail "branch-only target selection not proposed"
+done
+o show "main:$C/workspace.yml" | grep -qx 'harness: codex' || fail "branch-only target changed main before merge"
+ok "unmerged harness changes survive repeated refresh, reset inherited edits and propose only owned native files in both directions"
+
+commit_on "ws/$CN" .agents/skills/portable/SKILL.md "workspace edit"
+commit_on "ws/$CN" AGENTS.md "workspace-owned instructions"
+sync propose "$CN" >"$t/out" 2>&1 || fail "Codex proposal: $(cat "$t/out")"
+! o cat-file -e "propose/$CN:$C/.agents/skills/portable/SKILL.md" 2>/dev/null || fail "managed skill edit proposed"
+! o cat-file -e "propose/$CN:$C/workspace.generated" 2>/dev/null || fail "Codex ownership metadata proposed"
+o show "propose/$CN:$C/AGENTS.md" | grep -qx "workspace-owned instructions" || fail "AGENTS.md not proposed"
+sync refresh "$CN" >/dev/null
+[ "$(o show "ws/$CN:.agents/skills/portable/SKILL.md")" = "portable v1" ] || fail "Codex inherited edit not reset"
+ok "Codex proposals preserve native instructions and omit inherited skills and ledgers; refresh resets inherited edits"
+on_main "remove shared helper" git rm -q software/workspace-inherit/.claude/skills/portable/scripts/helper.sh
+sync refresh "$CN" >"$t/out" 2>&1 || fail "shared source update: $(cat "$t/out")"
+! o cat-file -e "main:$C/.agents/skills/portable/SKILL.md" 2>/dev/null || fail "source update materialized inherited output on main"
+ok "refresh reads canonical sources and adapters to stage changed native branch output"
+
+! o cat-file -e "ws/$CN:.agents/skills/portable/scripts/helper.sh" 2>/dev/null || fail "stale inherited helper survived"
+o show "ws/$CN:.agents/skills/top/SKILL.md" | grep -qx "top v3" || fail "shared source update lost skill"
+ok "shared source updates keep native paths stable and remove obsolete inherited files"
+# shellcheck disable=SC2016 # child shell expands its positional arguments
+on_main "switch Codex workspace to Claude" bash -c '
+  git mv "$1/AGENTS.md" "$1/CLAUDE.md"
+  sed -i.bak "s/harness: codex/harness: claude-code/" "$1/workspace.yml"
+  rm "$1/workspace.yml.bak"
+  bash ci/plugins.sh >/dev/null
+' _ "$C"
+# The ws-owned AGENTS edit would conflict with main renaming it: resolve via a normal workspace PR first.
+# Undo the test-only instruction change before the harness transition.
+(cd "$t/dev" && git fetch -q && git checkout -q -B transition "origin/ws/$CN" &&
+  git show "origin/main:$C/CLAUDE.md" >AGENTS.md && git commit -qam "prepare native instruction transition" &&
+  git push -q origin "HEAD:ws/$CN")
+sync refresh "$CN" >"$t/out" 2>&1 || fail "Codex to Claude: $(cat "$t/out")"
+{ o cat-file -e "ws/$CN:.claude/skills/portable/SKILL.md" &&
+  ! o cat-file -e "ws/$CN:.agents/skills/portable/SKILL.md" 2>/dev/null; } || fail "old native skill destination survived"
+# shellcheck disable=SC2016 # child shell expands its positional arguments
+on_main "switch workspace back to Codex" bash -c '
+  git mv "$1/CLAUDE.md" "$1/AGENTS.md"
+  git rm -q "$1/.claude/settings.json"
+  printf "name: %s\nharness: codex\n" "$2" >"$1/workspace.yml"
+' _ "$C" "$CN"
+sync "$CN" >"$t/out" 2>&1 || fail "Claude to Codex: $(cat "$t/out")"
+{ o cat-file -e "ws/$CN:.agents/skills/portable/SKILL.md" &&
+  ! o cat-file -e "ws/$CN:.claude/settings.json" 2>/dev/null &&
+  ! o cat-file -e "ws/$CN:.claude/skills/portable/SKILL.md" 2>/dev/null; } || fail "Claude files survived harness transition"
+ok "harness transitions remove old native skill destinations and generated settings in both directions"
+(cd "$t/dev" && git fetch -q && git checkout -q -B stale-settings "origin/ws/$CN" &&
+  mkdir -p .claude && echo '{}' >.claude/settings.json && git add .claude/settings.json &&
+  git commit -qm "stale settings from previous harness" && git push -q origin "HEAD:ws/$CN")
+if sync "$CN" >"$t/out" 2>"$t/err"; then fail "unrecorded foreign native file proposed"; fi
+grep -q 'belongs to a different harness' "$t/err" || fail "foreign native file not reported"
+o cat-file -e "ws/$CN:.claude/settings.json" || fail "unrecorded file silently deleted"
+(cd "$t/dev" && git fetch -q && git checkout -q -B remove-foreign "origin/ws/$CN" &&
+  git rm -q .claude/settings.json && git commit -qm "remove foreign native configuration" && git push -q origin "HEAD:ws/$CN")
+sync "$CN" >/dev/null 2>&1 || fail "sync after explicit foreign-file removal"
+ok "unrecorded foreign files fail validation and require an explicit workspace edit"
+commit_on "ws/$CN" workspace.yml "$(printf 'opt-out:\n  - .agents/skills/portable')"
+commit_on "ws/$CN" .agents/skills/portable/SKILL.md "Codex own"
+commit_on "ws/$CN" .agents/skills/portable/OWN.md "workspace-owned native file"
+sync "$CN" >"$t/out" 2>&1 || fail "Codex opt-out: $(cat "$t/out")"
+o show "propose/$CN:$C/.agents/skills/portable/OWN.md" | grep -qx "workspace-owned native file" || fail "Codex owned skill not proposed"
+o show "ws/$CN:.agents/skills/portable/SKILL.md" | grep -qx "Codex own" || fail "Codex opt-out overwritten"
+ok "Codex native opt-outs preserve editable and proposable workspace-owned skills"
+
+(cd "$t/dev" && git fetch -q && git checkout -q -B tmp-main origin/main &&
+  git merge -q --no-ff --no-edit "origin/propose/$CN" && git push -q origin HEAD:main)
+sync refresh "$CN" >/dev/null
+# A formerly opted-out skill is workspace-owned even after its shared source and opt-out are removed.
+# shellcheck disable=SC2016 # child expands its arguments
+on_main "retire shared skill without deleting owned copy" bash -c '
+  git rm -rq software/workspace-inherit/.claude/skills/portable
+  printf "name: %s\nharness: codex\n" "$2" >"$1/workspace.yml"
+' _ "$C" "$CN"
+sync "$CN" >"$t/out" 2>&1 || fail "retire owned skill source: $(cat "$t/out")"
+o show "ws/$CN:.agents/skills/portable/SKILL.md" | grep -qx "Codex own" || fail "former opt-out owned skill was deleted"
+ok "removing a shared source and old opt-out preserves the former workspace-owned skill"
+
+# Helper commands initialize their layout independently of Codex or the caller's shell exports.
+w=$t/codex && git clone -q -b "ws/$CN" "$t/origin.git" "$w"
+# shellcheck disable=SC2016 # fresh shell must receive the exports
+(cd "$t" && env -u DELPHI_ROOT -u DELPHI_REPOS -u DELPHI_WORKTREES bash "$w/.delphi/exec.sh" bash -c '
+  set -e
+  [ "$1" = "argument with spaces" ]
+  [ "$PWD" != "$DELPHI_ROOT" ]
+  [ -f "$DELPHI_ROOT/AGENTS.md" ]
+  [ "$DELPHI_REPOS" = "$DELPHI_ROOT/repos" ]
+  bash -c '\''[ "$DELPHI_WORKTREES" = "$DELPHI_ROOT/worktrees" ]'\''
+' _ "argument with spaces") || fail "fresh host command wrapper"
+ok "per-command bootstrap propagates layout to fresh shells and children while preserving arguments/cwd"
+# Proxy capability selection uses stubs only, without GitHub/network access.
+mkdir -p "$t/proxy-bin"
+printf '#!/usr/bin/env bash\nexit 1\n' >"$t/proxy-bin/gh"
+printf '#!/usr/bin/env bash\nprintf "proxy-response"\n' >"$t/proxy-bin/curl"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$t/proxy-bin/jq"
+chmod +x "$t/proxy-bin/"*
+provider=$src/software/application-software/workspace-inherit/.claude/skills/address-pr-comments/scripts/github.sh
+# shellcheck disable=SC2016 # isolated shell sources helper and expands its variables
+proxy=$(PATH="$t/proxy-bin:$PATH" DELPHI_GITHUB_REST_PROXY=1 CLAUDE_CODE_REMOTE='' bash -c '
+  source "$1"; gh_init test "$2"; [ "$MODE" = rest ]; get repos/example/example
+' _ "$provider" "$w") || fail "explicit REST proxy capability selection"
+[ "$proxy" = proxy-response ] || fail "REST proxy did not use stubbed provider"
+ok "shared GitHub helpers support an explicit REST-proxy capability without harness-specific environment detection"
+# A Codex target consumes the single Claude-authored defaults bundle.
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  tools/new-workspace.sh --harness codex electrical/firmware fw-codex >/dev/null) || fail "Codex new workspace"
+F=software/electrical/firmware/workspaces/fw-codex
+created=new-workspace/electrical/firmware/fw-codex
+o show "$created:$F/workspace.yml" | grep -qx 'harness: codex' || fail "default harness not overridden"
+o show "$created:$F/workspace.yml" | grep -q 'fw: https://example.com/fw.git' || fail "project repos lost"
+o show "$created:$F/AGENTS.md" | grep -qx '# Firmware for s.electrical.firmware.fw-codex' || fail "Claude-authored instructions not translated"
+o cat-file -e "$created:$F/.agents/skills/fw/SKILL.md" || fail "Claude-authored default skill not translated"
+! o cat-file -e "$created:$F/.agents/skills/top/SKILL.md" 2>/dev/null || fail "main PR contains inherited native skill"
+! o cat-file -e "$created:$F/workspace.generated" 2>/dev/null || fail "main PR contains branch ownership metadata"
+{ ! o cat-file -e "$created:$F/CLAUDE.md" 2>/dev/null && ! o cat-file -e "$created:$F/.claude" 2>/dev/null; } || fail "Claude defaults leaked into Codex workspace"
+(cd "$t/dev" && ! tools/new-workspace.sh --harness unknown electrical/firmware bad-harness >/dev/null 2>&1) || fail "unknown authoring harness accepted"
+ok "Codex creation translates one Claude-authored defaults bundle into native files before its main PR"
+
+# Changing a creation suggestion does not change the source format or any existing workspace.
+# shellcheck disable=SC2016 # child shell edits the sandbox project's defaults
+on_main "project suggests Codex" bash -c '
+  sed -i.bak "s/harness: claude-code/harness: codex/" "$1/workspace.yml"
+  rm "$1/workspace.yml.bak"
+' _ "$FD"
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  tools/new-workspace.sh electrical/firmware fw-project-codex >/dev/null) || fail "project-default Codex workspace"
+F=software/electrical/firmware/workspaces/fw-project-codex
+created=new-workspace/electrical/firmware/fw-project-codex
+o show "$created:$F/workspace.yml" | grep -qx 'harness: codex' || fail "project suggestion ignored"
+o show "$created:$F/AGENTS.md" | grep -qx '# Firmware for s.electrical.firmware.fw-project-codex' || fail "translated defaults lost"
+o show "main:$FD/source.yml" | grep -qx 'format: claude-code' || fail "creation suggestion changed source format"
+o show "main:$A/workspace.yml" | grep -qx 'harness: claude-code' || fail "existing workspace harness changed"
+ok "creation suggestions stay independent of source format and existing workspace harnesses"
+
+# A different source format feeds the same target adapters and unchanged branch model.
+# shellcheck disable=SC2016 # child shell migrates the source bundle
+on_main "author defaults in Codex format" bash -c '
+  printf "format: codex\n" >"$1/source.yml"
+  git mv "$1/CLAUDE.md" "$1/AGENTS.md"
+  mkdir -p "$1/.agents/skills"
+  git mv "$1/.claude/skills/fw" "$1/.agents/skills/fw"
+' _ "$FD"
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  tools/new-workspace.sh --harness claude-code electrical/firmware fw-project-claude >/dev/null) || fail "Claude target from Codex source"
+F=software/electrical/firmware/workspaces/fw-project-claude
+created=new-workspace/electrical/firmware/fw-project-claude
+o show "$created:$F/workspace.yml" | grep -qx 'harness: claude-code' || fail "explicit harness did not override suggestion"
+o show "$created:$F/workspace.yml" | grep -q 'fw: https://example.com/fw.git' || fail "project repos lost"
+o show "$created:$F/CLAUDE.md" | grep -qx '# Firmware for s.electrical.firmware.fw-project-claude' || fail "Codex source instructions not translated"
+o cat-file -e "$created:$F/.claude/skills/fw/SKILL.md" || fail "Codex source skill not translated"
+{ ! o cat-file -e "$created:$F/AGENTS.md" 2>/dev/null && ! o cat-file -e "$created:$F/.agents" 2>/dev/null; } || fail "Codex files leaked into Claude target"
+ok "changing source format preserves target adapters, owned native defaults and explicit workspace harnesses"
+
+# Native settings require an explicit mapping, never silent removal.
+# shellcheck disable=SC2016 # child shell adds a source-native configuration
+on_main "Codex-native configuration default" bash -c 'mkdir -p "$1/.codex"; echo "# native settings" >"$1/.codex/config.toml"' _ "$FD"
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  ! tools/new-workspace.sh --harness claude-code electrical/firmware unsupported >/dev/null 2>"$t/err") || fail "unsupported native settings silently accepted"
+grep -q 'has no mapping to claude-code' "$t/err" || fail "unsupported mapping not reported"
+[ -z "$(git -C "$t/dev" status --porcelain)" ] || fail "failed generation changed caller checkout"
+ok "unsupported native settings fail explicitly and leave the caller checkout untouched"
+
+(cd "$t/dev" && git fetch -q && git checkout -q -B main origin/main &&
+  bash ci/render.sh --check && [ -z "$(git status --porcelain)" ] &&
+  bash ci/render.sh >/dev/null && [ -z "$(git status --porcelain)" ]) || fail "main-side render was not idempotent"
+ok "render checks do not write and repeated rendering leaves a valid main checkout unchanged"
+
+# A pre-render branch has native copies but no ledger. Prove their old source provenance.
+legacy_dev=$t/legacy-dev legacy_origin=$t/legacy-origin.git
+git clone -q "$t/seed" "$legacy_dev"
+(cd "$legacy_dev" && git rm -q ci/render.sh &&
+  mkdir -p software/workspace-inherit/notes && echo old >software/workspace-inherit/notes/adoption.txt &&
+  git add -A && git commit -qm "legacy main without managed ledgers")
+legacy_base=$(git -C "$legacy_dev" rev-parse HEAD)
+git clone -q --bare "$legacy_dev" "$legacy_origin"
+git -C "$legacy_dev" remote set-url origin "$legacy_origin"
+for legacy_name in "$AN" "$BN"; do
+  legacy_folder=$A; [ "$legacy_name" != "$BN" ] || legacy_folder=$B
+  legacy_blob=$(printf 'old\n' | git -C "$legacy_dev" hash-object -w --stdin)
+  [ "$legacy_name" != "$BN" ] || legacy_blob=$(printf 'owned edit\n' | git -C "$legacy_dev" hash-object -w --stdin)
+  GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" read-tree "$legacy_base:$legacy_folder"
+  GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" read-tree --prefix=.delphi/ "$legacy_base:.delphi"
+  GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" update-index --add --cacheinfo "100644,$legacy_blob,notes/adoption.txt"
+  legacy_tree=$(GIT_INDEX_FILE=$t/legacy.index git -C "$legacy_dev" write-tree)
+  legacy_head=$(printf 'legacy workspace\n' | git -C "$legacy_dev" commit-tree -p "$legacy_base" "$legacy_tree")
+  git -C "$legacy_dev" push -q origin "$legacy_head:refs/heads/ws/$legacy_name"
+done
+(cd "$legacy_dev" && cp "$src/ci/render.sh" ci/render.sh && echo new >software/workspace-inherit/notes/adoption.txt &&
+  bash ci/render.sh && git add -A && git commit -qm "prepare native output" && git push -q origin main &&
+  bash ci/sync.sh refresh "$AN") >"$t/out" 2>"$t/err" || fail "legacy adoption: $(cat "$t/err")"
+git -C "$legacy_origin" show "ws/$AN:notes/adoption.txt" | grep -qx new || fail "legacy source was not refreshed"
+git -C "$legacy_origin" cat-file -e "ws/$AN:workspace.generated" || fail "legacy branch lacks ownership metadata"
+ok "pre-ledger branches adopt unchanged old source copies before applying reviewed updates"
+if (cd "$legacy_dev" && bash ci/sync.sh refresh "$BN") >"$t/out" 2>"$t/err"; then fail "ambiguous legacy edit overwritten"; fi
+git -C "$legacy_origin" show "ws/$BN:notes/adoption.txt" | grep -qx 'owned edit' || fail "legacy edit was lost"
+ok "ambiguous pre-ledger edits report a conflict and retain their content"
+
+# Add a target only in its registry/template; adaptations of helpers must also be hashed natively.
+d=$t/adapter-extension
+mkdir "$d"
+cp -R "$src/ci" "$src/software" "$src/templates" "$src/.github" "$src/.delphi" "$src/.claude-plugin" "$d/"
+(cd "$d" && git init -q && git add -A && git commit -qm base)
+cat >>"$d/ci/harnesses.sh" <<'ADAPTER'
+eval "$(declare -f harness | sed '1s/harness/base_harness/')"
+harness() {
+  if [ "$1" = fixture ]; then
+    instruction=TASKS.md; instruction_template=templates/harnesses/fixture/TASKS.md
+    skills=.fixture/skills; plugins=none; foreign="CLAUDE.md .claude AGENTS.md .agents .codex"
+  else base_harness "$1"; fi
+}
+eval "$(declare -f harness_file | sed '1s/harness_file/base_harness_file/')"
+harness_file() {
+  if [ "$1" = fixture ]; then
+    cat "$2"
+    case "$2" in */SKILL.md | */scripts/*.sh) printf '\n# fixture output\n' ;; esac
+  else base_harness_file "$@"; fi
+}
+ADAPTER
+F=software/application-software/argos/workspaces/fixture
+mkdir -p "$d/$F" "$d/templates/harnesses/fixture"
+cp -R "$d/templates/workspace/." "$d/$F/"
+rm "$d/$F/CLAUDE.md"
+printf 'Fixture instructions\n' >"$d/templates/harnesses/fixture/TASKS.md"
+cp "$d/templates/harnesses/fixture/TASKS.md" "$d/$F/TASKS.md"
+printf 'name: s.app.argos.fixture\nharness: fixture\n' >"$d/$F/workspace.yml"
+chmod +x "$d/software/workspace-inherit/.claude/skills/journal/scripts/capture.sh"
+(cd "$d" && bash ci/render.sh . "$t/fixture-stage" && git add -A && bash ci/check.sh . HEAD &&
+  bash ci/render.sh . "$t/fixture-stage-again" && git diff --quiet) >"$t/out" 2>"$t/err" || fail "adapter extension: $(cat "$t/err")"
+grep -qx '# fixture output' "$t/fixture-stage/$F/.fixture/skills/journal/SKILL.md" || fail "new target skill was not adapted"
+grep -qx '# fixture output' "$t/fixture-stage/$F/.fixture/skills/journal/scripts/capture.sh" || fail "new target helper was not adapted"
+[ -x "$t/fixture-stage/$F/.fixture/skills/journal/scripts/capture.sh" ] || fail "new target lost executable mode"
+diff -qr "$t/fixture-stage" "$t/fixture-stage-again" >/dev/null || fail "new target staging was not deterministic"
+[ ! -e "$d/$F/.fixture" ] && [ ! -e "$d/$F/workspace.generated" ] || fail "new target generated files on main"
+while IFS=$'\t' read -r meta path _; do
+  case "$meta" in '' | '#'* ) continue ;; esac
+  [ "$(git -C "$d" hash-object -- "$t/fixture-stage/$F/$path")" = "${meta#* }" ] || fail "new target ledger did not hash native bytes"
+done <"$t/fixture-stage/$F/workspace.generated"
+ok "registry-only targets stage adapted skills and helpers with native hashes and modes without generating copies on main"
+rm "$d/$F/TASKS.md"
+echo 'must remain workspace-owned' >"$d/software/workspace-inherit/TASKS.md"
+if (cd "$d" && bash ci/render.sh) >"$t/out" 2>"$t/err"; then fail "new target inherited its root instructions"; fi
+grep -q "each workspace has its own TASKS.md" "$t/err" || fail "new target root protection not reported"
+[ ! -e "$d/$F/TASKS.md" ] || fail "new target wrote inherited root instructions"
+ok "registry-only targets protect their own instruction path even when its workspace file is missing"
+
+
+# --- 14. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
   shellcheck "$src"/ci/*.sh "$src"/tools/*.sh "$src"/tests/*.sh "$src"/.delphi/*.sh "$src"/.delphi/migrations/*.sh ||
     fail "shellcheck"

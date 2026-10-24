@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
-# tools/new-workspace.sh [--by ai|ai-assisted|human] <org-path under software/> <leaf>: propose a new
-# workspace as a PR to main, labelled `by: <who>` (default ai: who wrote it, as the PR template asks).
-# In a temporary worktree of origin/main, copies templates/workspace/ and then, if present, the
-# project's software/<org-path>/workspace-defaults/ (its CLAUDE.md appended to the template's) to
-# software/<org-path>/workspaces/<leaf>/, sets `name: <name>` in its workspace.yml (its dotted name from
-# .delphi/names.sh, like s.app.argos.argos-dev; the workspace-inherit/ folders above it reach ws/<name>
-# on each sync), lists its default plugin sets and generates its .claude/settings.json (ci/plugins.sh),
-# checks it, pushes branch new-workspace/<org-path>/<leaf>, and opens the PR with gh. Your checkout is
-# untouched. After merge, ci/sync.sh creates ws/<name>.
+# tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness <adapter>] <org-path> <leaf>:
+# prepare a main-side PR with owned native defaults; CI adds inheritance on the workspace branch.
+# Uses a temporary checkout of origin/main; never changes the caller's checkout.
 set -euo pipefail
 die() { echo "new-workspace: $*" >&2 && exit 1; }
 by=ai
-[ "${1:-}" != --by ] || { by=${2:-} && shift 2; }
+adapter=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --by) [ "$#" -ge 2 ] || die "--by needs a value"; by=$2; shift 2 ;;
+    --harness) [ "$#" -ge 2 ] || die "--harness needs a value"; adapter=$2; shift 2 ;;
+    *) break ;;
+  esac
+done
 case "$by" in ai | ai-assisted | human) ;; *) die "--by must be ai, ai-assisted or human" ;; esac
-[ $# -eq 2 ] || die "usage: tools/new-workspace.sh [--by ai|ai-assisted|human] <org-path under software/> <leaf>"
+[ $# -eq 2 ] || die "usage: tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness claude-code|codex] <org-path under software/> <leaf>"
 org=${1%/}
 org=${org#software/}
 leaf=$2
@@ -30,11 +31,26 @@ trap 'git worktree remove --force "$wt"' EXIT
 defaults=$wt/software/$org/workspace-defaults
 [ ! -e "$wt/$folder" ] || die "$folder already exists on main"
 mkdir -p "$wt/$folder"
+# shellcheck source=ci/inherit.sh
+source "$wt/ci/inherit.sh"
+[ -n "$adapter" ] || adapter=$(awk '/^harness:/ { print $2; exit }' "$defaults/workspace.yml" 2>/dev/null || true)
+harness "${adapter:-claude-code}" || die "unsupported harness"
+adapter=${adapter:-claude-code}
 cp -R "$wt/templates/workspace/." "$wt/$folder/"
+rm -f "$wt/$folder/CLAUDE.md" "$wt/$folder/AGENTS.md"
+cp "$wt/$instruction_template" "$wt/$folder/$instruction"
 if [ -d "$defaults" ]; then
-  cp -R "$defaults/." "$wt/$folder/"
-  cp "$wt/templates/workspace/CLAUDE.md" "$wt/$folder/CLAUDE.md"
-  [ ! -f "$defaults/CLAUDE.md" ] || { echo && cat "$defaults/CLAUDE.md"; } >>"$wt/$folder/CLAUDE.md"
+  records=$(cd "$wt" && bundle_files "software/$org/workspace-defaults" "$adapter") || die "cannot read project defaults"
+  while IFS=$'\t' read -r meta path src; do
+    [ -n "$path" ] || continue
+    if [ "$path" = "$instruction" ]; then
+      { echo; cat "$wt/$src"; } >>"$wt/$folder/$instruction"
+    else
+      mkdir -p "$(dirname "$wt/$folder/$path")"
+      harness_file "$adapter" "$wt/$src" >"$wt/$folder/$path"
+      [ "${meta%% *}" != 100755 ] || chmod +x "$wt/$folder/$path"
+    fi
+  done <<<"$records"
 fi
 name=$(cd "$wt" && bash .delphi/names.sh | awk -v f="$folder" '$2 == f { print $1 }')
 taken=$(cd "$wt" && bash .delphi/names.sh | awk -v n="$name" -v f="$folder" '$1 == n && $2 != f { print $2 }')
@@ -42,17 +58,21 @@ taken=$(cd "$wt" && bash .delphi/names.sh | awk -v n="$name" -v f="$folder" '$1 
 for b in "ws/$name" "ws/software/$org/$leaf"; do # ws/software/…: a workspace's branch when they were named by path, which sync would carry over
   ! git rev-parse --quiet --verify "refs/remotes/origin/$b" >/dev/null || die "branch $b already exists (from a removed workspace?); pick another leaf"
 done
-sed -i.bak -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/$folder/CLAUDE.md" && rm "$wt/$folder/CLAUDE.md.bak"
+sed -i.bak -e "s|{{name}}|$name|g" -e "s|{{folder}}|$folder|g" "$wt/$folder/$instruction" && rm "$wt/$folder/$instruction.bak"
 y=$wt/$folder/workspace.yml
-{ echo "name: $name"; grep -v '^name:' "$y"; } >"$y.new" && mv "$y.new" "$y"
-bash "$wt/ci/plugins.sh" "$wt" >/dev/null # its plugins: defaults and .claude/settings.json
+if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
+  s && /^[[:space:]]+-/ { found = 1 } END { exit !found }' "$y"; then
+  die "$adapter does not support Delphi plugin sets in project defaults"
+fi
+{ echo "name: $name"; echo "harness: $adapter"; awk -v plugins="$plugins" '/^name:|^harness:/ { next } plugins == "none" && /^plugins:/ { skip = 1; next } /^[^[:space:]#]/ { skip = 0 } !skip { print }' "$y"; } >"$y.new" && mv "$y.new" "$y"
+bash "$wt/ci/render.sh" "$wt"
 "$wt/ci/check.sh" "$wt"
 git -C "$wt" add -A "$folder"
 git -C "$wt" commit --quiet -m "New workspace $name"
 git -C "$wt" push --quiet origin "HEAD:refs/heads/$branch"
 gh pr create --base main --head "$branch" --title "Add workspace $name" --label "by: $by" --body "## Changes
 
-Adds \`$folder/\` from templates/workspace (plus software/$org/workspace-defaults if present). After merge, CI creates branch ws/$name.
+Adds \`$folder/\` from templates/workspace (plus translated project defaults). After merge, CI creates branch ws/$name with its inherited context.
 
 ## Testing
 
@@ -60,7 +80,7 @@ Adds \`$folder/\` from templates/workspace (plus software/$org/workspace-default
 
 ## Notes
 
-Before merging, fill in its workspace.yml repos (and list main under workspaces:, recommended, so it can read this project's shared context) and its CLAUDE.md.
+Before merging, fill in its workspace.yml repos (and list main under workspaces:, recommended, so it can read this project's shared context) and its $instruction.
 
 ## Checklist
 

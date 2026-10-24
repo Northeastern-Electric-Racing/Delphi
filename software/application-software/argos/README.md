@@ -11,10 +11,11 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 |---|---|
 | `workspaces/<leaf>/` | One workspace per purpose; branch `ws/s.app.argos.<leaf>` is its root |
 | `workspaces/argos-dev/` | Day-to-day Argos development: tickets, specs, PRs |
+| `workspaces/default-codex/` | Argos development with the Codex harness |
 | `workspace-defaults/` | What a new Argos workspace starts with (see `AUTHORING.md`) |
-| `workspace-inherit/` | Skills every Argos workspace gets on each sync: ticket and PR conventions, `implement`, `run-local`, `verify-graph`, `verify-telemetry` |
+| `workspace-inherit/` | Shared workflows and docs staged by CI and added only to workspace branches |
 | `plugins/claude/<set>/` | Claude Code plugin sets a workspace lists under `plugins:` (none yet) |
 | `AUTHORING.md` | How to create and change Argos workspaces |
 
-Shared facts that every Argos workspace needs belong here, in `workspace-defaults/`, or in `workspace-inherit/`. Facts that one
-workspace needs belong in that workspace.
+Shared Claude workflows stay in `workspace-inherit/.claude/skills/`. Shared facts belong here or in `workspace-inherit/`;
+`workspace-defaults/` seeds new workspaces. Facts that one workspace needs belong in that workspace.
