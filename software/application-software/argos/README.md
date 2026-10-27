@@ -19,3 +19,5 @@ backend (`scylla-server/`), with schema tooling in `charybdis/` and MQTT broker 
 
 Shared Claude workflows stay in `workspace-inherit/.claude/skills/`. Shared facts belong here or in `workspace-inherit/`;
 `workspace-defaults/` seeds new workspaces. Facts that one workspace needs belong in that workspace.
+The Codex workspace reads the existing Argos development rules and glossary through its read-only
+`workspaces/main/` link, so those facts have one maintained copy.

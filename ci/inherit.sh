@@ -8,10 +8,10 @@ inherit_levels() {
 }
 inherited_files() { # <workspace folder> <harness>: mode blob<TAB>destination<TAB>source
   local level
-  harness "$2" || return 1
+  harness_exists "$2" || return 1
   for level in $(inherit_levels "$1"); do
     if [ -d "$level/workspace-inherit" ]; then
-      bundle_files "$level/workspace-inherit" "$2" || return 1
+      bundle_files "$level/workspace-inherit" "$2" "${3:-}" || return 1
     fi
   done
 }

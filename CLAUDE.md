@@ -19,7 +19,8 @@ source of truth; `docs/goals.md` lists what any change must keep.
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its
   `plugins/scope`, else its `short-name`, else its name), each Claude Code workspace's `workspace.yml` `plugins:` defaults (the
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
-  it by hand). `ci/render.sh` calls it for main-side plugin output.
+  it by hand). `ci/render.sh` calls it for main-side plugin output; sync keeps branch-selected
+  plugin sets active while their proposal to main is pending.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
@@ -31,8 +32,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
   cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
-  `.github/workflows/delphi.yml` every workspace carries unchanged. The general skills are in `software/workspace-inherit/.claude/skills/`; Codex instructions use the native template under
-  `templates/harnesses/`.
+  `.github/workflows/delphi.yml` every workspace carries unchanged. The general skills are in
+  `software/workspace-inherit/.claude/skills/`; Codex adds its bootstrap from `templates/harnesses/`
+  to the common instruction base once at creation.
 - `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws-delphi` pane switches
   workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
   `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
@@ -48,8 +50,9 @@ source of truth; `docs/goals.md` lists what any change must keep.
 - `ci/render.sh [--check] [--workspace <folder>] [<main-checkout> [<staging-output>]]`: update plugin
   output, or prepare inherited native files and ledgers in optional temporary staging. Main-side
   checks reject managed copies, ledgers and ownership collisions; inherited output is never committed there.
-  `ci/harnesses.sh` declares targets; `ci/sources.sh` reads independent source formats;
-  `ci/inherit.sh` resolves sources. `ci/managed.sh` shares ownership logic with sync, whose refresh
+  `ci/harnesses.sh` reads `ci/harnesses/<name>.sh` through pure `harness_field` queries;
+  `ci/sources.sh` reads independently selected formats; `ci/inherit.sh` resolves sources.
+  `ci/managed.sh` shares ownership logic with sync, whose refresh
   copies staged output. Every workspace must explicitly declare its harness. Codex uses
   `.delphi/exec.sh` to initialize helper commands in independent shells.
 
@@ -62,7 +65,11 @@ source of truth; `docs/goals.md` lists what any change must keep.
   under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
 - Keep Claude skill sources under workspace-inherit/.claude/skills with their metadata intact.
-  Harness adaptations belong in ci/harnesses.sh and affect only that target's generated output.
+  Native metadata conversion and helper bootstrap belong in the registered harness adapter and
+  affect only generated output. Put target-specific skill prose in its `BODY.<harness>.md` sidecar;
+  never match source sentences or replace instruction filenames throughout a body.
+  Shared-source paths and opt-out keys follow `docs/design.md`'s portable-path rule; existing owned
+  workspace filenames are unaffected.
   Skill scripts stay harness-independent (SKILL.md uses the Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
   way. Skill scripts (inherited, plugin or workspace) take only names (repo, branch) and read the workspace

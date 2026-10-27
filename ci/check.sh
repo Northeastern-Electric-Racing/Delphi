@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ci/check.sh [<dir> [<base>]]: validate main-owned workspaces, staged inheritance and runtime releases.
-# Lists every problem without changing the checkout.
+# ci/check.sh [<dir> [<base>]]: validate docs/design.md's workspace, source and runtime contracts.
+# Main owns native files/settings; inherited copies and ledgers are branch-only. Checks never write.
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=ci/inherit.sh
@@ -94,7 +94,7 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
       if (pk[v]++) print "duplicate park entry: " v
       next }
     r == 5 && /^[[:space:]]/ {
-      if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._][A-Za-z0-9._\/-]*[[:space:]]*(#.*)?$/ || $0 ~ /(^|[[:space:]\/])\.\.(\/|[[:space:]]|$)/) {
+      if ($0 !~ /^[[:space:]]+-[[:space:]]+[A-Za-z0-9._@+][A-Za-z0-9._/@+-]*[[:space:]]*(#.*)?$/ || $0 ~ /(^|[[:space:]\/])\.\.(\/|[[:space:]]|$)/) {
         print "bad opt-out entry (want `  - <path it inherits>`, e.g. .claude/skills/journal): " $0; next }
       v = $0; sub(/^[[:space:]]+-[[:space:]]+/, "", v); sub(/[[:space:]]*#.*$/, "", v)
       if (opt[v]++) print "duplicate opt-out: " v
@@ -123,10 +123,13 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
       next }
     { print "unexpected line: " $0 }
     END { if (want != "" && !h) print "harness is missing"; if (want != "" && !nm) print "name is missing" }' "$1")
-  local adapter
+  local adapter instruction foreign plugins
   adapter=$(awk '/^harness:/ { print $2; exit }' "$1")
   if [ -n "$adapter" ]; then
-    harness "$adapter" 2>/dev/null || { bad "$1: unknown harness '$adapter'"; return; }
+    harness_exists "$adapter" || { bad "$1: unknown harness '$adapter'"; return; }
+    plugins=$(harness_field "$adapter" plugins)
+    instruction=$(harness_field "$adapter" instruction)
+    foreign=$(harness_foreign "$adapter")
     if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 } s && /^[[:space:]]+-/ { found = 1 } END { exit !found }' "$1"; then
       bad "$1: $adapter does not support Delphi plugin sets"
     fi
@@ -143,7 +146,7 @@ manifest() { # <workspace.yml> [<name>]: without <name> (a workspace-defaults/ m
 
 while IFS= read -r d; do
   case "$d" in */workspaces/*) bad "$d: belongs in an org or project folder, not under workspaces/" ;; esac
-  for f in CLAUDE.md AGENTS.md workspace.yml workspace.generated .delphi .claude/settings.json .codex/config.toml $managed; do
+  for f in $(harness_protected) workspace.yml workspace.generated .delphi $managed; do
     [ ! -e "$d/$f" ] || bad "$d/$f: each workspace has its own; it can't be inherited"
   done
 done < <(find software -type d -name workspace-inherit 2>/dev/null | sort)
@@ -155,10 +158,13 @@ while IFS= read -r d; do
 done < <(find software -type d \( -name workspace-defaults -o -name workspace-inherit \) 2>/dev/null | sort)
 while IFS= read -r d; do
   case "$d" in */workspaces/*) continue ;; esac
-  for skill in "$d"/*; do
+  format=$(source_format "$d" 2>/dev/null) || continue
+  skills=$(harness_field "$format" skills)
+  [ -d "$d/$skills" ] || continue
+  for skill in "$d/$skills"/*; do
     [ ! -e "$skill" ] || [ -f "$skill/SKILL.md" ] || bad "$skill: shared skills need <name>/SKILL.md"
   done
-done < <(find software -type d \( -path '*/workspace-inherit/.claude/skills' -o -path '*/workspace-inherit/.agents/skills' \) 2>/dev/null)
+done < <(find software -type d -name workspace-inherit 2>/dev/null)
 while IFS= read -r d; do
   [ ! -d "${d%/workspaces}/defaults" ] || bad "${d%/workspaces}/defaults: renamed workspace-defaults/"
 done < <(find software -type d -name workspaces 2>/dev/null)

@@ -5,7 +5,7 @@ Goals: `docs/goals.md`. No CLI: plain git plus a few shell scripts run by GitHub
 ## 1. Model
 
 `main` holds each workspace's owned files in `software/**/workspaces/<leaf>/`, at their native
-harness paths (declared in `ci/harnesses.sh`). A workspace's `<name>` is the short name
+harness paths (declared in `ci/harnesses/<name>.sh`). A workspace's `<name>` is the short name
 of each folder from `software/` down to its project folder, then `<leaf>`, joined by dots
 (`s.app.argos.argos-dev` for `software/application-software/argos/workspaces/argos-dev`). A folder's
 short name is the one line in its `short-name` file, else its own name; `.delphi/names.sh [<rev>]`
@@ -61,7 +61,8 @@ software/<org>/…/workspaces/<leaf>/   workspace.yml and owned native files; no
 .delphi/                              {setup,new-worktree,switch,park,plugins,version}.sh  manifest.yml  versions
                                       migrations/  .gitattributes  .gitignore: on every ws/* root
 ci/sync.sh  ci/check.sh               CI scripts
-ci/harnesses.sh  ci/sources.sh       target adapter registry and independent source reader
+ci/harnesses/                        one native contract per registered target or source format
+ci/harnesses.sh  ci/sources.sh       registry queries and independent source reader
 ci/inherit.sh  ci/render.sh          source resolution and temporary native staging
 ci/managed.sh                        ownership records; shared with branch sync
 ci/plugins.sh                         writes the marketplace and each workspace's .claude/settings.json
@@ -89,14 +90,18 @@ The folder holding `workspaces/` is a project folder. Its optional `workspace-de
 workspace-owned files once. Any ancestor org or project may provide managed `workspace-inherit/`
 files. Existing Claude skills stay under `workspace-inherit/.claude/skills/` with their metadata
 intact. A source bundle is Claude-authored unless its optional `source.yml` declares another
-`format:`. Source metadata is never copied into a workspace. A defaults manifest's optional
-`harness:` suggests a creation target; every workspace records its own explicit target.
+`format:` from the harness registry. Source metadata is never copied into a workspace.
+A defaults manifest's optional `harness:` suggests a creation target; every workspace records its
+own explicit target.
 
 `ci/render.sh` prepares inheritance from a main checkout into temporary staging. `ci/inherit.sh`
 selects ancestor sources, `ci/sources.sh` maps paths, and `ci/harnesses.sh` adapts target content.
 Each payload is prepared once, then hashed and copied from those same bytes. Claude skill content
-passes through unchanged. Codex adapts skill metadata, instruction references and switch guidance;
-helper scripts pass through unchanged. Unsupported native settings mappings fail.
+passes through unchanged. An optional `BODY.<harness>.md` beside a skill supplies target-specific
+prose; otherwise its prose is unchanged. Codex converts native metadata and wraps literal
+`bash scripts/...` helper calls with the full `.delphi/exec.sh` invocation. Body variants are
+authoring inputs, not installed files, when beside a `SKILL.md`. Sentence wording and unrelated
+instruction references do not drive translation. Helper scripts pass through unchanged.
 
 `ci/render.sh [--check] [--workspace <folder>] [<main-checkout> [<staging-output>]]` updates plugin
 output by default. An optional staging destination receives inherited native files and ownership
@@ -111,6 +116,14 @@ only in staging and workspace branches. Ownership checks protect owned additions
 ambiguous edits or retirements. Inheritance cannot replace workspace identity, root instructions,
 runtime or workflow files.
 When changing a workspace's harness, update its owned native files too; CI regenerates inheritance.
+
+Source-native `opt-out:` paths are applied before mapping, so a Codex workspace can exclude a
+Claude-only input such as `.claude/commands`. Mapped native opt-outs still transfer copies to
+workspace ownership. Unsupported native mappings fail unless explicitly excluded.
+
+Shared-source paths, generated ledger paths and opt-out keys accept only ASCII
+`[A-Za-z0-9._/@+-]`. Spaces and control characters are unsupported; paths must be relative without
+`.`, `..` or `.git` components. This restriction does not apply to workspace-owned filenames.
 
 ```mermaid
 ---
@@ -150,9 +163,9 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
 - Each `harness: claude-code` workspace's `.claude/settings.json`: the shared settings in
   `ci/plugins.sh`, plus the `delphi` marketplace (with `autoUpdate`) and the sets under `plugins:`
   in `enabledPlugins`. Never edit it by hand: personal settings go in `.claude/settings.local.json`
-  (git-ignored by Claude Code), shared ones in `workspace.yml` or the generator. The main-side renderer regenerates it before merge; refresh copies it unchanged.
-  Configuration changes made on a workspace branch are rendered in its proposal to main and reach
-  the workspace after that proposal merges.
+  (git-ignored by Claude Code), shared ones in `workspace.yml` or the generator. Main's settings
+  are generated before merge. Refresh generates branch settings from its plugin selections and
+  main's plugin catalog, so enabled sets remain active while their proposal to main is pending.
 - Enabled isn't installed: Claude Code only offers to install a project's enabled plugins, so
   someone may never have installed a set, and then its skills are silently missing; and a set that
   leaves the marketplace stays installed, failing to load. So `setup.sh` (on every setup, switch and
@@ -184,7 +197,8 @@ For every workspace on `origin/main` (or just `<name>`):
    and syncs main's root `.delphi/`. It respects branch opt-outs and checks ownership before
    replacing or retiring files. A new branch has the workspace folder, staged inheritance and
    main's runtime at its root, parented by main. Branch updates copy prepared bytes; translation
-   never runs in the workspace checkout.
+   never runs in the workspace checkout. Branch plugin selections stay active before their
+   proposal merges.
 3. **Propose** strips managed inheritance, `workspace.generated` and the workspace's `.delphi/`
    before preparing a main-side PR. Owned files and opted-out skills remain. It regenerates
    plugin settings, runs `ci/check.sh`, and opens or updates `propose/<name>` only when the tree
@@ -193,6 +207,9 @@ For every workspace on `origin/main` (or just `<name>`):
 History stays joined through subtree merges; workspace branches are never force-pushed. Legacy
 path-named branches still carry over into dotted names while ahead, and receive the result once;
 otherwise they are kept with a notice. Removed workspace branches are kept with a notice too.
+An unchanged result leaves the workspace ref untouched. Renaming an org or project folder while
+keeping its dotted workspace name preserves ownership history. Sync aligns the common ancestor's
+folder prefix before merging a move, so later owned edits still use their original merge base.
 
 A conflict or failed render/check is reported and that workspace is skipped; other workspaces keep
 syncing and the command exits 1. All work happens in temporary worktrees.
@@ -264,8 +281,10 @@ skill scripts'. In a terminal, `. .delphi/paths.sh` from the root. `new-worktree
 its own folder; every skill script, plugin or workspace, sources `$DELPHI_ROOT/.delphi/paths.sh` and
 takes only names (repo, branch), never a searched-for path, so the model types only the names.
 Codex uses `AGENTS.md` and `.agents/skills/` from its checked-out branch. Run helper commands through
-`bash <root>/.delphi/exec.sh <command> ...`; it initializes the layout without changing the caller's
-directory and exports it to children. Pass the root and this rule to sub-agents. The host supplies
+`bash "<root>/.delphi/exec.sh" <command> ...`; it initializes the layout without changing the caller's
+directory and exports it to children. Generated Codex skills use the full wrapper command for
+helper calls. Fill its explicit root and installed-skill placeholders from the known checkout,
+then use the same invocation in fresh shells and sub-agents. The host supplies
 dependencies, credentials and integrations. `DELPHI_GITHUB_REST_PROXY` enables the shared helper's
 REST-proxy fallback; existing Claude remote sessions retain their fallback.
 
@@ -332,11 +351,19 @@ creation PR.
 
 ### Adding a harness or source format
 
-Register the target's native paths, template, plugin capability and foreign-file exclusions in
-`ci/harnesses.sh`, then add its instruction template. Put content adaptation in `harness_file()`.
-Select it in a workspace manifest, validate staging, and run the sandbox suite. Ordinary targets need no
-renderer, validator or sync changes. Add explicit settings mappings or new capability validation
-only when the target introduces them.
+Add `ci/harnesses/<name>.sh` and the template its `instruction_template` field names.
+Creation combines optional `instruction_base` with the harness's `instruction_template`, keeping
+common layout authored once and the result an owned snapshot.
+`ci/harnesses.sh` exposes pure `harness_field <name> <field>` queries; native, protected and foreign
+paths are derived from the registered entries. The same registry recognizes source formats.
+Put target-specific skill prose in `BODY.<harness>.md`; the shared adapter handles native metadata
+and helper bootstrap. Select the target in a workspace
+manifest, validate staging, and run the sandbox suite. Ordinary targets need no renderer, validator
+or sync changes. Add a capability implementation only when the target introduces one.
+
+An optional `settings_generator` implements `settings <folder> <manifest>`; a file-only target
+needs no generator. The entry also selects its helper bootstrap. Template locations are entry data,
+so the existing Claude template stays where seed-once creation already reads it.
 
 A new source format supplies the same file records (mode/hash, destination, origin) through
 `ci/sources.sh`. It does not select a workspace's target. Creation suggestions and source formats

@@ -17,13 +17,15 @@ under `opt-out:`. Claude personal settings belong in `.claude/settings.local.jso
 ## Create a new Argos workspace
 
 From a Delphi checkout: `tools/new-workspace.sh [--harness codex] application-software/argos <name>`. It copies
-the selected harness template and translated `workspace-defaults/`, then opens a PR to `main`.
+the resolved harness instructions and translated `workspace-defaults/`, then opens a PR to `main`.
 
 ## Change the defaults or this folder
 
 Edit on a branch of `main` and open a PR to `main` (from a workspace: `bash .delphi/switch.sh main`;
 don't edit `workspaces/main/` from a workspace). `workspace-defaults/`
 only affects workspaces created afterwards; to change existing ones, PR each workspace too.
+Seeded instruction files are owned snapshots. For context that should stay current across
+workspaces, use inheritance or a read-only reference through `workspaces/main/`.
 `workspace-inherit/` reaches every Argos workspace through temporary CI preparation and refresh.
 Commit its sources, never generated skill copies or `workspace.generated`, to main. Run
 `bash ci/render.sh` for plugin output and `bash ci/check.sh` before opening the PR.
@@ -36,11 +38,15 @@ Commit its sources, never generated skill copies or `workspace.generated`, to ma
   Shared Claude skills stay in `workspace-inherit/.claude/skills/<name>/` at the project or org level.
   CI preserves Claude metadata and translates Codex copies into its native directory only on
   workspace branches; change sources through PRs to `main`. Ordinary inherited docs go in `workspace-inherit/`.
+  Put target-specific skill prose in an optional `BODY.<harness>.md` beside its `SKILL.md`; keep the
+  canonical Claude skill intact. Generated Codex skills carry their complete helper bootstrap command.
   Optional `source.yml` selects a different authoring format. Context only some workspaces need goes in
   the workspace, or in a supported plugin set selected under `plugins:`. Codex does not load the
   Claude plugin sets. Workspace-owned native skills remain editable and proposable; use a native
   destination under `opt-out:` when taking ownership of an inherited skill. Proposals return that
   owned copy to main and strip other managed inheritance.
+  A source-native opt-out can exclude a harness-only file before translation. Shared-source and
+  opt-out paths follow the portable ASCII rule in Delphi's `docs/design.md`; spaces are unsupported.
   ADRs about a code repo live in that repo, so `docs/` holds only ADRs about the workspace itself.
   Avoid file paths and code in specs and tickets.
 - Make new branches as worktrees (`new-worktree` skill) unless told otherwise.
@@ -50,3 +56,5 @@ Commit its sources, never generated skill copies or `workspace.generated`, to ma
 Open `ws/s.app.argos.default-codex` in Codex and follow `AGENTS.md`. Use `.delphi/exec.sh` for skill
 helpers in fresh shells and sub-agents. The host supplies tooling and credentials. Restart the
 Codex session after switching workspaces.
+Its project rules and glossary point to the existing Argos development context in the read-only
+main link; edit those canonical files through PRs to main, not through the link.

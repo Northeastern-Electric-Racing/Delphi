@@ -19,8 +19,13 @@ recorded() { # <path> <records>: exact managed ownership, including files retire
   printf '%s\n' "$2" | awk -F'\t' -v p="$1" '$2 == p { found = 1 } END { exit !found }'
 }
 
+settings_source() { # CI generator origins are separate from inherited software/ source paths
+  case "$1" in ci/*) return 0 ;; esac
+  return 1
+}
+
 safe_path() {
-  case "$1" in '' | /* | *[!A-Za-z0-9._/-]* | */ | *//* ) return 1 ;; esac
+  case "$1" in '' | /* | *[!A-Za-z0-9._/@+-]* | */ | *//* ) return 1 ;; esac
   case "/$1/" in */../* | */./* | */.git/*) return 1 ;; esac
 }
 

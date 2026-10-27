@@ -37,25 +37,31 @@ if [ -z "$only" ]; then
 fi
 
 render_workspace() { # <workspace folder>: main keeps owned files; inherited output and ledger go to staging
-  local folder=$1 adapter out records meta path src seen="" used="" o parent target=$output/$1
+  local folder=$1 adapter out records meta path src seen="" used="" o parent protected_path settings_file plugins target=$output/$1
   [ ! -e "$folder/$generated" ] || { bad "$folder/$generated: ownership records belong only on workspace branches"; return; }
   adapter=$(awk '/^harness:/ { print $2; exit }' "$folder/workspace.yml")
-  harness "$adapter" || { bad "$folder/workspace.yml: unknown harness '$adapter'"; return; }
+  harness_exists "$adapter" || { bad "$folder/workspace.yml: unknown harness '$adapter'"; return; }
+  plugins=$(harness_field "$adapter" plugins)
   if [ "$plugins" = none ] && awk '/^plugins:/ { s = 1; next } /^[^[:space:]#]/ { s = 0 }
     s && /^[[:space:]]+-/ { found = 1 } END { exit !found }' "$folder/workspace.yml"; then
     bad "$folder/workspace.yml: $adapter does not support Delphi plugin sets"; return
   fi
   out=$(optouts <"$folder/workspace.yml")
-  records=$(inherited_files "$folder" "$adapter") || { bad "$folder: cannot resolve inherited sources"; return; }
+  records=$(inherited_files "$folder" "$adapter" "$out") || { bad "$folder: cannot resolve inherited sources"; return; }
   rm -rf "$target"
   mkdir -p "$target"
   : >"$tmp/records"
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
     if ! safe_path "$path" || ! safe_path "$src"; then bad "$src: unsafe inherited destination '$path'"; continue; fi
-    case "$path" in "$instruction" | CLAUDE.md | AGENTS.md | workspace.yml | workspace.generated | .delphi | .delphi/* | .claude/settings.json | .codex/config.toml | .github/workflows/delphi.yml)
+    case "$path" in workspace.yml | workspace.generated | .delphi | .delphi/* | .github/workflows/delphi.yml)
       bad "$src: each workspace has its own $path; it can't be inherited"; continue ;;
     esac
+    protected_path=0
+    for o in $(harness_protected); do
+      if [ "$path" = "$o" ]; then bad "$src: each workspace has its own $path; it can't be inherited"; protected_path=1; break; fi
+    done
+    [ "$protected_path" = 0 ] || continue
     case " $seen " in *" $path "*) bad "$src: $folder also inherits it from a folder above; keep one" ;; esac
     seen="$seen $path"
     for o in $out; do if opted_out "$path" "$o"; then used="$used $o"; fi; done
@@ -81,10 +87,16 @@ render_workspace() { # <workspace folder>: main keeps owned files; inherited out
     [ -z "$only" ] || continue
     case " $used " in *" $o "*) ;; *) bad "$folder/workspace.yml: opt-out: $o is nothing it inherits" ;; esac
   done
-  if [ "$plugins" = claude ]; then
-    mkdir -p "$target/.claude"
-    bash "$here/plugins.sh" settings "$folder" "$folder/workspace.yml" >"$target/.claude/settings.json" || return 1
-    printf '100644 %s\t.claude/settings.json\tci/plugins.sh\n' "$(git hash-object -- "$target/.claude/settings.json")" >>"$tmp/records"
+  settings_file=$(harness_field "$adapter" settings_file)
+  if [ -n "$settings_file" ]; then
+    mkdir -p "$(dirname "$target/$settings_file")"
+    harness_settings "$adapter" "$folder" "$folder/workspace.yml" >"$target/$settings_file" || return 1
+    printf '100644 %s\t%s\tci/harnesses/%s.sh\n' "$(git hash-object -- "$target/$settings_file")" "$settings_file" "$adapter" >>"$tmp/records"
+    if [ -z "$only" ]; then
+      if [ "$check" = 1 ]; then
+        cmp -s "$target/$settings_file" "$folder/$settings_file" || bad "$folder/$settings_file: generated settings are out of date"
+      else mkdir -p "$(dirname "$folder/$settings_file")"; cp "$target/$settings_file" "$folder/$settings_file"; fi
+    fi
   fi
   { ledger_header; LC_ALL=C sort -t $'\t' -k2,2 "$tmp/records"; } >"$target/$generated"
 }

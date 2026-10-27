@@ -14,7 +14,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 case "$by" in ai | ai-assisted | human) ;; *) die "--by must be ai, ai-assisted or human" ;; esac
-[ $# -eq 2 ] || die "usage: tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness claude-code|codex] <org-path under software/> <leaf>"
+[ $# -eq 2 ] || die "usage: tools/new-workspace.sh [--by ai|ai-assisted|human] [--harness <adapter>] <org-path under software/> <leaf>"
 org=${1%/}
 org=${org#software/}
 leaf=$2
@@ -34,11 +34,16 @@ mkdir -p "$wt/$folder"
 # shellcheck source=ci/inherit.sh
 source "$wt/ci/inherit.sh"
 [ -n "$adapter" ] || adapter=$(awk '/^harness:/ { print $2; exit }' "$defaults/workspace.yml" 2>/dev/null || true)
-harness "${adapter:-claude-code}" || die "unsupported harness"
+harness_exists "${adapter:-claude-code}" || die "unsupported harness"
 adapter=${adapter:-claude-code}
+instruction=$(harness_field "$adapter" instruction)
+instruction_template=$(harness_field "$adapter" instruction_template)
+instruction_base=$(harness_field "$adapter" instruction_base)
+plugins=$(harness_field "$adapter" plugins)
 cp -R "$wt/templates/workspace/." "$wt/$folder/"
-rm -f "$wt/$folder/CLAUDE.md" "$wt/$folder/AGENTS.md"
-cp "$wt/$instruction_template" "$wt/$folder/$instruction"
+for target in $(harnesses); do rm -f "$wt/$folder/$(harness_field "$target" instruction)"; done
+mkdir -p "$(dirname "$wt/$folder/$instruction")"
+{ [ -z "$instruction_base" ] || cat "$wt/$instruction_base"; cat "$wt/$instruction_template"; } >"$wt/$folder/$instruction"
 if [ -d "$defaults" ]; then
   records=$(cd "$wt" && bundle_files "software/$org/workspace-defaults" "$adapter") || die "cannot read project defaults"
   while IFS=$'\t' read -r meta path src; do

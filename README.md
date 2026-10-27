@@ -107,6 +107,8 @@ Open the workspace in Codex and follow `AGENTS.md`. It discovers native skills u
 Use `.delphi/exec.sh` for helper commands so each shell receives the workspace layout. Start a fresh
 session after switching workspaces. The host supplies dependencies, credentials and integrations;
 Codex workspaces do not enable Delphi's Claude plugin sets.
+Generated Codex skills include the complete helper invocation in each script command, so fresh
+shells and sub-agents initialize the same layout.
 
 ## Versions
 
@@ -118,7 +120,7 @@ a version needs cleanup in people's clones, it ships `.delphi/migrations/<versio
 
 ## New workspace
 
-`tools/new-workspace.sh [--harness claude-code|codex] <org-path under software/> <leaf>` copies `templates/workspace/` into
+`tools/new-workspace.sh [--harness <adapter>] <org-path under software/> <leaf>` copies `templates/workspace/` into
 `software/<org-path>/workspaces/<leaf>/`, adds the project's `workspace-defaults/` if it has one, and
 opens a PR to `main`, labelled `by: ai` (put `--by ai-assisted` or `--by human` first to change it).
 Once it merges, CI creates `ws/<name>` (its dotted name).
@@ -128,9 +130,12 @@ can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`
 `workspace-defaults/` (what a new workspace there starts with).
 
 **Shared sources.** Keep Claude skills and their metadata in
-`workspace-inherit/.claude/skills/<name>/`. The optional `source.yml` selects a different authoring
-format; each workspace's `harness:` independently selects its target. `workspace-defaults/` seeds
-workspace-owned files once; `workspace-inherit/` stays managed.
+`workspace-inherit/.claude/skills/<name>/`. The optional `source.yml` selects an authoring format
+from the harness registry; each workspace's `harness:` independently selects its target.
+`workspace-defaults/` seeds owned files once; `workspace-inherit/` stays managed.
+An optional `BODY.<harness>.md` beside a skill supplies target-specific prose without changing its
+canonical `SKILL.md` or rewriting unrelated instruction references.
+Register a target or source format in `ci/harnesses/<name>.sh`; its entry owns the native contract.
 
 **Preparation and sync.** CI translates inheritance from main into temporary staging, then refresh
 copies it onto workspace branches. Main contains no inherited copies or ownership ledgers.
@@ -141,6 +146,9 @@ After source or configuration changes, run `bash ci/render.sh` to update plugin 
 workspace copy, list its native path under `opt-out:`. Proposals retain owned files and opted-out
 skills while stripping managed copies, `workspace.generated` and the branch's `.delphi/`.
 Collisions are reported. See `docs/design.md` for the adapter contract and ownership rules.
+Source-native opt-outs also exclude unsupported inputs before mapping. Shared paths and opt-out
+keys use portable ASCII names without spaces or control characters; this naming rule does not
+restrict workspace-owned files.
 
 ## CI (`.github/workflows/delphi.yml`)
 

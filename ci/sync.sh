@@ -75,35 +75,107 @@ staged() { # <main revision> <folder>: trusted native output, including historic
 }
 
 previous_main() { # <workspace commit>: newest source-shaped main ancestor, never a workspace merge-base
-  local revision
-  for revision in $(git rev-list --first-parent "$main"); do
-    if git merge-base --is-ancestor "$revision" "$1"; then printf '%s\n' "$revision"; return; fi
-  done
+  local commit result last revision=""
+  commit=$(git rev-parse "$1^{commit}") || return 1
+  result=$cache/previous-main/$commit
+  if [ ! -f "$result" ]; then
+    last=$(git rev-list --first-parent "$main" --not "$commit" | tail -n 1) || return 1
+    if [ -z "$last" ]; then revision=$main
+    else revision=$(git rev-parse --verify "$last^1" 2>/dev/null || true); fi
+    if [ -n "$revision" ]; then git merge-base --is-ancestor "$revision" "$commit" || return 1; fi
+    mkdir -p "$(dirname "$result")" || return 1
+    printf '%s\n' "$revision" >"$result" || return 1
+  fi
+  cat "$result"
 }
 
-previous_records() { # <workspace commit> <folder>: reconstruct trusted ownership from previous main sources
-  local base native recipe records settings
+workspace_names() { # <main revision>: names remain stable when folders move under unchanged short names
+  local result=$cache/names/$1
+  if [ ! -f "$result" ]; then
+    mkdir -p "$(dirname "$result")" || return 1
+    bash "$here/../.delphi/names.sh" "$1" >"$result.tmp" || return 1
+    mv "$result.tmp" "$result" || return 1
+  fi
+  cat "$result"
+}
+
+historical_folder() { # <old main revision> <current folder>: resolve the same logical workspace on old main
+  local name
+  name=$(workspace_names "$main" | awk -v folder="$2" '$2 == folder { print $1; exit }') || return 1
+  workspace_names "$1" | awk -v name="$name" '$1 == name { print $2; exit }'
+}
+
+aligned_refs() { # <stripped workspace> <current folder> <ownership commit>: align a moved subtree's merge base
+  local base old common folder fragment i=$wt.index aligned ws incoming t
+  base=$(previous_main "$3") || return 1
+  old=""
+  [ -z "$base" ] || old=$(historical_folder "$base" "$2") || return 1
+  if [ -z "$old" ] || [ "$old" = "$2" ]; then printf '%s %s\n' "$1" "$main"; return; fi
+  common=$(git merge-base --all "$1" "$main") || return 1
+  case "$common" in *$'\n'*) echo "sync: $2: CONFLICT: moved workspace has multiple merge bases; resolve the folder move in a workspace PR" >&2; return 1 ;; esac
+  if git cat-file -e "$common:workspace.yml" 2>/dev/null; then fragment=$(tree "$common")
+  else
+    folder=$(historical_folder "$common" "$2") || return 1
+    [ -n "$folder" ] || return 1
+    fragment=$(git rev-parse --verify "$common:$folder") || return 1
+  fi
+  [ -n "$fragment" ] || return 1
+  rm -f "$i" || return 1
+  GIT_INDEX_FILE=$i git read-tree "$base" || return 1
+  GIT_INDEX_FILE=$i git rm -rqf --cached --ignore-unmatch -- "$old" "$2" >/dev/null || return 1
+  GIT_INDEX_FILE=$i git read-tree --prefix="$2/" "$fragment" || return 1
+  t=$(GIT_INDEX_FILE=$i git write-tree) || return 1
+  rm -f "$i" || return 1
+  # A shared virtual base corrects Git's prefix alignment without changing either owned file tree.
+  aligned=$(git commit-tree -p "$common" -m "delphi: align moved workspace base" "$t") || return 1
+  ws=$(git commit-tree -p "$1" -p "$aligned" -m "delphi: align workspace merge" "$(tree "$1")") || return 1
+  incoming=$(git commit-tree -p "$main" -p "$aligned" -m "delphi: align main merge" "$(tree "$main")") || return 1
+  printf '%s %s\n' "$ws" "$incoming"
+}
+
+previous_records() { # <workspace commit> <folder>: cache reconstructed records, including an empty ownership set
+  local commit result
+  commit=$(git rev-parse "$1^{commit}") || return 1
+  result=$cache/records/$commit/$2
+  if [ ! -f "$result" ]; then
+    mkdir -p "$(dirname "$result")" || return 1
+    reconstruct_records "$commit" "$2" >"$result.tmp" || { rm -f "$result.tmp"; return 1; }
+    mv "$result.tmp" "$result" || return 1
+  fi
+  cat "$result"
+}
+
+reconstruct_records() { # <workspace commit> <folder>: only trusted main sources supply native hashes and modes
+  local base folder native recipe records settings source
   recipe=$(git log --first-parent -1 --format=%H "$1" -- "$generated") || return 1
   recipe=${recipe:-$1}
   base=$(previous_main "$recipe") || return 1
   [ -n "$base" ] || return 0
-  git cat-file -e "$base:$2/workspace.yml" 2>/dev/null || return 0
-  native=$(staged "$base" "$2") || return 1
-  if ! git cat-file -e "$recipe:$generated" 2>/dev/null || git cat-file -e "$base:$2/$generated" 2>/dev/null; then
+  folder=$(historical_folder "$base" "$2") || return 1
+  [ -n "$folder" ] || return 0
+  native=$(staged "$base" "$folder") || return 1
+  if ! git cat-file -e "$recipe:$generated" 2>/dev/null || git cat-file -e "$base:$folder/$generated" 2>/dev/null; then
     generated_records <"$native/$generated"
     return
   fi
-  settings=$(generated_records <"$native/$generated" | awk -F'\t' '$3 == "ci/plugins.sh"') || return 1
-  native=$(staged_recipe "$base" "$2" "$recipe") || return 1
+  settings=$(generated_records <"$native/$generated" | awk -F'\t' '$3 ~ /^ci\//') || return 1
+  source=$(source_checkout "$base") || return 1
+  # Earlier sync copied main's settings even when the stored recipe selected branch-only plugins.
+  # shellcheck disable=SC2016 # match historical shell code, not this process's variables
+  if ! grep -q 'then entry=\$main_native/\$path; fi$' "$source/ci/sync.sh"; then settings=""; fi
+  native=$(staged_recipe "$base" "$folder" "$recipe") || return 1
   records=$(generated_records <"$native/$generated") || return 1
-  printf '%s\n' "$records" | awk -F'\t' -v settings="$settings" '$3 == "ci/plugins.sh" && settings != "" { print settings; next } { print }'
+  printf '%s\n' "$records" | awk -F'\t' -v settings="$settings" '$3 ~ /^ci\// && settings != "" { print settings; next } { print }'
 }
 
 staged_recipe() { # recover the last generated target from its manifest; hashes come only from trusted main sources
-  local source original renderer target=$cache/recipe/$1/$3/native/$2 ready=$cache/status/recipe/$1/$3/$2
+  local source original renderer manifest target ready
+  manifest=$(git rev-parse "$3:workspace.yml") || return 1
+  if [ "$manifest" = "$(git rev-parse "$1:$2/workspace.yml" 2>/dev/null || true)" ]; then staged "$1" "$2"; return; fi
+  target=$cache/recipe/$1/$manifest/native/$2 ready=$cache/status/recipe/$1/$manifest/$2
   if [ ! -f "$ready" ]; then
     original=$(source_checkout "$1") || return 1
-    source=$cache/recipe/$1/$3/source
+    source=$cache/recipe/$1/$manifest/source
     mkdir -p "$source" || return 1
     cp -R "$original/." "$source/" || return 1
     rm -rf "${source:?}/$2" || return 1
@@ -111,7 +183,7 @@ staged_recipe() { # recover the last generated target from its manifest; hashes 
     git show "$3:workspace.yml" >"$source/$2/workspace.yml" || return 1
     renderer=$here/render.sh
     if [ -f "$source/ci/render.sh" ] && grep -q -- '--workspace' "$source/ci/render.sh"; then renderer=$source/ci/render.sh; fi
-    bash "$renderer" --workspace "$2" "$source" "$cache/recipe/$1/$3/native" >&2 || return 1
+    bash "$renderer" --workspace "$2" "$source" "$cache/recipe/$1/$manifest/native" >&2 || return 1
     mkdir -p "$(dirname "$ready")" || return 1
     : >"$ready" || return 1
   fi
@@ -143,19 +215,16 @@ managed_records() { # <workspace commit> <folder>: trusted previous ownership, r
 }
 
 with_generated() { # <workspace commit> <folder> [<ownership commit> [<native stage>]]: check ownership, then materialize
-  local i=$wt.index now old out meta path src entry blob base legacy=0 branch_entry child parent paths native owner=${3:-$1} trusted main_native
+  local i=$wt.index now old out meta path src entry blob base="" legacy=0 branch_entry child parent paths native owner=${3:-$1} trusted folder
   native=${4:-$(staged_recipe "$main" "$2" "$1")} || return 1
   now=$(generated_records <"$native/$generated") || return 1
   old=$(managed_records "$owner" "$2") || return 1
   trusted=$(previous_records "$owner" "$2") || return 1
   out=$(git show "$1:workspace.yml" | optouts) || return 1
-  base=$(previous_main "$owner") || return 1
-  if legacy_workspace "$owner"; then legacy=1; fi
-  main_native=$(staged "$main" "$2") || return 1
-  # Unmerged plugin choices wait for their proposal to merge, as do main's other native settings.
-  entry=$(generated_records <"$main_native/$generated" | awk -F'\t' '$3 == "ci/plugins.sh"') || return 1
-  if [ -n "$entry" ]; then
-    now=$(printf '%s\n' "$now" | awk -F'\t' -v settings="$entry" '$3 == "ci/plugins.sh" { print settings; next } { print }') || return 1
+  if legacy_workspace "$owner"; then
+    legacy=1
+    base=$(previous_main "$owner") || return 1
+    folder=$(historical_folder "$base" "$2") || return 1
   fi
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
@@ -163,13 +232,13 @@ with_generated() { # <workspace commit> <folder> [<ownership commit> [<native st
     while IFS=$'\t' read -r branch_entry child; do
       [ -n "$child" ] || continue
       if recorded "$child" "$old" && ! opted_out "$child" "$out"; then continue; fi
-      [ "$src" != ci/plugins.sh ] || [ "$child" != "$path" ] || continue
+      ! settings_source "$src" || [ "$child" != "$path" ] || continue
       branch_entry="${branch_entry%% *} ${branch_entry##* }"
       # Pre-ledger clones can adopt copies proven by reviewed output or previous main provenance.
       if [ "$legacy" = 1 ] && [ "$child" = "$path" ] && { [ "$branch_entry" = "$meta" ] ||
         [ "$branch_entry" = "$(printf '%s\n' "$trusted" | awk -F'\t' -v p="$path" '$2 == p { print $1; exit }')" ] ||
         [ "$branch_entry" = "$(file_entry "$base" "$src")" ] ||
-        [ "$branch_entry" = "$(file_entry "$base" "$2/$path")" ]; }; then continue; fi
+        [ "$branch_entry" = "$(file_entry "$base" "$folder/$path")" ]; }; then continue; fi
       echo "sync: $2: CONFLICT: workspace-owned $child collides with managed output $path; opt out or resolve it in a workspace PR" >&2
       return 1
     done < <(git ls-tree -r "$1" -- "$path")
@@ -205,7 +274,6 @@ with_generated() { # <workspace commit> <folder> [<ownership commit> [<native st
     [ -n "$path" ] || continue
     opted_out "$path" "$out" && continue
     entry=$native/$path
-    if [ "$src" = ci/plugins.sh ] && [ -f "$main_native/$path" ]; then entry=$main_native/$path; fi
     blob=$(git hash-object -w -- "$entry") || return 1
     [ "$blob" = "${meta#* }" ] || { echo "sync: staged hash mismatch for $path" >&2; return 1; }
     GIT_INDEX_FILE=$i git update-index --add --cacheinfo "${meta%% *},$blob,$path" || return 1
@@ -228,7 +296,7 @@ without_generated() { # <normalized workspace commit>: leave owned payloads and 
   GIT_INDEX_FILE=$i git read-tree "$1" || return 1
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
-    [ "$src" != ci/plugins.sh ] || continue
+    ! settings_source "$src" || continue
     GIT_INDEX_FILE=$i git update-index --force-remove -- "$path" || return 1
   done <<<"$records"
   GIT_INDEX_FILE=$i git update-index --force-remove -- "$generated" || return 1
@@ -238,6 +306,7 @@ without_generated() { # <normalized workspace commit>: leave owned payloads and 
 
 staged_workspace() { # <stripped workspace commit> <folder>: render current sources with the merged owned workspace
   local source original target=$cache/workspace/$1/native/$2 ready=$cache/status/workspace/$1/$2
+  if git diff --quiet "$1" "$main:$2" -- . ':!.delphi'; then staged "$main" "$2"; return; fi
   if [ ! -f "$ready" ]; then
     original=$(source_checkout "$main") || return 1
     source=$cache/workspace/$1/source
@@ -308,7 +377,7 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
     echo "ws/$1: created from $2"
     return
   fi
-  local head t ws native
+  local head t ws native alignment incoming
   t=$(with_generated "$from" "$2") || { failed=1 ok=0; return; }
   ws=$from
   if [ "$t" != "$(tree "$from")" ]; then
@@ -316,8 +385,10 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   fi
   t=$(without_generated "$ws") || { failed=1 ok=0; return; }
   [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: prepare owned files for refresh" "$t")
+  alignment=$(aligned_refs "$ws" "$2" "$from") || { failed=1 ok=0; return; }
+  ws=${alignment%% *} incoming=${alignment#* }
   git -C "$wt" checkout --quiet --detach "$ws"
-  if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$main" >/dev/null; then
+  if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$incoming" >/dev/null; then
     if ! resolve_generated_conflicts "$ws" "$2" "" "$from"; then
       conflict "ws/$1: CONFLICT refreshing from main; merge main into ws/$1 in a PR (see README)."
       return
@@ -334,7 +405,8 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   if [ "$t" != "$(tree "$head")" ]; then
     git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$head" -m "delphi: sync .delphi/ from main" "$t")"
   fi
-  if [ "$(tree HEAD)" = "$(tree "$from")" ] && git merge-base --is-ancestor "$main" "$from"; then
+  # The tree includes the ownership ledger, so changed provenance and opt-out transfers still advance the branch.
+  if [ "$(tree HEAD)" = "$(tree "$from")" ]; then
     git -C "$wt" checkout --quiet --detach "$from"
   fi
   if [ "$from" != "refs/remotes/origin/ws/$1" ]; then
@@ -350,12 +422,14 @@ propose() { # <name> <folder>: PR owned workspace files into main, leaving inher
   local ws owner title="ws/$1 → main" body pr
   ws=$(git -C "$wt" rev-parse HEAD)
   owner=$ws
-  local t
+  local t alignment incoming
   t=$(with_generated "$ws" "$2") || { failed=1 ok=0; return; }
   [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: prepare managed files for proposal" "$t")
   t=$(without_generated "$ws") || { failed=1 ok=0; return; }
   [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: propose owned files only" "$t")
-  git -C "$wt" checkout --quiet --detach "$main"
+  alignment=$(aligned_refs "$ws" "$2" "$owner") || { failed=1 ok=0; return; }
+  ws=${alignment%% *} incoming=${alignment#* }
+  git -C "$wt" checkout --quiet --detach "$incoming"
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: propose ws/$1 to main" "$ws" >/dev/null; then
     if ! resolve_generated_conflicts "$ws" "$2" "$2/" "$owner"; then
       conflict "ws/$1: CONFLICT proposing to main; merge main into ws/$1 in a PR (see README)."
@@ -409,7 +483,7 @@ while read -r name folder; do
     git -C "$wt" checkout --quiet --detach "refs/remotes/origin/ws/$name" # propose ws/<name> as is
   else ok=0; fi
   if [ "$ok" = 1 ] && [ "$dir" != refresh ]; then propose "$name" "$folder"; fi
-done < <(bash "$here/../.delphi/names.sh" "$main")
+done < <(workspace_names "$main")
 
 [ -z "$only" ] || case "$names" in *" $only "*) ;; *) echo "no workspace '$only' on main" >&2 && exit 1 ;; esac
 for b in $(git for-each-ref --format='%(refname:lstrip=3)' refs/remotes/origin/ws/); do
