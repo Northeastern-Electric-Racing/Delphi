@@ -133,8 +133,8 @@ can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`
 `workspace-inherit/.claude/skills/<name>/`. The optional `source.yml` selects an authoring format
 from the harness registry; each workspace's `harness:` independently selects its target.
 `workspace-defaults/` seeds owned files once; `workspace-inherit/` stays managed.
-An optional `BODY.<harness>.md` beside a skill supplies target-specific prose without changing its
-canonical `SKILL.md` or rewriting unrelated instruction references.
+Each harness descriptor owns its translation function. Skills are authored once in Claude format;
+CI rejects Claude identifiers that a non-Claude translator leaves unmapped.
 Register a target or source format in `ci/harnesses/<name>.sh`; its entry owns the native contract.
 
 **Preparation and sync.** CI translates inheritance from main into temporary staging, then refresh

@@ -38,8 +38,8 @@ Commit its sources, never generated skill copies or `workspace.generated`, to ma
   Shared Claude skills stay in `workspace-inherit/.claude/skills/<name>/` at the project or org level.
   CI preserves Claude metadata and translates Codex copies into its native directory only on
   workspace branches; change sources through PRs to `main`. Ordinary inherited docs go in `workspace-inherit/`.
-  Put target-specific skill prose in an optional `BODY.<harness>.md` beside its `SKILL.md`; keep the
-  canonical Claude skill intact. Generated Codex skills carry their complete helper bootstrap command.
+  Write skills once in Claude format; harness descriptors translate identifiers and native metadata.
+  Fix missing mappings in the translator. Generated Codex skills carry their helper bootstrap command.
   Optional `source.yml` selects a different authoring format. Context only some workspaces need goes in
   the workspace, or in a supported plugin set selected under `plugins:`. Codex does not load the
   Claude plugin sets. Workspace-owned native skills remain editable and proposable; use a native

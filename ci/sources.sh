@@ -53,7 +53,6 @@ bundle_files() { # <bundle> <target> [<source exclusions>]: mode blob<TAB>destin
     [ -n "$record" ] || continue
     meta=${record%%$'\t'*}; path=${record#*$'\t'}
     [ "$path" != source.yml ] || continue
-    case "$path" in */BODY.*.md) [ ! -f "$1/${path%/*}/SKILL.md" ] || continue ;; esac
     meta="${meta%% *} ${meta##* }"
     if opted_out "$path" "${3:-}"; then
       # A source-path exclusion can skip unavailable mappings. Mapped files still use native opt-outs.

@@ -146,30 +146,24 @@ previous_records() { # <workspace commit> <folder>: cache reconstructed records,
 }
 
 reconstruct_records() { # <workspace commit> <folder>: only trusted main sources supply native hashes and modes
-  local base folder native recipe records settings source
+  local base folder native recipe
   recipe=$(git log --first-parent -1 --format=%H "$1" -- "$generated") || return 1
   recipe=${recipe:-$1}
   base=$(previous_main "$recipe") || return 1
   [ -n "$base" ] || return 0
   folder=$(historical_folder "$base" "$2") || return 1
   [ -n "$folder" ] || return 0
-  native=$(staged "$base" "$folder") || return 1
   if ! git cat-file -e "$recipe:$generated" 2>/dev/null || git cat-file -e "$base:$folder/$generated" 2>/dev/null; then
+    native=$(staged "$base" "$folder") || return 1
     generated_records <"$native/$generated"
     return
   fi
-  settings=$(generated_records <"$native/$generated" | awk -F'\t' '$3 ~ /^ci\//') || return 1
-  source=$(source_checkout "$base") || return 1
-  # Earlier sync copied main's settings even when the stored recipe selected branch-only plugins.
-  # shellcheck disable=SC2016 # match historical shell code, not this process's variables
-  if ! grep -q 'then entry=\$main_native/\$path; fi$' "$source/ci/sync.sh"; then settings=""; fi
   native=$(staged_recipe "$base" "$folder" "$recipe") || return 1
-  records=$(generated_records <"$native/$generated") || return 1
-  printf '%s\n' "$records" | awk -F'\t' -v settings="$settings" '$3 ~ /^ci\// && settings != "" { print settings; next } { print }'
+  generated_records <"$native/$generated"
 }
 
 staged_recipe() { # recover the last generated target from its manifest; hashes come only from trusted main sources
-  local source original renderer manifest target ready
+  local source original renderer manifest target ready extra=()
   manifest=$(git rev-parse "$3:workspace.yml") || return 1
   if [ "$manifest" = "$(git rev-parse "$1:$2/workspace.yml" 2>/dev/null || true)" ]; then staged "$1" "$2"; return; fi
   target=$cache/recipe/$1/$manifest/native/$2 ready=$cache/status/recipe/$1/$manifest/$2
@@ -183,7 +177,8 @@ staged_recipe() { # recover the last generated target from its manifest; hashes 
     git show "$3:workspace.yml" >"$source/$2/workspace.yml" || return 1
     renderer=$here/render.sh
     if [ -f "$source/ci/render.sh" ] && grep -q -- '--workspace' "$source/ci/render.sh"; then renderer=$source/ci/render.sh; fi
-    bash "$renderer" --workspace "$2" "$source" "$cache/recipe/$1/$manifest/native" >&2 || return 1
+    if [ "$1" = "$main" ]; then extra=(--opt-outs "$original/$2/workspace.yml"); fi
+    bash "$renderer" --workspace "$2" "${extra[@]}" "$source" "$cache/recipe/$1/$manifest/native" >&2 || return 1
     mkdir -p "$(dirname "$ready")" || return 1
     : >"$ready" || return 1
   fi
@@ -221,6 +216,8 @@ with_generated() { # <workspace commit> <folder> [<ownership commit> [<native st
   old=$(managed_records "$owner" "$2") || return 1
   trusted=$(previous_records "$owner" "$2") || return 1
   out=$(git show "$1:workspace.yml" | optouts) || return 1
+  # Before merging, main's new exclusions must already apply to its new sources.
+  [ -n "${4:-}" ] || out="$out $(git show "$main:$2/workspace.yml" | optouts)" || return 1
   if legacy_workspace "$owner"; then
     legacy=1
     base=$(previous_main "$owner") || return 1
@@ -408,6 +405,10 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   # The tree includes the ownership ledger, so changed provenance and opt-out transfers still advance the branch.
   if [ "$(tree HEAD)" = "$(tree "$from")" ]; then
     git -C "$wt" checkout --quiet --detach "$from"
+  else
+    # Publish one real merge; preparation and prefix-alignment commits stay temporary.
+    t=$(tree HEAD)
+    git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$from" -p "$main" -m "delphi: refresh ws/$1 from main" "$t")"
   fi
   if [ "$from" != "refs/remotes/origin/ws/$1" ]; then
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1" "HEAD:refs/heads/ws/$3"
@@ -437,14 +438,14 @@ propose() { # <name> <folder>: PR owned workspace files into main, leaving inher
     fi
   fi
   t=$(with_delphi "$(git -C "$wt" rev-parse HEAD)" "$2/")
-  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
+  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$owner" -m "delphi: propose ws/$1 to main" "$t")"
   if ! bash "$wt/ci/render.sh" "$wt"; then
     echo "ws/$1: main-side rendering failed; not proposed" >&2
     failed=1; return
   fi
   git -C "$wt" add -A
   t=$(git -C "$wt" write-tree)
-  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$ws" -m "delphi: propose ws/$1 to main" "$t")"
+  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$owner" -m "delphi: propose ws/$1 to main" "$t")"
   case "$(tree HEAD)" in "$(tree "$main")" | "$(tree "refs/remotes/origin/propose/$1")") return ;; esac
   "$wt/ci/check.sh" "$wt" "$main" || { echo "ws/$1: check failed; not proposed" >&2; failed=1; return; }
   git -C "$wt" push --quiet --force origin "HEAD:refs/heads/propose/$1"

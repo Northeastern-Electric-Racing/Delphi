@@ -97,11 +97,11 @@ own explicit target.
 `ci/render.sh` prepares inheritance from a main checkout into temporary staging. `ci/inherit.sh`
 selects ancestor sources, `ci/sources.sh` maps paths, and `ci/harnesses.sh` adapts target content.
 Each payload is prepared once, then hashed and copied from those same bytes. Claude skill content
-passes through unchanged. An optional `BODY.<harness>.md` beside a skill supplies target-specific
-prose; otherwise its prose is unchanged. Codex converts native metadata and wraps literal
-`bash scripts/...` helper calls with the full `.delphi/exec.sh` invocation. Body variants are
-authoring inputs, not installed files, when beside a `SKILL.md`. Sentence wording and unrelated
-instruction references do not drive translation. Helper scripts pass through unchanged.
+passes through unchanged. Each harness descriptor owns `translate_skill`: it converts metadata,
+workspace identifiers and capability-specific bullets. Codex uses `$skill` calls and wraps literal
+`bash scripts/...` commands with `.delphi/exec.sh`. Claude identifiers are defined in its descriptor;
+non-Claude output with an unmapped identifier fails validation and names the target and source.
+Qualified code-repository paths stay literal. Helper scripts pass through unchanged.
 
 `ci/render.sh [--check] [--workspace <folder>] [<main-checkout> [<staging-output>]]` updates plugin
 output by default. An optional staging destination receives inherited native files and ownership
@@ -119,7 +119,9 @@ When changing a workspace's harness, update its owned native files too; CI regen
 
 Source-native `opt-out:` paths are applied before mapping, so a Codex workspace can exclude a
 Claude-only input such as `.claude/commands`. Mapped native opt-outs still transfer copies to
-workspace ownership. Unsupported native mappings fail unless explicitly excluded.
+workspace ownership. Unsupported native mappings fail unless explicitly excluded. Before merging, sync stages with both
+main and branch opt-outs (`render.sh --opt-outs <main-manifest>`), so a new source and its exclusion
+can arrive together without blocking refresh.
 
 Shared-source paths, generated ledger paths and opt-out keys accept only ASCII
 `[A-Za-z0-9._/@+-]`. Spaces and control characters are unsupported; paths must be relative without
@@ -210,6 +212,8 @@ otherwise they are kept with a notice. Removed workspace branches are kept with 
 An unchanged result leaves the workspace ref untouched. Renaming an org or project folder while
 keeping its dotted workspace name preserves ownership history. Sync aligns the common ancestor's
 folder prefix before merging a move, so later owned edits still use their original merge base.
+Preparation commits stay temporary: each changed refresh publishes one merge parented by the
+original workspace tip and main; proposals likewise use the actual workspace tip.
 
 A conflict or failed render/check is reported and that workspace is skipped; other workspaces keep
 syncing and the command exits 1. All work happens in temporary worktrees.
@@ -356,8 +360,8 @@ Creation combines optional `instruction_base` with the harness's `instruction_te
 common layout authored once and the result an owned snapshot.
 `ci/harnesses.sh` exposes pure `harness_field <name> <field>` queries; native, protected and foreign
 paths are derived from the registered entries. The same registry recognizes source formats.
-Put target-specific skill prose in `BODY.<harness>.md`; the shared adapter handles native metadata
-and helper bootstrap. Select the target in a workspace
+Define `translate_skill` in the descriptor; reuse Claude's identifier translator and the shared
+bootstrap helpers where appropriate. New metadata formats belong in that function. Select the target in a workspace
 manifest, validate staging, and run the sandbox suite. Ordinary targets need no renderer, validator
 or sync changes. Add a capability implementation only when the target introduces one.
 

@@ -157,7 +157,7 @@ sync >"$t/out" 2>&1 || fail "sync after a .delphi/ change failed: $(cat "$t/out"
 for n in "$AN" "$BN"; do
   [ "$(o rev-parse "ws/$n:.delphi")" = "$(o rev-parse main:.delphi)" ] || fail "ws/$n .delphi/ not synced from main"
 done
-[ "$(o log -1 --format=%s ws/$AN)" = "delphi: sync .delphi/ from main" ] || fail "no sync commit on ws/$AN"
+[ "$(o rev-parse "ws/$AN^2")" = "$(o rev-parse main)" ] || fail "runtime refresh is not joined directly to main"
 ok "a main change to .delphi/, released as a new version, reaches every ws/* branch on refresh"
 commit_on ws/$AN .delphi/setup.sh "# ws edit"
 sync "$AN" >"$t/out" 2>&1 || fail "sync after a ws .delphi/ edit failed: $(cat "$t/out")"
@@ -478,6 +478,46 @@ done
 ok "metadata-only stable-name moves preserve ordinary manifest edits before or after refresh and in propose-only runs"
 ok "after a moved workspace proposal merges, same-key manifest conflicts preserve both refs and contents"
 
+# A new source and its main-side exclusion must reach an already-created Codex branch together.
+d=$t/sync-source-exclusion
+git clone -q "$t/seed" "$d"
+bash -euo pipefail -s -- "$d" "$d-origin.git" "$A" "$AN" <<'EXCLUSION' >"$t/out" 2>"$t/err" || fail "sync source exclusion: $(cat "$t/err")"
+cd "$1"
+origin=$2 folder=$3 name=$4
+git rm -rq "$folder/CLAUDE.md" "$folder/.claude"
+echo '# Codex' >"$folder/AGENTS.md"
+printf 'name: %s\nharness: codex\n' "$name" >"$folder/workspace.yml"
+bash ci/render.sh; git add -A; git commit -qm 'Codex exclusion baseline'
+git clone -q --bare . "$origin"; git remote set-url origin "$origin"
+bash ci/sync.sh refresh "$name"
+git fetch -q; git checkout -q -B edit "origin/ws/$name"
+echo owned >own.txt; git add own.txt; git commit -qm 'workspace owned change'
+git push -q origin "HEAD:ws/$name"; git checkout -q main
+before=$(git -C "$origin" rev-parse "ws/$name")
+mkdir -p software/workspace-inherit/.claude/commands software/workspace-inherit/notes
+echo 'Claude command' >software/workspace-inherit/.claude/commands/x.md
+echo shared >software/workspace-inherit/notes/arrived.txt
+printf 'opt-out:\n  - .claude/commands\n' >>"$folder/workspace.yml"
+bash ci/render.sh; bash ci/check.sh
+git add -A; git commit -qm 'add source with its target exclusion'; git push -q origin main
+bash ci/sync.sh propose "$name"
+[ "$(git -C "$origin" rev-parse "ws/$name")" = "$before" ]
+[ "$(git -C "$origin" show "propose/$name:$folder/own.txt")" = owned ]
+[ "$(git -C "$origin" rev-parse "propose/$name^2")" = "$before" ]
+bash ci/sync.sh refresh "$name"
+after=$(git -C "$origin" rev-parse "ws/$name")
+[ "$(git -C "$origin" rev-parse "$after^1")" = "$before" ]
+[ "$(git -C "$origin" rev-parse "$after^2")" = "$(git -C "$origin" rev-parse main)" ]
+[ "$(git -C "$origin" rev-list --count "$before..$after" --not main)" = 1 ]
+git -C "$origin" show "$after:workspace.yml" | grep -qx '  - .claude/commands'
+[ "$(git -C "$origin" show "$after:notes/arrived.txt")" = shared ]
+[ "$(git -C "$origin" show "$after:own.txt")" = owned ]
+! git -C "$origin" cat-file -e "$after:.claude/commands/x.md" 2>/dev/null
+bash ci/sync.sh refresh "$name"
+[ "$(git -C "$origin" rev-parse "ws/$name")" = "$after" ]
+EXCLUSION
+ok "main source additions and exclusions sync together in both directions; refresh publishes one real merge and repeats unchanged"
+
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/$BN CLAUDE.md "ws side"
 commit_on main "$B/CLAUDE.md" "main side"
@@ -521,6 +561,7 @@ expect_bad unknown-harness "unknown harness 'unknown'" sed -i.bak 's/harness: co
 expect_bad codex-plugin "codex does not support Delphi plugin sets" sh -c "printf 'plugins:\n  - delphi\n' >>$CX/workspace.yml"
 expect_bad codex-no-instructions "AGENTS.md: required for codex" rm "$CX/AGENTS.md"
 expect_bad codex-wrong-native "CLAUDE.md: belongs to a different harness" touch "$CX/CLAUDE.md"
+expect_bad codex-unmapped-identifier 'codex: missing Claude mapping for mcp__unmapped__new_tool' sh -c 'echo "Use mcp__unmapped__new_tool." >>software/workspace-inherit/.claude/skills/journal/SKILL.md'
 expect_bad codex-inherited-wrong-native "has no mapping to codex" sh -c "mkdir -p software/workspace-inherit/.claude && printf 'format: claude-code\\n' >software/workspace-inherit/source.yml && echo x >software/workspace-inherit/.claude/extra.json"
 expect_bad inherited-collision "also inherits it from a folder above" sh -c "mkdir -p software/application-software/workspace-inherit/.claude/skills/journal && echo x >software/application-software/workspace-inherit/.claude/skills/journal/SKILL.md"
 expect_bad main-inherited-copy "workspace-owned file collides" sh -c "mkdir -p $CX/.agents/skills/journal && cp software/workspace-inherit/.claude/skills/journal/SKILL.md $CX/.agents/skills/journal/SKILL.md"
@@ -1166,6 +1207,29 @@ ok "an old name with commits of its own is reported, never merged"
 
 # --- 13. portable harnesses: staged native output, round trips, transitions, bootstrap and authoring
 frontmatter() { awk 'NR == 1 && /^---\r?$/ { front = 1; sub(/\r$/, ""); print; next } front { sub(/\r$/, ""); print; if (/^---$/) exit }'; }
+mkdir -p "$t/identifier-translation"
+cat >"$t/identifier-translation/SKILL.md" <<'IDENTIFIERS'
+---
+name: identifier-translation
+description: Use /commit and read CLAUDE.md.
+---
+Follow CLAUDE.md; invoke `/commit` and /open-pr.
+Keep `repos/example/CLAUDE.md`, `/tmp` and `https://example.invalid/commit` unchanged.
+Use the GitHub MCP server's `pull_request_read` or mcp__github__pull_request_read.
+- Reworded pane explanation: `/ws-delphi` can switch.
+- Reworded reload explanation: the `delphi` mod handles `.claude/skills/`.
+IDENTIFIERS
+bash -c 'source "$1"; harness_file codex "$2"' _ "$src/ci/harnesses.sh" "$t/identifier-translation/SKILL.md" >"$t/identifier-translation/native.md"
+# shellcheck disable=SC2016 # native skill references are literal assertion text
+grep -qF 'Follow AGENTS.md; invoke `$commit` and $open-pr.' "$t/identifier-translation/native.md" || fail "native instruction and direct skill references"
+# shellcheck disable=SC2016 # native skill references are literal assertion text
+grep -qF 'description: Use $commit and read AGENTS.md.' "$t/identifier-translation/native.md" || fail "metadata identifier translation"
+# shellcheck disable=SC2016 # code paths and backticks are literal assertion text
+grep -qF 'Keep `repos/example/CLAUDE.md`, `/tmp` and `https://example.invalid/commit` unchanged.' "$t/identifier-translation/native.md" || fail "qualified file or URL was treated as a harness identifier"
+! grep -qF /ws-delphi "$t/identifier-translation/native.md" || fail "reworded Claude-only pane leaked"
+grep -q 'Start a fresh Codex session' "$t/identifier-translation/native.md" || fail "reworded Claude reload feature was not translated"
+bash -c 'source "$1"; harness_file claude-code "$2"' _ "$src/ci/harnesses.sh" "$t/identifier-translation/SKILL.md" | cmp -s - "$t/identifier-translation/SKILL.md" || fail "Claude identifier output changed"
+ok "descriptor translators map identifiers and direct skill calls after prose changes, preserving literal code paths and Claude bytes"
 mkdir -p "$t/metadata-variants"
 cat >"$t/metadata-variants/source.md" <<'SKILL'
 ---
@@ -1203,7 +1267,7 @@ for indent in '' '  '; do
     else cp "$t/metadata-variants/lf.md" "$t/metadata-variants/SKILL.md"; fi
     bash -c 'source "$1"; harness_file codex "$2"' _ "$src/ci/harnesses.sh" "$t/metadata-variants/SKILL.md" >"$t/metadata-variants/actual.md"
     cmp -s <(frontmatter <"$t/metadata-variants/want.md") <(frontmatter <"$t/metadata-variants/actual.md") || fail "Codex metadata indentation/quotes/$eol"
-    grep -qF 'Read CLAUDE.md.' "$t/metadata-variants/actual.md" || fail "Codex changed an opaque source instruction reference"
+    grep -qF 'Read AGENTS.md.' "$t/metadata-variants/actual.md" || fail "Codex did not translate the workspace instruction identifier"
     bash -c 'source "$1"; harness_file claude-code "$2"' _ "$src/ci/harnesses.sh" "$t/metadata-variants/SKILL.md" |
       cmp -s - "$t/metadata-variants/SKILL.md" || fail "Claude metadata bytes changed"
   done
@@ -1222,8 +1286,8 @@ metadata:
   custom-setting: unchanged
 ---
 Read CLAUDE.md before making changes.
-Keep literal `CLAUDE.md` in code-repository commands and English examples.
-`printf 'CLAUDE.md\n'`
+Keep literal `repos/sample/CLAUDE.md` in code-repository commands and English examples.
+`printf 'repos/sample/CLAUDE.md\n'`
 SKILL
 mkdir "$t/portable"
 cat >"$t/portable/SKILL.md" <<'SKILL'
@@ -1257,7 +1321,6 @@ on_main "add Codex and inherited Claude skills" bash -c '
   cp "$5/helper.sh" software/workspace-inherit/.claude/skills/portable/scripts/helper.sh
   cp "$4" software/workspace-inherit/.claude/skills/native-metadata/SKILL.md
   cp "$2/software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md" software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md
-  cp "$2/software/workspace-inherit/.claude/skills/switch-workspace/BODY.codex.md" software/workspace-inherit/.claude/skills/switch-workspace/BODY.codex.md
 ' _ "$C" "$src" "$CN" "$t/native-metadata.md" "$t/portable"
 sync "$CN" >"$t/out" 2>&1 || fail "Codex creation: $(cat "$t/out")"
 for skill in top portable; do
@@ -1285,15 +1348,14 @@ metadata:
 ---
 SKILL
 cmp -s "$t/codex-metadata.md" <(o show "ws/$CN:.agents/skills/native-metadata/SKILL.md" | frontmatter) || fail "Codex translation changed portable metadata or retained Claude-only fields"
-o show "ws/$CN:.agents/skills/native-metadata/SKILL.md" | grep -qx 'Read CLAUDE.md before making changes.' || fail "Codex changed source-owned prose"
-o show "ws/$CN:.agents/skills/native-metadata/SKILL.md" | grep -qF "printf 'CLAUDE.md\n'" || fail "Codex changed an opaque code reference"
+o show "ws/$CN:.agents/skills/native-metadata/SKILL.md" | grep -qx 'Read AGENTS.md before making changes.' || fail "Codex did not translate workspace instructions"
+o show "ws/$CN:.agents/skills/native-metadata/SKILL.md" | grep -qF "printf 'repos/sample/CLAUDE.md\n'" || fail "Codex changed an opaque code reference"
 ok "Codex translation omits Claude-only fields and block values while preserving portable metadata"
 cmp -s "$src/software/workspace-inherit/.claude/skills/switch-workspace/SKILL.md" <(o show "ws/$AN:.claude/skills/switch-workspace/SKILL.md") || fail "Claude switching instructions changed"
 o show "ws/$AN:.claude/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude lost its hot reload workflow"
 o show "ws/$CN:.agents/skills/switch-workspace/SKILL.md" | grep -q 'Start a fresh Codex session' || fail "Codex lacks native restart guidance"
 ! o show "ws/$CN:.agents/skills/switch-workspace/SKILL.md" | grep -q 'No restart needed' || fail "Claude reload behavior leaked into Codex"
 ok "existing Claude plugin and hot reload guidance stays intact while Codex gets its own switch guidance"
-! o cat-file -e "ws/$CN:.agents/skills/switch-workspace/BODY.codex.md" 2>/dev/null || fail "target body sidecar was installed as a support file"
 helper_root=$t/native-helper
 git clone -q -b "ws/$CN" "$t/origin.git" "$helper_root"
 helper_command=$(o show "ws/$CN:.agents/skills/portable/SKILL.md" | grep -F '<absolute-installed-skill-folder>/scripts/helper.sh')
@@ -1544,6 +1606,16 @@ set -euo pipefail
 # shellcheck disable=SC2034 # declarative properties consumed by harness_field
 instruction=TASKS.md
 instruction_template=templates/harnesses/fixture/TASKS.md
+skill_ref='@%s'
+pane_guidance=drop
+reload_guidance='Restart the fixture harness after switching.'
+github_tool='PR reader'
+github_integration='authenticated GitHub integration'
+browser_tool='browser automation'
+translate_skill() {
+  printf 'fixture-format: native\n'
+  awk 'NR == 1 && /^---$/ { front = 1; next } front && /^---$/ { front = 0; next } !front { print }' "$1" | claude_identifiers
+}
 skills=.fixture/skills
 native=.fixture
 protected=.fixture/config.ini
@@ -1553,7 +1625,7 @@ cat >>"$d/ci/harnesses.sh" <<'ADAPTER'
 eval "$(declare -f harness_file | sed '1s/harness_file/base_harness_file/')"
 harness_file() {
   if [ "$1" = fixture ]; then
-    cat "$2"
+    base_harness_file "$@"
     case "$2" in */SKILL.md | */scripts/*.sh) printf '\n# fixture output\n' ;; esac
   else base_harness_file "$@"; fi
 }
@@ -1569,6 +1641,7 @@ chmod +x "$d/software/workspace-inherit/.claude/skills/journal/scripts/capture.s
 (cd "$d" && bash ci/render.sh . "$t/fixture-stage" && git add -A && bash ci/check.sh . HEAD &&
   bash ci/render.sh . "$t/fixture-stage-again" && git diff --quiet) >"$t/out" 2>"$t/err" || fail "adapter extension: $(cat "$t/err")"
 grep -qx '# fixture output' "$t/fixture-stage/$F/.fixture/skills/journal/SKILL.md" || fail "new target skill was not adapted"
+grep -qx 'fixture-format: native' "$t/fixture-stage/$F/.fixture/skills/journal/SKILL.md" || fail "descriptor-owned metadata format was not rendered"
 grep -qx '# fixture output' "$t/fixture-stage/$F/.fixture/skills/journal/scripts/capture.sh" || fail "new target helper was not adapted"
 [ -x "$t/fixture-stage/$F/.fixture/skills/journal/scripts/capture.sh" ] || fail "new target lost executable mode"
 diff -qr "$t/fixture-stage" "$t/fixture-stage-again" >/dev/null || fail "new target staging was not deterministic"
@@ -1585,6 +1658,8 @@ bash -euo pipefail -c '
   [ "$(cat "$2")" = TASKS.md ]
   [ "$instruction:$skills:$plugins" = unchanged:unchanged:unchanged ]
   ! declare -F harness >/dev/null
+  ! declare -F translate_skill >/dev/null
+  ! declare -F claude_identifiers >/dev/null
   harness_foreign codex | grep -qx .fixture
 ' _ "$d" "$t/fixture-field.txt" || fail "registry properties mutated caller state or did not compute new foreign paths"
 mkdir -p "$d/software/fixture-target/workspace-defaults/.fixture/skills/source"

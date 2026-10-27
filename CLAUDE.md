@@ -65,9 +65,10 @@ source of truth; `docs/goals.md` lists what any change must keep.
   under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
 - Keep Claude skill sources under workspace-inherit/.claude/skills with their metadata intact.
-  Native metadata conversion and helper bootstrap belong in the registered harness adapter and
-  affect only generated output. Put target-specific skill prose in its `BODY.<harness>.md` sidecar;
-  never match source sentences or replace instruction filenames throughout a body.
+  Each descriptor owns `translate_skill`; native metadata conversion, identifier mappings and
+  helper bootstrap affect only generated output. Write skills once in Claude format; translate
+  identifiers and feature bullets, never exact source sentences or per-skill copies. Validation
+  rejects unmapped Claude identifiers in other harnesses; qualified code-repository paths stay literal.
   Shared-source paths and opt-out keys follow `docs/design.md`'s portable-path rule; existing owned
   workspace filenames are unaffected.
   Skill scripts stay harness-independent (SKILL.md uses the Agent Skills format): call scripts by
