@@ -30,9 +30,9 @@ Use the pull_request_read tool.
 Use slack_send_message if that integration is available.
 SOURCE
 cat >"$t/expected.md" <<'NATIVE'
-Read the code repo's CLAUDE.md; follow workspace AGENTS.md.
-Read CLAUDE.md from the repository.
-Read the repository's own CLAUDE.md.
+Read the code repo's AGENTS.md; follow workspace AGENTS.md.
+Read AGENTS.md from the repository.
+Read the repository's own AGENTS.md.
 Keep `CLAUDE.md` and `grep -n rules CLAUDE.md` literal.
 Keep ``printf '`CLAUDE.md`'`` literal; invoke ``$commit``.
 Keep src/CLAUDE.md, ./CLAUDE.md, CLAUDE.md.backup and _CLAUDE.md.

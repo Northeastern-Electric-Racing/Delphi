@@ -101,9 +101,9 @@ passes through unchanged. Each harness descriptor owns `translate_skill`: it con
 workspace identifiers and capability-specific bullets. Codex uses `$skill` calls and wraps literal
 `bash scripts/...` commands with `.delphi/exec.sh`. Claude identifiers are defined in its descriptor;
 non-Claude output with an unmapped identifier fails validation and names the target and source.
-Qualified paths, code filenames and explicitly repository-scoped instruction references stay literal;
-standalone backticked skill calls still translate. Use a qualified path or code formatting for literal
-filenames; bare instruction names in prose refer to the workspace. Skill names come from that
+Qualified paths and filenames in inline or fenced code stay literal; standalone backticked skill
+calls still translate. Bare instruction names in prose always map to the target instruction file.
+Use a qualified path for a code repository's own file. Skill names come from that
 workspace's selected inheritance and owned native skills. Helper scripts pass through unchanged.
 Leak checks cover recognized Claude identifiers, report every hit and label translated-output line
 numbers; they do not establish that arbitrary tooling or prose is portable.

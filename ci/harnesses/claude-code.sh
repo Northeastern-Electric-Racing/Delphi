@@ -39,17 +39,12 @@ claude_identifiers() { # [check]: Claude's identifier contract, shared by target
       }
       return out s
     }
-    function repository_file(s, at, before, after) {
-      before = tolower(substr(s, 1, at - 1)); after = tolower(substr(s, at + 9))
-      return before ~ /(^|[^a-z])(repo|repository|worktree)(\047s|[ -]local)?([[:space:]]+own)?[[:space:]]*$/ ||
-        after ~ /^[[:space:]]+(in|from|of)[[:space:]]+(the[[:space:]]+)?(code[[:space:]]+)?(repo|repository|worktree)([^a-z]|$)/
-    }
     function refs(s, code, start, at, size, before, after, id, active, out) {
       start = 1
       while (!code && match(substr(s, start), /CLAUDE[.]md/)) {
         at = start + RSTART - 1; before = substr(s, at - 1, 1); after = substr(s, at + 9, 1)
         active = (at == 1 || before !~ /[A-Za-z0-9_.\/-]/) && after !~ /[A-Za-z0-9_\/-]/ &&
-          (after != "." || substr(s, at + 10, 1) !~ /[A-Za-z0-9]/) && !repository_file(s, at)
+          (after != "." || substr(s, at + 10, 1) !~ /[A-Za-z0-9]/)
         out = out substr(s, start, at - start)
         if (active && check && instruction != "CLAUDE.md") missing("CLAUDE.md")
         out = out (active && !check ? instruction : "CLAUDE.md"); start = at + 9
@@ -111,7 +106,7 @@ claude_identifiers() { # [check]: Claude's identifier contract, shared by target
         }
         line = native_skills(line)
       }
-      # Code filenames and explicitly repository-scoped references are literal; backticked skill calls still adapt.
+      # Code filenames and qualified paths are literal; backticked skill calls still adapt.
       if (!fence) line = spans(line)
       if (check) {
         rest = line
