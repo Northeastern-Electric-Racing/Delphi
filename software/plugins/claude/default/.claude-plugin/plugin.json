@@ -1,7 +1,0 @@
-{
-  "name": "delphi",
-  "description": "Delphi's mod for every workspace: /ws-delphi opens a pane of workspace cards grouped by project; select one, then Switch workspace (.delphi/switch.sh). /ws-delphi --web opens the same cards in a browser tab.",
-  "author": {
-    "name": "Northeastern Electric Racing"
-  }
-}
