@@ -37,7 +37,7 @@ if [ -z "$only" ]; then
 fi
 
 render_workspace() { # <workspace folder>: main keeps owned files; inherited output and ledger go to staging
-  local folder=$1 adapter out records meta path src seen="" used="" o parent protected_path settings_file plugins target=$output/$1
+  local folder=$1 adapter out records meta path src seen="" used="" o parent protected_path settings_file plugins skill_names target=$output/$1
   [ ! -e "$folder/$generated" ] || { bad "$folder/$generated: ownership records belong only on workspace branches"; return; }
   adapter=$(awk '/^harness:/ { print $2; exit }' "$folder/workspace.yml")
   harness_exists "$adapter" || { bad "$folder/workspace.yml: unknown harness '$adapter'"; return; }
@@ -48,6 +48,7 @@ render_workspace() { # <workspace folder>: main keeps owned files; inherited out
   fi
   out=$(optouts <"$folder/workspace.yml")
   records=$(inherited_files "$folder" "$adapter" "$out") || { bad "$folder: cannot resolve inherited sources"; return; }
+  skill_names=$(harness_skill_names "$adapter" "$folder" "$records" "$out") || return 1
   rm -rf "$target"
   mkdir -p "$target"
   : >"$tmp/records"
@@ -77,7 +78,7 @@ render_workspace() { # <workspace folder>: main keeps owned files; inherited out
       fi
     done
     mkdir -p "$(dirname "$target/$path")"
-    harness_file "$adapter" "$src" >"$target/$path"
+    harness_file "$adapter" "$src" "$skill_names" >"$target/$path"
     meta="${meta%% *} $(git hash-object -- "$target/$path")"
     if [ "${meta%% *}" = 100755 ]; then chmod +x "$target/$path"; fi
     printf '%s\t%s\t%s\n' "$meta" "$path" "$src" >>"$tmp/records"

@@ -1342,6 +1342,8 @@ commit_on "ws/$CO" CLAUDE.md "old side" && commit_on "ws/$CN" .gitattributes "# 
 ok "an old name with commits of its own is reported, never merged"
 
 # --- 13. portable harnesses: staged native output, round trips, transitions, bootstrap and authoring
+bash "$src/tests/harnesses.sh" >"$t/out" 2>"$t/err" || fail "harness regressions: $(cat "$t/out" "$t/err")"
+ok "harness translation preserves literal references, rejects known leaks and scopes skill names to the receiving workspace"
 frontmatter() { awk 'NR == 1 && /^---\r?$/ { front = 1; sub(/\r$/, ""); print; next } front { sub(/\r$/, ""); print; if (/^---$/) exit }'; }
 mkdir -p "$t/identifier-translation"
 cat >"$t/identifier-translation/SKILL.md" <<'IDENTIFIERS'
@@ -1355,7 +1357,7 @@ Use the GitHub MCP server's `pull_request_read` or mcp__github__pull_request_rea
 - Reworded pane explanation: `/ws-delphi` can switch.
 - Reworded reload explanation: the `delphi` mod handles `.claude/skills/`.
 IDENTIFIERS
-bash -c 'source "$1"; harness_file codex "$2"' _ "$src/ci/harnesses.sh" "$t/identifier-translation/SKILL.md" >"$t/identifier-translation/native.md"
+bash -c 'source "$1"; harness_file codex "$2" "commit open-pr"' _ "$src/ci/harnesses.sh" "$t/identifier-translation/SKILL.md" >"$t/identifier-translation/native.md"
 # shellcheck disable=SC2016 # native skill references are literal assertion text
 grep -qF 'Follow AGENTS.md; invoke `$commit` and $open-pr.' "$t/identifier-translation/native.md" || fail "native instruction and direct skill references"
 # shellcheck disable=SC2016 # native skill references are literal assertion text

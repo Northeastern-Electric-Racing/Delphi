@@ -46,13 +46,17 @@ mkdir -p "$(dirname "$wt/$folder/$instruction")"
 { [ -z "$instruction_base" ] || cat "$wt/$instruction_base"; cat "$wt/$instruction_template"; } >"$wt/$folder/$instruction"
 if [ -d "$defaults" ]; then
   records=$(cd "$wt" && bundle_files "software/$org/workspace-defaults" "$adapter") || die "cannot read project defaults"
+  exclusions=''
+  [ ! -f "$defaults/workspace.yml" ] || exclusions=$(optouts <"$defaults/workspace.yml")
+  inherited=$(cd "$wt" && inherited_files "$folder" "$adapter" "$exclusions") || die "cannot read inherited sources"
+  skill_names=$(harness_skill_names "$adapter" "$wt/$folder" "$records"$'\n'"$inherited" "$exclusions")
   while IFS=$'\t' read -r meta path src; do
     [ -n "$path" ] || continue
     if [ "$path" = "$instruction" ]; then
       { echo; cat "$wt/$src"; } >>"$wt/$folder/$instruction"
     else
       mkdir -p "$(dirname "$wt/$folder/$path")"
-      harness_file "$adapter" "$wt/$src" >"$wt/$folder/$path"
+      harness_file "$adapter" "$wt/$src" "$skill_names" >"$wt/$folder/$path"
       [ "${meta%% *}" != 100755 ] || chmod +x "$wt/$folder/$path"
     fi
   done <<<"$records"

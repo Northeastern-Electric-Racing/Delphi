@@ -2,8 +2,6 @@
 # Harness registry and shared skill rendering. Per-target facts live in harnesses/<name>.sh.
 set -euo pipefail
 harness_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")/harnesses" && pwd)
-harness_skill_names=$(if [ -d "$harness_dir/../../software" ]; then find "$harness_dir/../../software" -type f -name SKILL.md; fi |
-  sed 's|/SKILL.md$||; s|.*/||' | LC_ALL=C sort -u | tr '\n' ' ')
 
 harnesses() { # registered target/source formats
   local file
@@ -59,8 +57,27 @@ harness_settings() { # <target> <folder> <manifest>: the target's registered set
   bash "$harness_dir/../../$generator" settings "$2" "$3"
 }
 
-harness_file() ( # <target> <source>: each descriptor owns its translator; validate every non-Claude output
-  local target=$1 file=$2
+harness_skill_names() { # <target> <workspace folder> <records> [opt-outs]: only this workspace's native skills
+  local prefix path exclusion skip
+  prefix=$(harness_field "$1" skills) || return 1
+  [ -n "$prefix" ] || return 0
+  {
+    while IFS=$'\t' read -r _ path _; do
+      skip=0
+      for exclusion in ${4:-}; do case "$path/" in "$exclusion"/*) skip=1 ;; esac; done
+      [ "$skip" = 1 ] || printf '%s\n' "$path"
+    done <<<"$3"
+    if [ -d "$2/$prefix" ]; then
+      while IFS= read -r path; do printf '%s\n' "${path#"$2"/}"; done < <(find "$2/$prefix" -type f -name SKILL.md)
+    fi
+  } | awk -v prefix="$prefix/" 'index($0, prefix) == 1 {
+    path = substr($0, length(prefix) + 1)
+    if (path ~ /^[a-z0-9-]+\/SKILL[.]md$/) { sub(/\/SKILL[.]md$/, "", path); print path }
+  }' | LC_ALL=C sort -u | tr '\n' ' '
+}
+
+harness_file() ( # <target> <source> [skill names]: each descriptor owns its translator; validate every non-Claude output
+  local target=$1 file=$2 harness_skill_names=${3:-}
   case "$file" in */SKILL.md) ;; *) cat "$file"; return ;; esac
   # shellcheck source=ci/harnesses/claude-code.sh
   source "$harness_dir/claude-code.sh"
