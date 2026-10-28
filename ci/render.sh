@@ -7,18 +7,16 @@ here=$(cd "$(dirname "$0")" && pwd)
 source "$here/inherit.sh"
 # shellcheck source=ci/managed.sh
 source "$here/managed.sh"
-check=0 only="" extra_optouts=""
+check=0 only=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --check) check=1; shift ;;
     --workspace) [ "$#" -ge 2 ] || exit 2; only=$2; shift 2 ;;
-    --opt-outs) [ "$#" -ge 2 ] || exit 2; extra_optouts=$2; shift 2 ;;
     *) break ;;
   esac
 done
 [ "$#" -le 2 ] || { echo "render: too many arguments" >&2; exit 2; }
 [ -z "$only" ] || { safe_path "$only" && [ "$#" = 2 ]; } || { echo "render: --workspace needs a safe folder and staging output" >&2; exit 2; }
-[ -z "$extra_optouts" ] || [ -n "$only" ] || { echo "render: --opt-outs requires --workspace" >&2; exit 2; }
 checkout=${1:-.} output=${2:-}
 if [ -n "$output" ]; then mkdir -p "$output"; output=$(cd "$output" && pwd -P); fi
 cd "$checkout"
@@ -49,7 +47,6 @@ render_workspace() { # <workspace folder>: main keeps owned files; inherited out
     bad "$folder/workspace.yml: $adapter does not support Delphi plugin sets"; return
   fi
   out=$(optouts <"$folder/workspace.yml")
-  [ -z "$extra_optouts" ] || out="$out $(optouts <"$extra_optouts")"
   records=$(inherited_files "$folder" "$adapter" "$out") || { bad "$folder: cannot resolve inherited sources"; return; }
   rm -rf "$target"
   mkdir -p "$target"

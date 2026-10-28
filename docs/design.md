@@ -119,9 +119,8 @@ When changing a workspace's harness, update its owned native files too; CI regen
 
 Source-native `opt-out:` paths are applied before mapping, so a Codex workspace can exclude a
 Claude-only input such as `.claude/commands`. Mapped native opt-outs still transfer copies to
-workspace ownership. Unsupported native mappings fail unless explicitly excluded. Before merging, sync stages with both
-main and branch opt-outs (`render.sh --opt-outs <main-manifest>`), so a new source and its exclusion
-can arrive together without blocking refresh.
+workspace ownership. Unsupported native mappings fail unless explicitly excluded. Refresh merges
+the manifest before rendering, so a new source and its exclusion can arrive together.
 
 Shared-source paths, generated ledger paths and opt-out keys accept only ASCII
 `[A-Za-z0-9._/@+-]`. Spaces and control characters are unsupported; paths must be relative without
@@ -155,21 +154,23 @@ flowchart TD
         O["Owned native workspace files"]
     end
     subgraph CI["Temporary CI staging"]
-        T["1. Map paths and translate skills"]
-        H["2. Hash native bytes and write ledger"]
-        T --> H
+        M["1. Merge main into workspace tree"]
+        T["2. Prepare inheritance for merged harness"]
+        H["3. Check ownership and apply files"]
+        C["4. Commit changed workspace tree"]
+        M --> T --> H --> C
     end
     S --> T
-    H -->|"refresh copies"| B["ws/name: owned + inherited + runtime"]
-    O -->|"merge owned files"| B
+    C -->|"push"| B["Workspace branch"]
+    O --> M
     B -->|"strip managed output"| P["PR: owned native changes"]
-    P --> O
     style T fill:#eff6ff,stroke:#2563eb,color:#111827,stroke-width:2px
 ```
 
-The blue step runs before branch publication. Refresh uses it before the owned-file merge for
-ownership checks, then with the merged manifest for final output; cached stages may be reused.
-Proposals discard staged inheritance and return owned files in their existing native format.
+The blue step runs after the merge, using its manifest to select the harness and opt-outs.
+`stage_inheritance()` calls the renderer; `apply_inheritance()` checks ownership and installs the
+prepared bytes. Historical output may be replayed to verify prior ownership. Proposals discard
+staged inheritance and return owned files in their existing native format.
 
 A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
 harness features beyond files (hooks, MCP servers). It lives in `plugins/<harness>/<set>/` of a
@@ -192,7 +193,7 @@ rest, and `ci/check.sh` fails if the list or either file is out of date:
   `ci/plugins.sh`, plus the `delphi` marketplace (with `autoUpdate`) and the sets under `plugins:`
   in `enabledPlugins`. Never edit it by hand: personal settings go in `.claude/settings.local.json`
   (git-ignored by Claude Code), shared ones in `workspace.yml` or the generator. Main's settings
-  are generated before merge. Refresh generates branch settings from its plugin selections and
+  are generated before their PR merges into main. Refresh generates branch settings from its plugin selections and
   main's plugin catalog, so enabled sets remain active while their proposal to main is pending.
 - Enabled isn't installed: Claude Code only offers to install a project's enabled plugins, so
   someone may never have installed a set, and then its skills are silently missing; and a set that
@@ -219,18 +220,19 @@ that touches a set is an update.
 
 For every workspace on `origin/main` (or just `<name>`):
 
-1. **Prepare** resolves main's sources and each workspace's explicit harness into temporary native
-   staging. Shared sources and main's workspace folders remain separate from inherited output.
-2. **Refresh** subtree-merges owned files, copies staged inheritance with its `workspace.generated`,
-   and syncs main's root `.delphi/`. It respects branch opt-outs and checks ownership before
-   replacing or retiring files. A new branch has the workspace folder, staged inheritance and
-   main's runtime at its root, parented by main. Branch updates copy prepared bytes; translation
-   never runs in the workspace checkout. Branch plugin selections stay active before their
-   proposal merges.
-3. **Propose** strips managed inheritance, `workspace.generated` and the workspace's `.delphi/`
-   before preparing a main-side PR. Owned files and opted-out skills remain. It regenerates
-   plugin settings, runs `ci/check.sh`, and opens or updates `propose/<name>` only when the tree
-   changes. Existing PR labels are preserved. No inherited output is committed to main.
+1. **Merge** main into the workspace tree in a temporary checkout. Owned-file conflicts are
+   reported. Managed-file conflicts can be deferred using ownership metadata, then verified
+   against trusted source history before publication.
+2. **Prepare inheritance** once from main's sources and the merged manifest. The registered
+   harness maps paths and converts skill content; Claude copies its original bytes. Ownership
+   checks protect local files and retired edits before prepared output and `workspace.generated`
+   are applied. Sync adds main's `.delphi/`, commits only a changed tree, then pushes `ws/<name>`.
+   A missing workspace branch starts from its main folder and gets the same preparation step.
+   Branch plugin selections remain active while their proposal is pending.
+3. **Propose** merges the workspace into a temporary main candidate, verifies ownership and strips
+   managed inheritance, `workspace.generated` and the branch runtime. Owned files and opted-out
+   copies remain native. It regenerates settings, runs `ci/check.sh`, and updates `propose/<name>`
+   only when the tree changes. Existing PR labels are preserved.
 
 History stays joined through subtree merges; workspace branches are never force-pushed. Legacy
 path-named branches still carry over into dotted names while ahead, and receive the result once;

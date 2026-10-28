@@ -7,6 +7,8 @@ set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
 # shellcheck source=ci/managed.sh
 source "$here/managed.sh"
+# shellcheck source=ci/harnesses.sh
+source "$here/harnesses.sh"
 dir=both
 case "${1:-}" in refresh | propose) dir=$1 && shift ;; esac
 only=${1:-}
@@ -105,7 +107,7 @@ historical_folder() { # <old main revision> <current folder>: resolve the same l
   workspace_names "$1" | awk -v name="$name" '$1 == name { print $2; exit }'
 }
 
-aligned_refs() { # <stripped workspace> <current folder> <ownership commit>: align a moved subtree's merge base
+aligned_refs() { # <workspace commit> <current folder> <ownership commit>: align a moved subtree's merge base
   local base old common folder fragment i=$wt.index aligned ws incoming t
   base=$(previous_main "$3") || return 1
   old=""
@@ -158,12 +160,12 @@ reconstruct_records() { # <workspace commit> <folder>: only trusted main sources
     generated_records <"$native/$generated"
     return
   fi
-  native=$(staged_recipe "$base" "$folder" "$recipe") || return 1
+  native=$(stage_inheritance "$base" "$folder" "$recipe") || return 1
   generated_records <"$native/$generated"
 }
 
-staged_recipe() { # recover the last generated target from its manifest; hashes come only from trusted main sources
-  local source original renderer manifest target ready extra=()
+stage_inheritance() { # <source revision> <folder> <workspace commit>: render its manifest with trusted source-side code
+  local source original renderer manifest target ready
   manifest=$(git rev-parse "$3:workspace.yml") || return 1
   if [ "$manifest" = "$(git rev-parse "$1:$2/workspace.yml" 2>/dev/null || true)" ]; then staged "$1" "$2"; return; fi
   target=$cache/recipe/$1/$manifest/native/$2 ready=$cache/status/recipe/$1/$manifest/$2
@@ -177,8 +179,7 @@ staged_recipe() { # recover the last generated target from its manifest; hashes 
     git show "$3:workspace.yml" >"$source/$2/workspace.yml" || return 1
     renderer=$here/render.sh
     if [ -f "$source/ci/render.sh" ] && grep -q -- '--workspace' "$source/ci/render.sh"; then renderer=$source/ci/render.sh; fi
-    if [ "$1" = "$main" ]; then extra=(--opt-outs "$original/$2/workspace.yml"); fi
-    bash "$renderer" --workspace "$2" "${extra[@]}" "$source" "$cache/recipe/$1/$manifest/native" >&2 || return 1
+    bash "$renderer" --workspace "$2" "$source" "$cache/recipe/$1/$manifest/native" >&2 || return 1
     mkdir -p "$(dirname "$ready")" || return 1
     : >"$ready" || return 1
   fi
@@ -209,15 +210,19 @@ managed_records() { # <workspace commit> <folder>: trusted previous ownership, r
   } $2 in owned { print owned[$2] }'
 }
 
-with_generated() { # <workspace commit> <folder> [<ownership commit> [<native stage>]]: check ownership, then materialize
-  local i=$wt.index now old out meta path src entry blob base="" legacy=0 branch_entry child parent paths native owner=${3:-$1} trusted folder
-  native=${4:-$(staged_recipe "$main" "$2" "$1")} || return 1
+apply_inheritance() { # <merged workspace> <folder> <original workspace> <native stage>: validate ownership, apply prepared bytes
+  local i=$wt.index now old out meta path src entry blob base="" legacy=0 branch_entry child parent paths native owner=$3 trusted folder
+  native=$4
   now=$(generated_records <"$native/$generated") || return 1
   old=$(managed_records "$owner" "$2") || return 1
   trusted=$(previous_records "$owner" "$2") || return 1
   out=$(git show "$1:workspace.yml" | optouts) || return 1
-  # Before merging, main's new exclusions must already apply to its new sources.
-  [ -n "${4:-}" ] || out="$out $(git show "$main:$2/workspace.yml" | optouts)" || return 1
+  # A branch's ledger cannot authorize removal of a file outside trusted prior output.
+  while IFS=$'\t' read -r meta path src; do
+    [ -z "$path" ] || recorded "$path" "$trusted" || {
+      echo "sync: $2: CONFLICT: untrusted managed path $path in $generated" >&2; return 1;
+    }
+  done <<<"$(ledger "$owner:$generated")"
   if legacy_workspace "$owner"; then
     legacy=1
     base=$(previous_main "$owner") || return 1
@@ -253,7 +258,8 @@ with_generated() { # <workspace commit> <folder> [<ownership commit> [<native st
     [ -n "$path" ] || continue
     opted_out "$path" "$out" && continue
     recorded "$path" "$now" && continue
-    branch_entry=$(git ls-tree "$1" -- "$path" | awk '$1 != "040000" { print $1 " " $3 }')
+    settings_source "$src" && continue
+    branch_entry=$(git ls-tree "$owner" -- "$path" | awk '$1 != "040000" { print $1 " " $3 }')
     if [ -n "$branch_entry" ] && [ "$branch_entry" != "$meta" ]; then
       echo "sync: $2: CONFLICT: retired managed $path has local edits; preserve it at another path or resolve it explicitly in a workspace PR" >&2
       return 1
@@ -265,6 +271,11 @@ with_generated() { # <workspace commit> <folder> [<ownership commit> [<native st
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     opted_out "$path" "$out" && continue
+    # A retired inherited path may now hold a reviewed, workspace-owned file on main.
+    if ! recorded "$path" "$now" && [ -n "$(file_entry "$main" "$2/$path")" ]; then
+      src=$(printf '%s\n' "$old" | awk -F'\t' -v p="$path" '$2 == p { print $3; exit }')
+      settings_source "$src" || continue
+    fi
     GIT_INDEX_FILE=$i git update-index --force-remove -- "$path" || return 1
   done <<<"$paths"
   while IFS=$'\t' read -r meta path src; do
@@ -286,7 +297,7 @@ with_generated() { # <workspace commit> <folder> [<ownership commit> [<native st
   rm -f "$i"
 }
 
-without_generated() { # <normalized workspace commit>: leave owned payloads and native settings for subtree merging
+without_generated() { # <normalized workspace commit>: leave owned payloads and native settings for a proposal
   local i=$wt.index records meta path src
   records=$(ledger "$1:$generated") || return 1
   rm -f "$i" || return 1
@@ -301,45 +312,20 @@ without_generated() { # <normalized workspace commit>: leave owned payloads and 
   rm -f "$i"
 }
 
-staged_workspace() { # <stripped workspace commit> <folder>: render current sources with the merged owned workspace
-  local source original target=$cache/workspace/$1/native/$2 ready=$cache/status/workspace/$1/$2
-  if git diff --quiet "$1" "$main:$2" -- . ':!.delphi'; then staged "$main" "$2"; return; fi
-  if [ ! -f "$ready" ]; then
-    original=$(source_checkout "$main") || return 1
-    source=$cache/workspace/$1/source
-    mkdir -p "$source" || return 1
-    cp -R "$original/." "$source/" || return 1
-    rm -rf "${source:?}/$2" || return 1
-    mkdir -p "$source/$2" || return 1
-    git archive "$1" | tar -x -C "$source/$2" || return 1
-    rm -rf "$source/$2/.delphi" || return 1
-    bash "$here/render.sh" --workspace "$2" "$source" "$cache/workspace/$1/native" >&2 || return 1
-    mkdir -p "$(dirname "$ready")" || return 1
-    : >"$ready" || return 1
-  fi
-  printf '%s\n' "$target"
-}
-
-resolve_generated_conflicts() { # <stripped workspace commit> <folder> <prefix> <ownership commit>
-  local now old previous out paths path relative entry meta src
-  now=$(staged "$main" "$2") || return 1
-  now=$(generated_records <"$now/$generated") || return 1
-  old=$(managed_records "$4" "$2") || return 1
-  previous=$(previous_records "$4" "$2") || return 1
-  out=$(git show "$1:workspace.yml" | optouts)
-  paths=" $(printf '%s\n%s\n' "$old" "$now" | cut -f2 | tr '\n' ' ') $generated "
-  while IFS=$'\t' read -r meta path src; do
-    [ -z "$path" ] || ! opted_out "$path" "$out" || paths="$paths$path "
-  done <<<"$previous"
+resolve_managed_conflicts() { # <original workspace> <folder> <prefix>: defer only managed-file conflicts; validate after rendering
+  local records out paths path relative entry target
+  records=$(ledger "$1:$generated") || return 1
+  out="$(git show "$1:workspace.yml" | optouts) $(git show "$main:$2/workspace.yml" | optouts)"
+  paths=" $(printf '%s\n' "$records" | cut -f2 | tr '\n' ' ') $generated "
+  for target in $(harnesses); do paths="$paths$(harness_field "$target" settings_file) "; done
   while IFS= read -r path; do
     relative=${path#"$3"}
     [ "$path" = "$3$relative" ] || continue
     case "$paths" in *" $relative "*) ;; *) continue ;; esac
+    opted_out "$relative" "$out" && continue
     git -C "$wt" update-index --force-remove -- "$path" || return 1
     entry=""
     if [ "$relative" = "$generated" ]; then :
-    elif opted_out "$relative" "$out"; then
-      entry=$(file_entry "$1" "$relative")
     else
       entry=$(file_entry "$main" "$2/$relative")
     fi
@@ -367,7 +353,8 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
     local initial native
     initial=$(with_delphi "$main:$2") || { failed=1 ok=0; return; }
     initial=$(git commit-tree -p "$main" -m "delphi: prepare ws/$1" "$initial") || { failed=1 ok=0; return; }
-    initial=$(with_generated "$initial" "$2") || { failed=1 ok=0; return; }
+    native=$(staged "$main" "$2") || { failed=1 ok=0; return; }
+    initial=$(apply_inheritance "$initial" "$2" "$initial" "$native") || { failed=1 ok=0; return; }
     git -C "$wt" checkout --quiet --detach \
       "$(git commit-tree -p "$main" -m "delphi: create ws/$1 from $2" "$initial")" || { failed=1 ok=0; return; }
     git -C "$wt" push --quiet origin "HEAD:refs/heads/ws/$1" || { failed=1 ok=0; return; }
@@ -375,25 +362,19 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
     return
   fi
   local head t ws native alignment incoming
-  t=$(with_generated "$from" "$2") || { failed=1 ok=0; return; }
   ws=$from
-  if [ "$t" != "$(tree "$from")" ]; then
-    ws=$(git commit-tree -p "$from" -m "delphi: sync generated files from main" "$t")
-  fi
-  t=$(without_generated "$ws") || { failed=1 ok=0; return; }
-  [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: prepare owned files for refresh" "$t")
   alignment=$(aligned_refs "$ws" "$2" "$from") || { failed=1 ok=0; return; }
   ws=${alignment%% *} incoming=${alignment#* }
   git -C "$wt" checkout --quiet --detach "$ws"
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: refresh ws/$1 from main" "$incoming" >/dev/null; then
-    if ! resolve_generated_conflicts "$ws" "$2" "" "$from"; then
+    if ! resolve_managed_conflicts "$from" "$2" ""; then
       conflict "ws/$1: CONFLICT refreshing from main; merge main into ws/$1 in a PR (see README)."
       return
     fi
   fi
   head=$(git -C "$wt" rev-parse HEAD)
-  native=$(staged_workspace "$head" "$2") || { failed=1 ok=0; return; }
-  t=$(with_generated "$head" "$2" "$from" "$native") || { failed=1 ok=0; return; }
+  native=$(stage_inheritance "$main" "$2" "$head") || { failed=1 ok=0; return; }
+  t=$(apply_inheritance "$head" "$2" "$from" "$native") || { failed=1 ok=0; return; }
   if [ "$t" != "$(tree "$head")" ]; then
     head=$(git commit-tree -p "$head" -m "delphi: sync generated files from main" "$t")
     git -C "$wt" checkout --quiet --detach "$head"
@@ -423,22 +404,27 @@ propose() { # <name> <folder>: PR owned workspace files into main, leaving inher
   local ws owner title="ws/$1 → main" body pr
   ws=$(git -C "$wt" rev-parse HEAD)
   owner=$ws
-  local t alignment incoming
-  t=$(with_generated "$ws" "$2") || { failed=1 ok=0; return; }
-  [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: prepare managed files for proposal" "$t")
-  t=$(without_generated "$ws") || { failed=1 ok=0; return; }
-  [ "$t" = "$(tree "$ws")" ] || ws=$(git commit-tree -p "$ws" -m "delphi: propose owned files only" "$t")
+  local t alignment incoming candidate native normalized
   alignment=$(aligned_refs "$ws" "$2" "$owner") || { failed=1 ok=0; return; }
   ws=${alignment%% *} incoming=${alignment#* }
   git -C "$wt" checkout --quiet --detach "$incoming"
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: propose ws/$1 to main" "$ws" >/dev/null; then
-    if ! resolve_generated_conflicts "$ws" "$2" "$2/" "$owner"; then
+    if ! resolve_managed_conflicts "$owner" "$2" "$2/"; then
       conflict "ws/$1: CONFLICT proposing to main; merge main into ws/$1 in a PR (see README)."
       return
     fi
   fi
-  t=$(with_delphi "$(git -C "$wt" rev-parse HEAD)" "$2/")
-  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$owner" -m "delphi: propose ws/$1 to main" "$t")"
+  candidate=$(git -C "$wt" rev-parse "HEAD:$2")
+  candidate=$(git commit-tree -p "$owner" -m "delphi: prepare proposal ownership" "$candidate")
+  native=$(stage_inheritance "$main" "$2" "$candidate") || { failed=1 ok=0; return; }
+  t=$(apply_inheritance "$candidate" "$2" "$owner" "$native") || { failed=1 ok=0; return; }
+  normalized=$(git commit-tree -p "$owner" -m "delphi: prepare proposal files" "$t")
+  t=$(without_generated "$normalized") || { failed=1 ok=0; return; }
+  git -C "$wt" rm -rq -- "$2"
+  git -C "$wt" read-tree --prefix="$2/" -u "$t"
+  git -C "$wt" rm -rq --ignore-unmatch -- "$2/.delphi"
+  t=$(git -C "$wt" write-tree)
+  git -C "$wt" checkout --quiet --detach "$(git commit-tree -p "$main" -p "$owner" -m "delphi: prepare main candidate" "$t")"
   if ! bash "$wt/ci/render.sh" "$wt"; then
     echo "ws/$1: main-side rendering failed; not proposed" >&2
     failed=1; return

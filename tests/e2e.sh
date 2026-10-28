@@ -518,6 +518,142 @@ bash ci/sync.sh refresh "$name"
 EXCLUSION
 ok "main source additions and exclusions sync together in both directions; refresh publishes one real merge and repeats unchanged"
 
+# The incoming harness is selected after the merge, and its skill renderer runs once.
+d=$t/merge-first
+git clone -q "$t/seed" "$d"
+bash -euo pipefail -s -- "$d" "$d-origin.git" "$A" "$AN" <<'MERGE_FIRST' >"$t/out" 2>"$t/err" || fail "merge-first generation: $(cat "$t/err")"
+cd "$1"
+origin=$2 folder=$3 name=$4
+for descriptor in ci/harnesses/claude-code.sh ci/harnesses/codex.sh; do
+  cat >>"$descriptor" <<'TRACE'
+eval "$(declare -f translate_skill | sed '1s/translate_skill/original_translate_skill/')"
+translate_skill() {
+  if [ -n "${DELPHI_RENDER_TRACE:-}" ]; then
+    printf '%s|%s|%s\n' "$(cat "$harness_dir/../../render-revision")" \
+      "$(awk '/^harness:/ { print $2 }' "$folder/workspace.yml")" \
+      "$(awk '/^  sample:/ { print $2 }' "$folder/workspace.yml")" >>"$DELPHI_RENDER_TRACE"
+  fi
+  original_translate_skill "$@"
+}
+TRACE
+done
+echo old >render-revision
+echo base >"$folder/owned.txt"
+git rm -rq --ignore-unmatch "$folder/.claude/skills"
+printf 'name: %s\nharness: claude-code\nworkspaces:\n  - main\n' "$name" >"$folder/workspace.yml"
+mkdir -p software/workspace-inherit/.claude/skills/render-order
+printf '%s\n' '---' 'name: render-order' 'description: Render order fixture' '---' 'Read CLAUDE.md.' >software/workspace-inherit/.claude/skills/render-order/SKILL.md
+bash ci/render.sh; git add -A; git commit -qm 'merge-first baseline'
+git clone -q --bare . "$origin"; git remote set-url origin "$origin"
+bash ci/sync.sh refresh "$name"
+git fetch -q; git checkout -q -B edit "origin/ws/$name"
+printf 'repos:\n  sample: https://example.invalid/branch.git\n' >>workspace.yml
+git commit -qam 'branch-owned repository choice'; git push -q origin "HEAD:ws/$name"; git checkout -q main
+before=$(git -C "$origin" rev-parse "ws/$name")
+echo new >render-revision
+git rm -rq "$folder/CLAUDE.md" "$folder/.claude"
+echo '# Codex workspace' >"$folder/AGENTS.md"
+printf 'name: %s\nharness: codex\nworkspaces:\n  - main\n' "$name" >"$folder/workspace.yml"
+bash ci/render.sh; bash ci/check.sh
+git add -A; git commit -qm 'main selects the next harness'; git push -q origin main
+DELPHI_RENDER_TRACE=$PWD/render-trace.log bash ci/sync.sh refresh "$name"
+[ "$(grep -c '^new|' render-trace.log)" = 1 ]
+grep -qx 'new|codex|https://example.invalid/branch.git' render-trace.log
+[ "$(head -n 1 render-trace.log)" = 'new|codex|https://example.invalid/branch.git' ]
+after=$(git -C "$origin" rev-parse "ws/$name")
+[ "$(git -C "$origin" rev-parse "$after^1")" = "$before" ]
+[ "$(git -C "$origin" rev-parse "$after^2")" = "$(git -C "$origin" rev-parse main)" ]
+git -C "$origin" show "$after:.agents/skills/render-order/SKILL.md" | grep -qx 'Read AGENTS.md.'
+! git -C "$origin" cat-file -e "$after:.claude/skills/render-order/SKILL.md" 2>/dev/null
+
+# A retired managed path can become an explicitly owned file on main.
+git rm -rq software/workspace-inherit/.claude/skills/render-order
+mkdir -p "$folder/.agents/skills/render-order"
+printf '%s\n' '---' 'name: render-order' 'description: Owned fixture' '---' 'Owned on main.' >"$folder/.agents/skills/render-order/SKILL.md"
+bash ci/render.sh; git add -A; git commit -qm 'replace inheritance with owned native context'; git push -q origin main
+bash ci/sync.sh refresh "$name"
+git -C "$origin" show "ws/$name:.agents/skills/render-order/SKILL.md" | grep -qx 'Owned on main.'
+! git -C "$origin" show "ws/$name:workspace.generated" | grep -q 'render-order/SKILL.md'
+
+# A forged ledger cannot hide a real conflict in an owned file.
+git fetch -q; git checkout -q -B edit "origin/ws/$name"
+echo branch >owned.txt
+printf '100644 %s\towned.txt\tsoftware/workspace-inherit/fake.txt\n' "$(git hash-object owned.txt)" >>workspace.generated
+git commit -qam 'forge an owned-file claim'; git push -q origin "HEAD:ws/$name"; git checkout -q main
+echo main >"$folder/owned.txt"
+git commit -qam 'main edits the same owned file'; git push -q origin main
+before=$(git -C "$origin" for-each-ref --format='%(refname) %(objectname)' "refs/heads/ws/$name" "refs/heads/propose/$name")
+for direction in refresh propose; do
+  if bash ci/sync.sh "$direction" "$name" >conflict.log 2>&1; then exit 1; fi
+  grep -q 'untrusted managed path owned.txt' conflict.log
+  [ "$(git -C "$origin" for-each-ref --format='%(refname) %(objectname)' "refs/heads/ws/$name" "refs/heads/propose/$name")" = "$before" ]
+done
+[ "$(git -C "$origin" show "ws/$name:owned.txt")" = branch ]
+[ "$(git -C "$origin" show "main:$folder/owned.txt")" = main ]
+MERGE_FIRST
+ok "refresh renders the merged harness/configuration once, then publishes one commit"
+ok "retired inheritance preserves main-owned replacements; forged ledgers cannot bypass owned-file conflicts"
+
+d=$t/branch-only-harness
+git clone -q "$t/seed" "$d"
+bash -euo pipefail -s -- "$d" "$d-origin.git" "$A" "$AN" <<'BRANCH_HARNESS' >"$t/out" 2>"$t/err" || fail "branch-only harness: $(cat "$t/err")"
+cd "$1"
+origin=$2 folder=$3 name=$4
+git rm -rq --ignore-unmatch "$folder/.claude/skills"
+git add -A; git commit -qm 'branch harness fixture'
+git clone -q --bare . "$origin"; git remote set-url origin "$origin"
+bash ci/sync.sh refresh "$name"
+git fetch -q; git checkout -q -B edit "origin/ws/$name"
+git mv CLAUDE.md AGENTS.md
+awk '/^plugins:/ { skip = 1; next } /^[^[:space:]#]/ { skip = 0 } !skip { print }' workspace.yml >manifest.tmp
+sed 's/harness: claude-code/harness: codex/' manifest.tmp >workspace.yml; rm manifest.tmp
+git commit -qam 'branch selects Codex before main'; git push -q origin "HEAD:ws/$name"; git checkout -q main
+bash ci/sync.sh refresh "$name"
+! git -C "$origin" cat-file -e "ws/$name:.claude/settings.json" 2>/dev/null
+git -C "$origin" show "main:$folder/workspace.yml" | grep -qx 'harness: claude-code'
+git -C "$origin" cat-file -e "main:$folder/.claude/settings.json"
+bash ci/sync.sh propose "$name"
+git -C "$origin" show "propose/$name:$folder/workspace.yml" | grep -qx 'harness: codex'
+! git -C "$origin" cat-file -e "propose/$name:$folder/.claude/settings.json" 2>/dev/null
+BRANCH_HARNESS
+ok "branch-only harness switches retire generated settings while main keeps the original harness"
+
+# A failed main-candidate generator must leave the temporary worktree ready for the next workspace.
+d=$t/proposal-isolation
+git clone -q "$t/seed" "$d"
+bash -euo pipefail -s -- "$d" "$d-origin.git" "$A" "$AN" "$B" "$BN" <<'ISOLATION' >"$t/out" 2>"$t/err" || fail "proposal failure isolation: $(cat "$t/err")"
+cd "$1"
+origin=$2 a=$3 an=$4 b=$5 bn=$6
+mv ci/render.sh ci/render-base.sh
+cat >ci/render.sh <<'WRAPPER'
+#!/usr/bin/env bash
+set -euo pipefail
+case "${1:-}" in --workspace) ;; *)
+  if [ -f "${1:-.}/software/application-software/argos/workspaces/argos-dev/fail-proposal.txt" ]; then
+    echo 'forced proposal render failure' >&2; exit 1
+  fi ;;
+esac
+exec bash "$(dirname "$0")/render-base.sh" "$@"
+WRAPPER
+git add -A; git commit -qm 'proposal isolation fixture'
+git clone -q --bare . "$origin"; git remote set-url origin "$origin"
+bash ci/sync.sh refresh
+git fetch -q
+for name in "$an" "$bn"; do
+  git checkout -q -B edit "origin/ws/$name"
+  file=surviving-proposal.txt; [ "$name" != "$an" ] || file=fail-proposal.txt
+  echo owned >"$file"; git add "$file"; git commit -qm 'workspace edit'
+  git push -q origin "HEAD:ws/$name"
+done
+git checkout -q main
+if bash ci/sync.sh propose >isolation.log 2>&1; then exit 1; fi
+grep -q 'forced proposal render failure' isolation.log
+! git -C "$origin" rev-parse --quiet --verify "refs/heads/propose/$an" >/dev/null
+[ "$(git -C "$origin" show "propose/$bn:$b/surviving-proposal.txt")" = owned ]
+[ "$(git -C "$origin" diff --name-only main "propose/$bn")" = "$b/surviving-proposal.txt" ]
+ISOLATION
+ok "a failed proposal generator preserves other workspace proposals without leaking its candidate files"
+
 # --- 5. a conflict on bms-dev is reported; argos-dev still syncs; exit 1
 commit_on ws/$BN CLAUDE.md "ws side"
 commit_on main "$B/CLAUDE.md" "main side"
