@@ -17,9 +17,10 @@ source of truth; `docs/goals.md` lists what any change must keep.
   labelled `by: ai` (new-workspace: `--by ai-assisted|human` when the user says so).
 - `ci/plugins.sh`: writes `.claude-plugin/marketplace.json` from the plugin sets
   (`software/**/plugins/<harness>/<set>/`, named `<scope>[.<set>]`; a folder's scope is its
-  `plugins/scope`, else its `short-name`, else its name), each workspace's `workspace.yml` `plugins:` defaults (the
+  `plugins/scope`, else its `short-name`, else its name), each Claude Code workspace's `workspace.yml` `plugins:` defaults (the
   `default` set of every folder above), and its `.claude/settings.json` (enabled sets, and the SessionStart hook that sets `$DELPHI_ROOT`; never edit
-  it by hand). Run it after changing a set or a `workspace.yml`'s `plugins:`.
+  it by hand). `ci/render.sh` calls it for main-side plugin output; sync keeps branch-selected
+  plugin sets active while their proposal to main is pending.
 - `.delphi/{setup,new-worktree,switch,park,plugins}.sh`: the scripts every workspace runs (setup.sh
   runs `plugins.sh`, which makes this clone's local `@delphi` installs what the workspace enables and
   uninstalls ones the marketplace dropped, so plugin changes need no migration); `.delphi/paths.sh`
@@ -31,18 +32,29 @@ source of truth; `docs/goals.md` lists what any change must keep.
   version, with its hash from `.delphi/version.sh`), `.delphi/migrations/<version>-<slug>.sh` (clone
   cleanup, run by `setup.sh`).
 - `templates/workspace/`: `workspace.yml`, `CLAUDE.md` (`{{name}}`, `{{folder}}`), the managed
-  `.github/workflows/delphi.yml` every workspace carries unchanged. The general `new-worktree`,
-  `switch-workspace`, `setup-workspace`, and `journal` skills are in `software/workspace-inherit/`.
+  `.github/workflows/delphi.yml` every workspace carries unchanged. The general skills are in
+  `software/workspace-inherit/.claude/skills/`; Codex adds its bootstrap from `templates/harnesses/`
+  to the common instruction base once at creation.
 - `software/plugins/claude/default/`: the `delphi` plugin set, a mod whose `/ws-delphi` pane switches
   workspaces (`hooks/register.tsx`, tests in `tests/ws.test.ts`, run by `claude plugin test`);
   `/ws-delphi --web` serves the same cards in a browser tab (`web/server.py`, `web/index.html`).
 - `software/…/workspaces/<leaf>/`: the workspaces. Org structure is plain directories. A project
   folder (the one holding `workspaces/`) may add `README.md`, `AUTHORING.md`, and `workspace-defaults/`
-  (copied once into a new workspace there). Any folder may add `workspace-inherit/` (written onto the
-  `ws/*` root of every workspace below on each refresh, never proposed; `opt-out:` in a
-  `workspace.yml` skips a path).
+  (translated once into a new workspace there). Existing source layouts stay intact; optional
+  `source.yml` declares a different authoring format. Any org/project folder may add `workspace-inherit/`;
+  CI prepares inheritance in temporary staging and refresh copies it only to ws branches.
+  Their `workspace.generated` records ownership; `opt-out:` transfers a native path to the workspace.
+  Main keeps owned native files and canonical sources, never inherited copies or ledgers.
 - `.github/workflows/delphi.yml` (identical to the template's copy), `.github/CODEOWNERS`; issue templates (idea, spike, epic, dev work) and the PR template in `.github/`, filed with the `create-ticket` skill (`.claude/skills/`).
 - `tests/e2e.sh`: end-to-end test in a throwaway sandbox (bare origin, stub `gh` logging to `gh.log`).
+- `ci/render.sh [--check] [--workspace <folder>] [<main-checkout> [<staging-output>]]`: update plugin
+  output, or prepare inherited native files and ledgers in optional temporary staging. Main-side
+  checks reject managed copies, ledgers and ownership collisions; inherited output is never committed there.
+  `ci/harnesses.sh` reads `ci/harnesses/<name>.sh` through pure `harness_field` queries;
+  `ci/sources.sh` reads independently selected formats; `ci/inherit.sh` resolves sources.
+  `ci/managed.sh` shares ownership logic with sync, whose refresh
+  copies staged output. Every workspace must explicitly declare its harness. Codex uses
+  `.delphi/exec.sh` to initialize helper commands in independent shells.
 
 ## Rules
 
@@ -52,11 +64,18 @@ source of truth; `docs/goals.md` lists what any change must keep.
   headers): name the file or key that holds them ("the folders in `.delphi/park.list`", "each repo
   under `repos:`"), never its entries. A copied list goes stale. Runtime tools: bash, git, and `gh` (only to open or update PRs).
 - Every script: `#!/usr/bin/env bash`, `set -euo pipefail`, `shellcheck`-clean.
-- Skills name nothing harness-specific (SKILL.md is the shared Agent Skills format): call scripts by
+- Keep Claude skill sources under workspace-inherit/.claude/skills with their metadata intact.
+  Each descriptor owns `translate_skill`; native metadata conversion, identifier mappings and
+  helper bootstrap affect only generated output. Write skills once in Claude format; translate
+  identifiers and feature bullets, never exact source sentences or per-skill copies. Validation
+  rejects unmapped Claude identifiers in other harnesses; qualified code-repository paths stay literal.
+  Shared-source paths and opt-out keys follow `docs/design.md`'s portable-path rule; existing owned
+  workspace filenames are unaffected.
+  Skill scripts stay harness-independent (SKILL.md uses the Agent Skills format): call scripts by
   their path in the skill's folder, `bash scripts/<script>.sh <names>…`, and reference files the same
   way. Skill scripts (inherited, plugin or workspace) take only names (repo, branch) and read the workspace
   from `$DELPHI_ROOT`, sourcing `$DELPHI_ROOT/.delphi/paths.sh` for every folder; each harness's
-  generated settings set it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
+  bootstrap sets it (Claude Code: a SessionStart hook in `.claude/settings.json`, from
   `ci/plugins.sh`). Never search for the root or default to the cwd's branch.
 - `.delphi/*.sh` run on people's machines: bash 3.2 (macOS) and Git Bash safe. No bash-4
   features (associative arrays, `mapfile`, `${x,,}`, `|&`), POSIX awk only.

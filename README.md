@@ -6,7 +6,10 @@ named by the **short name** of each folder above it, from `software/` down, then
 name, joined by dots: `software/application-software/argos/workspaces/argos-dev` is
 `s.app.argos.argos-dev` (a folder's short name is its `short-name` file, else its name;
 `.delphi/names.sh` prints them all). For each one, CI keeps a branch **`ws/<name>`**
-whose repo root *is* that folder, so people and agents work on it with plain git. Design: `docs/design.md`. Goals: `docs/goals.md`.
+whose repo root *is* that folder. Each workspace explicitly declares its harness and keeps its owned
+files at native paths on `main`. Shared skills stay in their canonical sources on main; CI adds
+inherited native copies only to `ws/*`. People and agents work with plain git. Design:
+`docs/design.md`. Goals: `docs/goals.md`.
 
 ## How it works
 
@@ -83,10 +86,29 @@ references are there too (a workspace inside another's `workspaces/` skips its o
 edited from the workspace that links them; to change one, work in its own clone or switch to it.
 
 The workspace's dotted name is repeated in `name:` so a checkout knows which workspace it is; names
-are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Every other file in the folder is the workspace's own, at its normal harness
-path, except `.github/workflows/delphi.yml` (a copy of the template's). The scripts, `.delphi/*.sh`
+are unique (give a folder a `short-name` that no sibling's name or short name clashes with). Files
+live at normal harness paths. On `ws/*`, `workspace.generated` records managed copies; it never
+returns to main. Instructions, docs and opted-out copies remain workspace-owned. The workflow comes from
+the template. The scripts, `.delphi/*.sh`
 (listed in `.delphi/manifest.yml`), live once at main's root: sync puts
 `.delphi/` on every `ws/*` branch, so change them only through PRs to main.
+
+## Codex
+
+Argos's `default-codex` workspace targets the Codex harness across hosts:
+
+```sh
+git clone -b ws/s.app.argos.default-codex https://github.com/Northeastern-Electric-Racing/Delphi.git delphi
+cd delphi
+bash .delphi/setup.sh
+```
+
+Open the workspace in Codex and follow `AGENTS.md`. It discovers native skills under `.agents/skills/`.
+Use `.delphi/exec.sh` for helper commands so each shell receives the workspace layout. Start a fresh
+session after switching workspaces. The host supplies dependencies, credentials and integrations;
+Codex workspaces do not enable Delphi's Claude plugin sets.
+Generated Codex skills include the complete helper invocation in each script command, so fresh
+shells and sub-agents initialize the same layout.
 
 ## Versions
 
@@ -98,7 +120,7 @@ a version needs cleanup in people's clones, it ships `.delphi/migrations/<versio
 
 ## New workspace
 
-`tools/new-workspace.sh <org-path under software/> <leaf>` copies `templates/workspace/` into
+`tools/new-workspace.sh [--harness <adapter>] <org-path under software/> <leaf>` copies `templates/workspace/` into
 `software/<org-path>/workspaces/<leaf>/`, adds the project's `workspace-defaults/` if it has one, and
 opens a PR to `main`, labelled `by: ai` (put `--by ai-assisted` or `--by human` first to change it).
 Once it merges, CI creates `ws/<name>` (its dotted name).
@@ -107,12 +129,26 @@ Once it merges, CI creates `ws/<name>` (its dotted name).
 can hold shared context (`README.md`), a guide to its workspaces (`AUTHORING.md`), and
 `workspace-defaults/` (what a new workspace there starts with).
 
-**Inherited files.** Any folder under `software/`, `software/` itself included, can hold
-`workspace-inherit/`: files (usually skills, never `CLAUDE.md`) that CI writes onto the `ws/*` branch
-of every workspace below it on each sync. Edit them on `main`; a workspace's own edit is undone. To
-keep its own copy, a workspace lists the path under `opt-out:` in its `workspace.yml`.
-A workspace that lists `main` under `workspaces:` reads them at `workspaces/main/` (recommended for every
-new workspace); to change them, switch to `main`.
+**Shared sources.** Keep Claude skills and their metadata in
+`workspace-inherit/.claude/skills/<name>/`. The optional `source.yml` selects an authoring format
+from the harness registry; each workspace's `harness:` independently selects its target.
+`workspace-defaults/` seeds owned files once; `workspace-inherit/` stays managed.
+Each harness descriptor owns its translation function. Skills are authored once in Claude format;
+CI rejects Claude identifiers that a non-Claude translator leaves unmapped.
+Register a target or source format in `ci/harnesses/<name>.sh`; its entry owns the native contract.
+
+**Preparation and sync.** CI translates inheritance from main into temporary staging, then refresh
+copies it onto workspace branches. Main contains no inherited copies or ownership ledgers.
+After source or configuration changes, run `bash ci/render.sh` to update plugin settings and
+`bash ci/check.sh` to validate the repo. Commit sources and owned files; CI prepares inheritance.
+
+**Ownership.** Edit shared sources instead of their managed branch copies. To keep an editable
+workspace copy, list its native path under `opt-out:`. Proposals retain owned files and opted-out
+skills while stripping managed copies, `workspace.generated` and the branch's `.delphi/`.
+Collisions are reported. See `docs/design.md` for the adapter contract and ownership rules.
+Source-native opt-outs also exclude unsupported inputs before mapping. Shared paths and opt-out
+keys use portable ASCII names without spaces or control characters; this naming rule does not
+restrict workspace-owned files.
 
 ## CI (`.github/workflows/delphi.yml`)
 
