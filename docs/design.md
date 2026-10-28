@@ -130,20 +130,46 @@ Shared-source paths, generated ledger paths and opt-out keys accept only ASCII
 ```mermaid
 ---
 config:
+  theme: base
   htmlLabels: false
+  fontSize: 16
+  themeVariables:
+    primaryColor: '#f3f4f6'
+    primaryTextColor: '#111827'
+    primaryBorderColor: '#64748b'
+    nodeTextColor: '#111827'
+    clusterBkg: '#f8fafc'
+    clusterBorder: '#94a3b8'
+    titleColor: '#111827'
+    lineColor: '#64748b'
+    edgeLabelBackground: '#f3f4f6'
   flowchart:
     htmlLabels: false
+    subGraphTitleMargin:
+      top: 10
+      bottom: 18
 ---
 flowchart TD
-    S["Canonical sources on main"] --> R["Temporary preparation"]
-    W["workspace.yml: harness"] --> R
-    R --> T["Staged native inheritance"]
-    T -->|"refresh copies"| B["Workspace branch"]
-    W -->|"owned native files"| B
-    B -->|"propose strips managed"| P["PR with owned changes"]
-    P --> W
-    style R fill:#eff6ff,stroke:#2563eb,color:#111827,stroke-width:2px
+    subgraph MAIN["Stored on main"]
+        S["Canonical inherited sources"]
+        O["Owned native workspace files"]
+    end
+    subgraph CI["Temporary CI staging"]
+        T["1. Map paths and translate skills"]
+        H["2. Hash native bytes and write ledger"]
+        T --> H
+    end
+    S --> T
+    H -->|"refresh copies"| B["ws/name: owned + inherited + runtime"]
+    O -->|"merge owned files"| B
+    B -->|"strip managed output"| P["PR: owned native changes"]
+    P --> O
+    style T fill:#eff6ff,stroke:#2563eb,color:#111827,stroke-width:2px
 ```
+
+The blue step runs before branch publication. Refresh uses it before the owned-file merge for
+ownership checks, then with the merged manifest for final output; cached stages may be reused.
+Proposals discard staged inheritance and return owned files in their existing native format.
 
 A plugin set is for what `workspace-inherit/` can't do: context only some workspaces opt into, or
 harness features beyond files (hooks, MCP servers). It lives in `plugins/<harness>/<set>/` of a
