@@ -19,3 +19,4 @@
 1.2.0 d139aaf9f4a5 worktrees come from their own bare store, worktrees/<name>/.bare, separate from the plain clone at repos/<name>; setup.sh makes the store and the default-branch worktree again; an older bare store at repos/<name> is left as it is
 2.0.0 750acf945979 a bare repos/<name> from before 1.1.0 becomes the worktree store, worktrees/<name>/.bare, with its worktrees, and repos/<name> is cloned normally (migration; skipped with a message if it has no origin or work not on origin)
 2.1.0 84b00128fc22 add a harness-independent per-command workspace bootstrap for Codex
+2.1.1 66714104d7a3 new-worktree.sh passes a <base> only on origin as origin/<base> (Git 2.43 checked out <base> instead of -b) and fails unless the worktree is on <branch> (#85)

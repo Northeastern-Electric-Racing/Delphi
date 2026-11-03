@@ -1073,11 +1073,18 @@ nw code feat >/dev/null && [ "$(git -C "$w/worktrees/code/feat" rev-parse HEAD)"
 [ "$(git -C "$w/worktrees/code/feat" rev-parse --abbrev-ref '@{u}')" = origin/feat ] || fail "existing branch not tracking origin"
 nw code 2-dev origin/develop >/dev/null && [ "$(git -C "$w/worktrees/code/2-dev" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse develop)" ] ||
   fail "<base> ignored"
+! git -C "$w/worktrees/code/.bare" rev-parse -q --verify refs/heads/develop >/dev/null || fail "store already has a local develop"
+nw code 3-dev develop >/dev/null && [ "$(git -C "$w/worktrees/code/3-dev" branch --show-current)" = 3-dev ] &&
+  [ "$(git -C "$w/worktrees/code/3-dev" rev-parse HEAD)" = "$(git -C "$t/code" rev-parse develop)" ] || fail "<base> only on origin: not on the new branch"
+! git -C "$w/worktrees/code/.bare" rev-parse -q --verify refs/heads/develop >/dev/null || fail "<base> only on origin: left a local develop"
+git -C "$w/worktrees/code/.bare" worktree add -q --detach "$w/worktrees/code/4-off" origin/develop
+! nw code 4-off >/dev/null 2>"$t/err" || fail "worktree off its branch not refused"
+grep -q "is on 'a detached HEAD', not '4-off'" "$t/err" || fail "worktree off its branch refusal unexplained: $(cat "$t/err")"
 [ "$(nw code feat)" = "$w/worktrees/code/feat" ] || fail "rerun did not reuse"
 [ "$(git -C "$w/worktrees/code/$def" branch --show-current)" = "$def" ] || fail "default worktree left its branch"
 { [ "$(git -C "$w/repos/code" branch --show-current)" = "$def" ] && [ "$(git -C "$w/repos/code" worktree list | wc -l | tr -d " ")" = 1 ] &&
   ! git -C "$w/repos/code" rev-parse -q --verify refs/heads/1-new >/dev/null; } || fail "new-worktree touched the clone at repos/code"
-ok "new-worktree.sh makes new branches from the default or <base>, checks out existing ones, reuses on rerun, never touching repos/<repo>"
+ok "new-worktree.sh makes new branches from the default or <base> (local or only on origin), checks out existing ones, reuses on rerun, refuses a worktree off its branch, never touching repos/<repo>"
 # skill scripts read the workspace from $DELPHI_ROOT (the session hook evals paths.sh's export line) and every folder from paths.sh
 (. "$w/.delphi/paths.sh" && [ "$DELPHI_ROOT" = "$w" ] && [ "$DELPHI_REPOS" = "$w/repos" ] &&
   [ "$DELPHI_WORKTREES" = "$w/worktrees" ] && [ "$DELPHI_REFERENCES" = "$w/references" ] && [ "$DELPHI_WORKSPACES" = "$w/workspaces" ]) ||
