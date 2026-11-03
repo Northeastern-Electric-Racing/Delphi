@@ -11,5 +11,4 @@ description: Implement an Argos ticket or task in its own worktree, test-first, 
    - Frontend, in `(cd worktrees/argos/<branch>/angular-client && …)`: `npx ng test --include='src/**/thing.spec.ts' --watch=false` while iterating; at the end `npx ng test --watch=false` (bare `ng test` blocks), then `npx prettier --check "src/**/*.{ts,html,scss}" && npx ng lint`.
    - Backend, in `(cd worktrees/argos/<branch>/scylla-server && …)`: `cargo build` and single tests while iterating; `cargo test` at the end.
    - UI changes: verify in the running app with `run-local <branch>`.
-   - AGLint, last: load the `pr-conventions` skill and follow its AGLint check.
 6. **Commit** with `/commit`. Don't push or open a PR unless asked; that's `/open-pr`.
