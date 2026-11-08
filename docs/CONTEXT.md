@@ -76,10 +76,15 @@ _Avoid_: Simulator, encoder (without naming Calypso).
 
 Project-specific choices. Everything else follows current Angular and Rust defaults.
 
-**angular-client**
-- External `templateUrl` and `styleUrls`, never inline templates or styles.
-- Icons, never emojis: Material Icons (`mat-icon` with `svgIcon`) for app-level UI, PrimeIcons (`pi pi-*`) inside PrimeNG components. Custom SVGs go in `src/assets/icons/`, registered with `MatIconRegistry`.
-- Must pass AXE checks, WCAG AA minimum.
+**angular-client** (UI approach: ADR 0007)
+- External `templateUrl`, never inline templates or styles. A component is styled with utilities and has no stylesheet, or has `styleUrls` and no utilities, never both: unlayered CSS beats utilities.
+- Tailwind v4 utilities on the tokens in `src/styles/theme.css` only (`bg-surface-2`, `text-fg-muted`): no default palette, arbitrary colours or `!` modifier. Font sizes come from the type scale; an arbitrary size only when it must follow the viewport. Dark-only, so never `dark:`; never `::ng-deep`.
+- Text that carries meaning is at full strength: no opacity on it. White text only on `accent-strong`, `secondary` or darker.
+- A look used in more than one place is a recipe in `src/ui/recipes/`: complete class lists in `tw()`, joined with `cx()`, never built from fragments. Shared behaviour is a primitive in `src/ui/` on Angular Aria or the CDK.
+- Icons, never emojis: `<ui-icon>` only, `name` for a Material Icons ligature or `svg` for our SVGs in `src/assets/icons/`, registered with `UiIconRegistry` in `app-context`. It is `aria-hidden` unless given a `label`.
+- Third-party CSS goes in a cascade layer below utilities (`vendor`, `cdk` in `src/styles.css`), never unlayered.
+- Move focus after an action with `injectFocusAfterRender` (`src/ui/focus/`), so it never drops to `<body>`.
+- Must pass AXE checks, WCAG AA minimum: text 4.5:1, control edges and states 3:1, targets at least 24×24 px.
 
 **scylla-server**
 - Controller → Service → DB: thin controllers, business logic in services, Diesel for DB access with batch upserts.
