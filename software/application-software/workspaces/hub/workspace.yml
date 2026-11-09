@@ -8,6 +8,7 @@ opt-out:                  # `- <path>`: files from the workspace-inherit/ folder
 # .delphi/setup.sh checks out everything below (git-ignored); re-run it after any change.
 repos:                    # `<name>: <git-url>`: code you change; a clone at repos/<name>, and separately worktrees/<name>/<branch> (default branch first)
   # name: https://github.com/Northeastern-Electric-Racing/<Repo>.git
+  ner-jarvis: https://github.com/Northeastern-Electric-Racing/ner-jarvis.git
 references-git:           # `<name>: <git-url> [<tag-or-branch>]`: dependency sources to read, never edit; shallow copy at references/<name>
   # name: https://github.com/<owner>/<repo>.git v1.2.3   # no tag or branch: its default branch
 workspaces:               # `- <name>` (dotted) or `- main`: Delphi workspaces to read, not edit from here; a clone on its branch at workspaces/<name or main>
