@@ -1,0 +1,18 @@
+---
+name: demo
+description: Rerun, fix or start a saved web UI demo (a Playwright script per page, kept in the code repo) to get stills with a walkthrough, or an MP4 with chapters, for a PR. Use when a PR or ticket should show a UI change, a demo step breaks, or a page needs its first demo.
+---
+
+A demo is `<name>.demo.js` in the code repo, next to the app it shows, so a UI change updates its demo in the same diff. It is a list of named steps, and its first line, `// covers: <path fragment>…`, names the source it shows. `scripts/template.demo.js` documents the format and the helpers a step gets.
+
+Start the branch's app first (the project's run-local skill), with any data its demos need, then use its URL:
+
+1. **Which demos:** `bash scripts/affected.sh <repo> <branch> [<base>]` lists the demos whose covered source, or whose own file, the branch changed since `<base>` (default `origin/HEAD`).
+2. **Stills, the quick check:** `bash scripts/run.sh <repo> <branch> <url> [<demo>…]` (every demo if none is named) writes a 2× PNG per step and `walkthrough.md`, each step's caption over its still, to `pictures/<branch>/demo/<demo>/`. Dwells are skipped; waits for data are kept. Open the stills and judge them.
+3. **Video:** add `--video` for `<demo>.mp4` at real pacing, with a cursor and no burned-in captions, and `chapters.md`, a timestamp per step for the PR body. GitHub attachments must be under 10 MB: the run says when it's over, and `DEMO_CRF=28` (default 20) makes it smaller.
+
+A failed step stops its demo with the step's name and `failed-<step>.png`: look at it, fix that step in the demo file, and rerun from it with `--from "<step>"` (earlier steps run unpaced and unrecorded). Console errors are listed after each demo; report them.
+
+**New demo:** `bash scripts/new.sh <repo> <branch> <name> <route>` copies the template next to the repo's other demos and prints its path. Fill in its steps by hand with `npx playwright codegen <url><route>` (no model needed), or from the page's accessibility snapshot. Group the actions into named steps with captions, add dwells where a viewer should look, set `covers:`, and check it with a stills run. Helpers only one app needs (a tree item, say) go in a `lib.js` next to its demos.
+
+Commit demo changes on the branch with the UI change. Attach the MP4 or the stills to the PR, with `chapters.md` or the walkthrough's captions in its body.
