@@ -360,6 +360,23 @@ o show "ws/$BN:.claude/skills/retire-optout/SKILL.md" | grep -qx 'owned before s
 sync refresh "$BN" >/dev/null
 ok "retirement preserves an opt-out rescinded before any intermediate sync by reporting the ambiguity"
 
+# #81: retiring a source and its obsolete opt-out while the owned copy's proposal is pending keeps
+# and proposes the copy; the retired source must not pass for a rename of that copy.
+RI=software/workspace-inherit/.claude/skills/retire-pending
+on_main "pending opt-out fixture" sh -c "mkdir -p $RI && printf 'shared line %s\n' 1 2 3 4 5 6 >$RI/SKILL.md"
+sync refresh "$BN" >/dev/null
+commit_on "ws/$BN" workspace.yml "  - .claude/skills/retire-pending"
+commit_on "ws/$BN" .claude/skills/retire-pending/SKILL.md "owned pending"
+sync "$BN" >"$t/out" 2>&1 || fail "pending opt-out proposal: $(cat "$t/out")"
+on_main "retire pending source" git rm -rq "$RI"
+(cd "$t/dev" && git fetch -q && git checkout -q -B pending-optout "origin/ws/$BN" &&
+  sed -i.bak '\|^  - .claude/skills/retire-pending$|d' workspace.yml && rm workspace.yml.bak &&
+  git commit -qam "drop obsolete pending opt-out" && git push -q origin "HEAD:ws/$BN")
+sync "$BN" >"$t/out" 2>&1 || fail "retiring a pending opt-out's source: $(cat "$t/out")"
+o show "ws/$BN:.claude/skills/retire-pending/SKILL.md" | grep -qx 'owned pending' || fail "pending owned copy was lost"
+o show "propose/$BN:$B/.claude/skills/retire-pending/SKILL.md" | grep -qx 'owned pending' || fail "pending owned copy not proposed"
+ok "retiring a source and its opt-out while the owned copy's proposal is pending keeps and proposes the copy"
+
 # A folder can move without changing its dotted workspace name or losing trusted ownership.
 d=$t/stable-name-rename
 git clone -q "$t/seed" "$d"

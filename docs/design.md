@@ -237,7 +237,9 @@ For every workspace on `origin/main` (or just `<name>`):
 3. **Propose** merges the workspace into a temporary main candidate, verifies ownership and strips
    managed inheritance, `workspace.generated` and the branch runtime. Owned files and opted-out
    copies remain native. It regenerates settings, runs `ci/check.sh`, and updates `propose/<name>`
-   only when the tree changes. Existing PR labels are preserved.
+   only when the tree changes. Existing PR labels are preserved. After a refresh that changed
+   nothing, it merges from that main, so sources main retired meanwhile never conflict with a
+   workspace's owned copy.
 
 History stays joined through subtree merges; workspace branches are never force-pushed. Legacy
 path-named branches still carry over into dotted names while ahead, and receive the result once;
