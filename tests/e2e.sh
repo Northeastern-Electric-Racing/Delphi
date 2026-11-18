@@ -1837,6 +1837,49 @@ grep -q 'each workspace has its own .fixture/config.ini' "$t/err" || fail "regis
 [ ! -e "$d/$F/.fixture/config.ini" ] || fail "protected native configuration was written to main"
 ok "new registry entries protect their declared native configuration without validator changes"
 
+# --- 13b. Argos teardown-storage: lists dev stacks, unused Argos images, build cache and run-local state with
+# sizes; removes only those, never a production stack, nothing while a client serves; Docker stopped: state only
+mkdir -p "$t/dk/bin" "$t/dk/tmp/argos-run-local"
+cat >"$t/dk/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  info) [ ! -e "$t/dk/down" ] ;;
+  "ps "*) echo 'odyssey_client-dev-odyssey-db-1|odyssey_client-dev|/w/compose.yml,/w/compose.client-dev.yml|4kB (virtual 457MB)|postgres:17.2'
+    echo 'odyssey_router-scylla-server-1|odyssey_router|/w/compose.yml,/w/compose.router.yml|0B|argos-scylla:develop'
+    [ ! -e "$t/dk/prod" ] || echo 'odyssey_db_1-odyssey-db-1|odyssey_db_1|/w/compose.yml,/w/compose.tpu.yml|0B|postgres:17.2' ;;
+  "system df -v") printf 'VOLUME NAME LINKS SIZE\nodyssey_client-dev_db-data 1 312MB\nodyssey_router_db-data 1 50MB\n\n' ;;
+  *Reclaimable*) echo 'Build Cache|1.4GB (100%)' ;;
+  "system df "*) if [ -e "$t/dk/removed" ]; then echo 1GB; else echo 2.5GB; fi ;;
+  "volume ls "*) printf '%s\n' 'odyssey_client-dev_db-data|odyssey_client-dev' 'odyssey_router_db-data|odyssey_router' ;;
+  "network ls "*) printf '%s\n' 'odyssey_client-dev_default|odyssey_client-dev' 'odyssey_router_default|odyssey_router' ;;
+  "images "*) printf '%s\n' 'argos-scylla|develop|a1|119MB' 'argos-client-813-check|latest|b2|98MB' 'postgres|17.2|c3|457MB' ;;
+  *) echo "docker \$*" >>"$t/dk/log" && touch "$t/dk/removed" ;;
+esac
+EOF
+chmod +x "$t/dk/bin/docker" && touch "$t/dk/log"
+td() { PATH="$t/dk/bin:$PATH" TMPDIR=$t/dk/tmp bash "$src/software/application-software/argos/workspace-inherit/.claude/skills/teardown-storage/scripts/teardown.sh" "$@"; }
+echo 1 >"$t/dk/tmp/argos-run-local/x.port"
+sleep 30 &
+echo $! >"$t/dk/tmp/argos-run-local/x.pid"
+{ out=$(td) && echo "$out" | grep -qx 'volume      odyssey_client-dev_db-data (odyssey_client-dev)  312.0MB' &&
+  echo "$out" | grep -qx 'image       argos-client-813-check:latest  98.0MB' && echo "$out" | grep -q '^build-cache .* 1.40GB$' &&
+  echo "$out" | grep -q '^container   odyssey_client-dev-odyssey-db-1 ' && echo "$out" | grep -q '^network     odyssey_client-dev_default ' &&
+  echo "$out" | grep -qx 'left alone (not dev stacks): odyssey_router' && echo "$out" | grep -q "kill $(cat "$t/dk/tmp/argos-run-local/x.pid")" &&
+  ! echo "$out" | grep -q 'argos-scylla\|postgres\|odyssey_router_' && [ ! -s "$t/dk/log" ]; } || fail "teardown list: $out"
+! td remove >/dev/null 2>&1 && [ ! -s "$t/dk/log" ] || fail "teardown removed while a run-local client serves"
+kill "$(cat "$t/dk/tmp/argos-run-local/x.pid")" && touch "$t/dk/prod"
+! td remove >/dev/null 2>"$t/err" && grep -q 'odyssey_db_1.*compose.tpu.yml' "$t/err" && [ ! -s "$t/dk/log" ] ||
+  fail "teardown touched a dev-named stack made from a production compose file"
+rm "$t/dk/prod"
+{ out=$(td remove) && echo "$out" | grep -q '^freed 1.50GB$' && [ ! -e "$t/dk/tmp/argos-run-local" ] &&
+  [ "$(cat "$t/dk/log")" = "$(printf '%s\n' 'docker rm -f odyssey_client-dev-odyssey-db-1' 'docker volume rm odyssey_client-dev_db-data' \
+    'docker network rm odyssey_client-dev_default' 'docker image rm argos-client-813-check:latest' 'docker builder prune -af')" ]; } ||
+  fail "teardown remove: $out $(cat "$t/dk/log")"
+mkdir "$t/dk/tmp/argos-run-local" && touch "$t/dk/down" && : >"$t/dk/log"
+{ out=$(td remove) && echo "$out" | grep -q "Docker isn't running" && [ ! -e "$t/dk/tmp/argos-run-local" ] && [ ! -s "$t/dk/log" ]; } ||
+  fail "teardown with Docker stopped: $out"
+ok "teardown-storage lists dev stacks and unused Argos storage with sizes, removes only those and reports the space freed"
+
 
 # --- 14. shellcheck, if installed
 if command -v shellcheck >/dev/null; then
