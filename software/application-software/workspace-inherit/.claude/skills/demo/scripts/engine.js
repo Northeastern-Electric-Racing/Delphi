@@ -2,7 +2,8 @@
 // Chromium at 2x and runs its named steps. Stills skip dwells and write NN-<step>.png plus walkthrough.md
 // (a caption per step). Video keeps real pacing with an in-page cursor, records a CDP screencast and
 // encodes <demo>.mp4 (constant 30 fps, with ffmpeg) plus chapters.md (a timestamp per step). Steps before
-// <from-step> run unpaced and unrecorded. A failed step stops its demo with its name and failed-<step>.png.
+// <from-step> run unpaced and unrecorded, and their stills stay in walkthrough.md. Each mode replaces only its
+// own files. A failed step stops its demo with its name and failed-<step>.png.
 'use strict';
 const { chromium } = require('playwright');
 const fs = require('fs');
@@ -109,16 +110,21 @@ function encode(dir, frames, end, mp4) {
 async function run(browser, file) {
   const name = path.basename(file, '.demo.js');
   const dir = path.join(out, name), framesDir = path.join(dir, 'frames');
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.mkdirSync(dir, { recursive: true });
   const demo = require(path.resolve(file));
+  const first = from ? demo.steps.findIndex((s) => s.name === from) : 0;
+  fs.mkdirSync(dir, { recursive: true });
+  // Clear only this mode's output (stills from the replayed step on), so stills and video keep each other's.
+  if (first >= 0) for (const f of fs.readdirSync(dir)) {
+    const mine = video ? f === `${name}.mp4` || f === 'chapters.md'
+      : f === 'walkthrough.md' || (/^\d+-.*\.png$/.test(f) && parseInt(f, 10) > first);
+    if (mine || f.startsWith('failed-') || f === 'frames') fs.rmSync(path.join(dir, f), { recursive: true, force: true });
+  }
   const ctx = await browser.newContext({ viewport: demo.viewport || { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   if (video) await ctx.addInitScript(cursor);
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
-  const first = from ? demo.steps.findIndex((s) => s.name === from) : 0;
   const chapters = [], doc = [`# ${demo.title || name}`, ''];
   let stop, step, ok = true;
   try {
@@ -131,11 +137,13 @@ async function run(browser, file) {
       if (live && video && !stop) stop = await screencast(ctx, page, framesDir);
       if (live && video) chapters.push({ t: Date.now() / 1000, name: s.name });
       await s.run(harness(page, live && video));
-      if (!live || video) continue;
-      await page.waitForTimeout(300); // let the last click's transition settle
+      if (video) continue;
       const png = `${String(i + 1).padStart(2, '0')}-${slug(s.name)}.png`;
+      const entry = [`## ${i + 1}. ${s.name}`, '', ...(s.caption ? [s.caption, ''] : []), `![${s.name}](${png})`, ''];
+      if (!live) { if (fs.existsSync(path.join(dir, png))) doc.push(...entry); continue; } // kept from an earlier run
+      await page.waitForTimeout(300); // let the last click's transition settle
       await page.screenshot({ path: path.join(dir, png) });
-      doc.push(`## ${i + 1}. ${s.name}`, '', ...(s.caption ? [s.caption, ''] : []), `![${s.name}](${png})`, '');
+      doc.push(...entry);
     }
     step = undefined;
     if (video) {
@@ -149,7 +157,7 @@ async function run(browser, file) {
       if (mb >= 10) console.log(`${name}: over GitHub's 10 MB attachment limit; rerun with DEMO_CRF=28 (default 20)`);
     } else {
       fs.writeFileSync(path.join(dir, 'walkthrough.md'), doc.join('\n'));
-      console.log(`${name}: ${path.join(dir, 'walkthrough.md')} (${demo.steps.length - first} stills)`);
+      console.log(`${name}: ${path.join(dir, 'walkthrough.md')} (${demo.steps.length - first} new stills)`);
     }
   } catch (e) {
     ok = false;

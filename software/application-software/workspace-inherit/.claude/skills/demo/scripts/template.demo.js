@@ -1,6 +1,8 @@
-// covers: {{name}}
+// covers: TODO
 // {{name}}: a demo of {{route}}, run by the demo skill. The covers line above lists path fragments of the source
-// this page shows (component folders, tags), so a branch that changes them reruns this demo.
+// this page shows, specific enough that other pages don't match (its page and component folders, like
+// pages/graph-page/ components/graph/, not a word like graph), so a branch that changes them reruns this demo.
+// Find data by what the page shows (a name, a topic), never by an id that changes each time data is seeded.
 // Steps run in order. Each one's name is a video chapter and a stills heading, and --from <name> replays from it.
 // A step gets h: h.page (the Playwright page); h.moveTo, h.click (locator, { dx, dy }), h.drag (locator, x, y),
 // h.key, h.type, h.pick (combobox, option name) and h.park (x, y: rest the cursor off hover targets).

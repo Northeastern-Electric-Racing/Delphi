@@ -1309,16 +1309,19 @@ echo "<!doctype html><title>app</title><button onclick=\"this.textContent = 'Pre
 touch "$da/src/tile/tile.ts" "$da/src/graph/graph.ts"
 git -C "$da" init -q && git -C "$da" add . && git -C "$da" commit -qm app
 demo() { DELPHI_ROOT=$dr bash "$ds/$1" app feat "${@:2}"; }
-{ [ "$(demo new.sh tile /index.html)" = "$da/demos/tile.demo.js" ] && ! demo new.sh tile /index.html 2>/dev/null &&
-  ! demo new.sh graph 'x|y' 2>/dev/null && demo new.sh graph /index.html >/dev/null && grep -qx '// covers: graph' "$da/demos/graph.demo.js"; } ||
-  fail "new.sh: a demo from the template, once, with a plain route"
+{ ! demo new.sh tile /index.html 2>/dev/null && [ "$(demo new.sh tile /index.html .)" = "$da/demos/tile.demo.js" ] &&
+  ! demo new.sh tile /index.html 2>/dev/null && ! demo new.sh graph 'x|y' 2>/dev/null && demo new.sh graph /index.html >/dev/null &&
+  grep -qx '// covers: TODO' "$da/demos/graph.demo.js"; } ||
+  fail "new.sh: the first demo in its app folder, the rest beside it, from the template, once, with a plain route"
+sed -i.bak 's|^// covers: TODO|// covers: src/tile/|' "$da/demos/tile.demo.js" && sed -i.bak 's|^// covers: TODO|// covers: src/graph/|' "$da/demos/graph.demo.js"
+rm "$da"/demos/*.bak
 git -C "$da" add . && git -C "$da" commit -qm demos && git -C "$da" branch base
 [ -z "$(demo affected.sh base)" ] || fail "affected.sh listed demos with nothing changed: $(demo affected.sh base)"
 echo edit >>"$da/src/tile/tile.ts"
 [ "$(demo affected.sh base)" = tile ] || fail "affected.sh for an uncommitted edit under tile: $(demo affected.sh base)"
 git -C "$da" commit -qam tile && touch "$da/src/graph/new.ts"
 [ "$(demo affected.sh base | tr '\n' ' ')" = "graph tile " ] || fail "affected.sh for a commit and a new file: $(demo affected.sh base)"
-ok "demo skill: new.sh starts a demo from the template; affected.sh lists the demos whose covered paths changed"
+ok "demo skill: new.sh starts the first demo in its app folder and the rest beside it; affected.sh lists the demos whose covered paths changed"
 if command -v node >/dev/null && NODE_PATH=$(npm root -g 2>/dev/null) node -e "require('playwright').chromium.launch().then((b) => b.close())" 2>/dev/null; then
   cat >"$da/demos/tile.demo.js" <<'EOF'
 module.exports = { route: '/index.html', steps: [
@@ -1334,14 +1337,16 @@ EOF
   ! demo run.sh "file://$da" >"$t/out" 2>&1 || fail "run.sh passed a broken demo"
   { [ -f "$out/tile/01-opens.png" ] && [ -f "$out/tile/02-press-it.png" ] && grep -qx 'Pressed\.' "$out/tile/walkthrough.md" &&
     grep -q 'graph: FAILED at step "Breaks here": gone' "$t/out" && [ -f "$out/graph/failed-breaks-here.png" ]; } || fail "run.sh stills: $(cat "$t/out")"
-  { demo run.sh "file://$da" --from 'Press it' tile >"$t/out" 2>&1 && [ ! -e "$out/tile/01-opens.png" ] && [ -f "$out/tile/02-press-it.png" ]; } ||
+  { demo run.sh "file://$da" --from 'Press it' tile >"$t/out" 2>&1 && [ -f "$out/tile/01-opens.png" ] && [ -f "$out/tile/02-press-it.png" ] &&
+    grep -qx '## 1. Opens' "$out/tile/walkthrough.md" && grep -qx '## 2. Press it' "$out/tile/walkthrough.md"; } ||
     fail "run.sh --from: $(cat "$t/out")"
   if command -v ffmpeg >/dev/null; then
     { demo run.sh "file://$da" --video tile >"$t/out" 2>&1 && [ "$(cut -d' ' -f2- "$out/tile/chapters.md" | tr '\n' ,)" = "Opens,Press it," ] &&
-      [ "$(ffprobe -v error -show_entries stream=width,r_frame_rate -of csv=p=0 "$out/tile/tile.mp4")" = 1440,30/1 ] && [ ! -e "$out/tile/frames" ]; } ||
+      [ "$(ffprobe -v error -show_entries stream=width,r_frame_rate -of csv=p=0 "$out/tile/tile.mp4")" = 1440,30/1 ] && [ ! -e "$out/tile/frames" ] &&
+      [ -f "$out/tile/01-opens.png" ] && [ -f "$out/tile/walkthrough.md" ] && demo run.sh "file://$da" tile >"$t/out" 2>&1 && [ -f "$out/tile/tile.mp4" ]; } ||
       fail "run.sh --video: $(cat "$t/out")"
   fi
-  ok "demo skill: run.sh writes stills and a walkthrough, replays --from a step, records a 30 fps video with chapters, and stops a broken step with its name and a screenshot"
+  ok "demo skill: run.sh writes stills and a walkthrough, replays --from a step keeping earlier stills, records a 30 fps video with chapters without clearing the stills, and stops a broken step with its name and a screenshot"
 else
   echo "skip - the demo skill's run.sh: Playwright can't launch Chromium"
 fi

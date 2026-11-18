@@ -27,6 +27,9 @@ for name in "$@"; do
   files+=("$wt/$f")
 done
 [ ${#files[@]} -gt 0 ] || { echo "run: no *.demo.js in worktrees/$repo/$branch (start one with new.sh)" >&2; exit 1; }
+for f in "${files[@]}"; do
+  ! grep -q '^// covers: TODO' "$f" || echo "run: set the covers: line in ${f#"$wt"/} (see its comment)" >&2
+done
 NODE_PATH=$(npm root -g 2>/dev/null || true)${NODE_PATH:+:$NODE_PATH}; export NODE_PATH
 node -e "require('playwright')" 2>/dev/null ||
   { echo "run: needs Playwright for node: npm i -g playwright && npx playwright install chromium" >&2; exit 1; }
