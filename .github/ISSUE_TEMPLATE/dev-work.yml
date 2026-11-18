@@ -8,6 +8,7 @@ body:
         One template for all implementation work. Set the issue **type** (Feature, Bug, or Task) instead of picking a different template.
         If this belongs to an epic, add it as a sub-issue of the epic.
         After filing, add a written-by label (`by: human`, `by: ai`, `by: ai-assisted`).
+        Also add the scope label: the dotted name of the workspace it came from (like `s.app.argos.argos-dev`), or `main`.
   - type: textarea
     id: what
     attributes:
