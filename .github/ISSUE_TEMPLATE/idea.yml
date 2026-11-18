@@ -9,6 +9,7 @@ body:
         Keep an idea short. If it is small enough to just try, file a spike instead.
         Don't prescribe a solution. Each area stays open for one or more spikes to explore, not a chosen design.
         After filing, add a written-by label (`by: human`, `by: ai`, `by: ai-assisted`).
+        Also add the scope label: the dotted name of the workspace it came from (like `s.app.argos.argos-dev`), or `main`.
   - type: textarea
     id: idea
     attributes:
