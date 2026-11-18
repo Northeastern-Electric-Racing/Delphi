@@ -9,3 +9,4 @@ Follow the shared rules in `software/application-software/workspace-inherit/.cla
 - Labels: the template's category and a written-by label; Delphi has no area labels.
 - Vocabulary: `docs/design.md`'s terms (workspace, ws branch, refresh, propose, `workspace-inherit/`).
 - Diagrams: show the branches and folders a change touches (main, `ws/*`, `.delphi/`, CI), before and after.
+- Scope label: also label it with the filing workspace's name, the `name:` in its root `workspace.yml`. A main checkout has none: ask which workspace the issue came from (`main` if none). If the label is missing on the repo (GET repos/<owner>/<repo>/labels/<name> fails), POST repos/<owner>/<repo>/labels with that name before filing.
