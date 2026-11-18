@@ -1299,6 +1299,53 @@ else
   echo "skip - the delphi mod's browser view: no python3 or curl"
 fi
 
+# --- 12e. the demo skill (application-software's workspace-inherit): new.sh starts a demo from the template next to
+# the others, affected.sh lists the demos whose covered paths a branch changed, and run.sh (when Playwright can
+# launch Chromium) writes stills or a video per demo, stopping a broken one at its step with a screenshot
+ds=$src/software/application-software/workspace-inherit/.claude/skills/demo/scripts dr=$t/demo da=$t/demo/worktrees/app/feat
+mkdir -p "$dr/.delphi" "$da/src/tile" "$da/src/graph"
+cp "$src/.delphi/paths.sh" "$dr/.delphi/"
+echo "<!doctype html><title>app</title><button onclick=\"this.textContent = 'Pressed'\">Press</button>" >"$da/index.html"
+touch "$da/src/tile/tile.ts" "$da/src/graph/graph.ts"
+git -C "$da" init -q && git -C "$da" add . && git -C "$da" commit -qm app
+demo() { DELPHI_ROOT=$dr bash "$ds/$1" app feat "${@:2}"; }
+{ [ "$(demo new.sh tile /index.html)" = "$da/demos/tile.demo.js" ] && ! demo new.sh tile /index.html 2>/dev/null &&
+  ! demo new.sh graph 'x|y' 2>/dev/null && demo new.sh graph /index.html >/dev/null && grep -qx '// covers: graph' "$da/demos/graph.demo.js"; } ||
+  fail "new.sh: a demo from the template, once, with a plain route"
+git -C "$da" add . && git -C "$da" commit -qm demos && git -C "$da" branch base
+[ -z "$(demo affected.sh base)" ] || fail "affected.sh listed demos with nothing changed: $(demo affected.sh base)"
+echo edit >>"$da/src/tile/tile.ts"
+[ "$(demo affected.sh base)" = tile ] || fail "affected.sh for an uncommitted edit under tile: $(demo affected.sh base)"
+git -C "$da" commit -qam tile && touch "$da/src/graph/new.ts"
+[ "$(demo affected.sh base | tr '\n' ' ')" = "graph tile " ] || fail "affected.sh for a commit and a new file: $(demo affected.sh base)"
+ok "demo skill: new.sh starts a demo from the template; affected.sh lists the demos whose covered paths changed"
+if command -v node >/dev/null && NODE_PATH=$(npm root -g 2>/dev/null) node -e "require('playwright').chromium.launch().then((b) => b.close())" 2>/dev/null; then
+  cat >"$da/demos/tile.demo.js" <<'EOF'
+module.exports = { route: '/index.html', steps: [
+  { name: 'Opens', caption: 'The page.', run: async (h) => { await h.dwell(300); } },
+  { name: 'Press it', caption: 'Pressed.', run: async (h) => {
+    await h.click(h.page.getByRole('button', { name: 'Press' }));
+    await h.page.getByText('Pressed').waitFor({ timeout: 2000 });
+  } },
+] };
+EOF
+  echo "module.exports = { steps: [{ name: 'Breaks here', run: async () => { throw new Error('gone'); } }] };" >"$da/demos/graph.demo.js"
+  out=$dr/pictures/feat/demo
+  ! demo run.sh "file://$da" >"$t/out" 2>&1 || fail "run.sh passed a broken demo"
+  { [ -f "$out/tile/01-opens.png" ] && [ -f "$out/tile/02-press-it.png" ] && grep -qx 'Pressed\.' "$out/tile/walkthrough.md" &&
+    grep -q 'graph: FAILED at step "Breaks here": gone' "$t/out" && [ -f "$out/graph/failed-breaks-here.png" ]; } || fail "run.sh stills: $(cat "$t/out")"
+  { demo run.sh "file://$da" --from 'Press it' tile >"$t/out" 2>&1 && [ ! -e "$out/tile/01-opens.png" ] && [ -f "$out/tile/02-press-it.png" ]; } ||
+    fail "run.sh --from: $(cat "$t/out")"
+  if command -v ffmpeg >/dev/null; then
+    { demo run.sh "file://$da" --video tile >"$t/out" 2>&1 && [ "$(cut -d' ' -f2- "$out/tile/chapters.md" | tr '\n' ,)" = "Opens,Press it," ] &&
+      [ "$(ffprobe -v error -show_entries stream=width,r_frame_rate -of csv=p=0 "$out/tile/tile.mp4")" = 1440,30/1 ] && [ ! -e "$out/tile/frames" ]; } ||
+      fail "run.sh --video: $(cat "$t/out")"
+  fi
+  ok "demo skill: run.sh writes stills and a walkthrough, replays --from a step, records a 30 fps video with chapters, and stops a broken step with its name and a screenshot"
+else
+  echo "skip - the demo skill's run.sh: Playwright can't launch Chromium"
+fi
+
 # --- 14. dotted names: a workspace's old path-named ws/<old> branch carries over into ws/<name> (pushed to both once);
 # moving a clone between the old and new names moves nothing; 0.8.0 renames what a clone keeps under old names
 C=software/electrical/workspaces/vcu-dev CN=s.electrical.vcu-dev CO=software/electrical/vcu-dev
