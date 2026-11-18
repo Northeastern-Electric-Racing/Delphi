@@ -8,7 +8,7 @@ body:
         A spike lays out what to explore and what we expect. It does **not** hold answers: post findings as comments and link draft PRs. It's done when the lead approves its draft PR.
         Don't prescribe a solution. Describe what to learn and leave the how to whoever picks it up.
         One approach per spike, not a set to choose between. Title it `<area>: <approach>`, the area shared by its siblings. Prefer filing it under an idea (as a sub-issue), but a spike can stand alone.
-        After filing, add a written-by label (`by: human`, `by: ai`, `by: ai-assisted`).
+        After filing, add a written-by label: `by: human` if a person wrote it, `by: ai-assisted` if AI drafted it and a person reviewed it or gave the substance, `by: ai` if AI filed it without review.
         Also add the scope label: the dotted name of the workspace it came from (like `s.app.argos.argos-dev`), or `main`.
   - type: textarea
     id: exploring
