@@ -9,6 +9,7 @@ body:
         An epic groups dev work tickets; link them as sub-issues.
         If it came from an idea or spike, link it below and close it as completed.
         After filing, add a written-by label: `by: human` if a person wrote it, `by: ai-assisted` if AI drafted it and a person reviewed it or gave the substance, `by: ai` if AI filed it without review.
+        Also add the scope label: the dotted name of the workspace it came from (like `s.app.argos.argos-dev`), or `main`.
   - type: input
     id: from
     attributes:

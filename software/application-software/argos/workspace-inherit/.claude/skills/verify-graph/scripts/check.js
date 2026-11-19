@@ -33,24 +33,27 @@ async (page) => {
     await absent('Realtime');
   });
   await check('2 topic from the tree draws live', async () => {
-    const node = (name) => tree.getByRole('treeitem').filter({ has: page.getByText(name, { exact: true }) }).last(); // innermost
-    for (const name of ['BMS', 'Segment_Total_Volt']) await node(name).locator('.p-tree-node-toggle-button').first().click();
-    await tree.getByText('0', { exact: true }).first().click();
+    // Clicking a parent row expands it; a leaf's name is its label then its latest value ("0 65.6V").
+    for (const name of ['BMS', 'Segment_Total_Volt']) await tree.getByRole('treeitem', { name, exact: true }).click();
+    await tree.getByRole('treeitem', { name: /^0 / }).first().click();
     await page.waitForURL(/topics=BMS%2FSegment_Total_Volt%2F0/, { timeout: 5000 });
     await page.waitForTimeout(3000);
     await shot('02-live-topic', 'a live series is drawn');
   });
   await check(`3 seeded run #${RUN}`, async () => {
     await button('Select Run').click();
-    await page.locator('.run-card').first().waitFor({ timeout: 10000 });
-    await page.evaluate((id) => {
-      const card = [...document.querySelectorAll('.run-card')]
-        .find((c) => [...c.querySelectorAll('*')].some((e) => !e.childElementCount && e.textContent.trim() === 'Run #' + id));
-      const pick = card?.parentElement?.querySelector('.run-select-button button');
-      if (!pick) throw new Error(`no Run #${id} in the Select Run dialog`);
-      pick.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); // under a PrimeNG overlay
-    }, RUN);
-    await page.locator('.run-card').first().waitFor({ state: 'detached', timeout: 5000 });
+    // One run at a time, autoplaying until stopped: step to the run, then select it.
+    const runs = page.getByRole('region', { name: 'Runs' }), slide = runs.getByRole('group');
+    await runs.getByRole('button', { name: 'Stop automatic slide show' }).click({ timeout: 10000 });
+    const total = Number((await slide.getAttribute('aria-label')).split(' of ')[1]);
+    for (let i = 0; i < total && !(await slide.getByText(`Run #${RUN}`, { exact: true }).count()); i++) {
+      const at = Number((await slide.getAttribute('aria-label')).split(' of ')[0]);
+      await runs.getByRole('button', { name: 'Next run' }).click();
+      await runs.locator(`[aria-label="${(at % total) + 1} of ${total}"]`).waitFor({ timeout: 2000 });
+    }
+    await slide.getByText(`Run #${RUN}`, { exact: true }).waitFor({ timeout: 1000 });
+    await slide.getByRole('button', { name: 'Select this Run' }).click();
+    await runs.waitFor({ state: 'detached', timeout: 5000 });
     await text(`Run #${RUN}`).waitFor({ timeout: 10000 });
     await button('Realtime').waitFor({ timeout: 2000 });
     await absent('Pause');

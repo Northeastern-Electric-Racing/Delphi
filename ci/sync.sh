@@ -385,6 +385,8 @@ refresh() { # <name> <folder> <old name>: leave the worktree at ws/<name> with m
   fi
   # The tree includes the ownership ledger, so changed provenance and opt-out transfers still advance the branch.
   if [ "$(tree HEAD)" = "$(tree "$from")" ]; then
+    # Unpublished, so propose's merge base is this main: sources it retired aren't workspace changes.
+    premerged=$(git commit-tree -p "$from" -p "$main" -m "delphi: refresh ws/$1 from main" "$(tree "$from")")
     git -C "$wt" checkout --quiet --detach "$from"
   else
     # Publish one real merge; preparation and prefix-alignment commits stay temporary.
@@ -405,8 +407,11 @@ propose() { # <name> <folder>: PR owned workspace files into main, leaving inher
   ws=$(git -C "$wt" rev-parse HEAD)
   owner=$ws
   local t alignment incoming candidate native normalized
-  alignment=$(aligned_refs "$ws" "$2" "$owner") || { failed=1 ok=0; return; }
-  ws=${alignment%% *} incoming=${alignment#* }
+  if [ -n "$premerged" ]; then ws=$premerged incoming=$main # refresh merged main without a change
+  else
+    alignment=$(aligned_refs "$ws" "$2" "$owner") || { failed=1 ok=0; return; }
+    ws=${alignment%% *} incoming=${alignment#* }
+  fi
   git -C "$wt" checkout --quiet --detach "$incoming"
   if ! git -C "$wt" merge --quiet --no-ff -Xsubtree="$2" -m "delphi: propose ws/$1 to main" "$ws" >/dev/null; then
     if ! resolve_managed_conflicts "$owner" "$2" "$2/"; then
@@ -461,7 +466,7 @@ $(git log --no-merges --invert-grep --grep='^delphi: ' --format='- %s (%an)' "$m
 
 olds=" " # <old name>|<name> of each workspace
 while read -r name folder; do
-  ok=1
+  ok=1 premerged=""
   names="$names$name " olds="$olds${folder%/workspaces/*}/${folder##*/}|$name "
   [ -z "$only" ] || [ "$only" = "$name" ] || continue
   if [ "$dir" != propose ]; then

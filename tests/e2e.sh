@@ -360,6 +360,23 @@ o show "ws/$BN:.claude/skills/retire-optout/SKILL.md" | grep -qx 'owned before s
 sync refresh "$BN" >/dev/null
 ok "retirement preserves an opt-out rescinded before any intermediate sync by reporting the ambiguity"
 
+# #81: retiring a source and its obsolete opt-out while the owned copy's proposal is pending keeps
+# and proposes the copy; the retired source must not pass for a rename of that copy.
+RI=software/workspace-inherit/.claude/skills/retire-pending
+on_main "pending opt-out fixture" sh -c "mkdir -p $RI && printf 'shared line %s\n' 1 2 3 4 5 6 >$RI/SKILL.md"
+sync refresh "$BN" >/dev/null
+commit_on "ws/$BN" workspace.yml "  - .claude/skills/retire-pending"
+commit_on "ws/$BN" .claude/skills/retire-pending/SKILL.md "owned pending"
+sync "$BN" >"$t/out" 2>&1 || fail "pending opt-out proposal: $(cat "$t/out")"
+on_main "retire pending source" git rm -rq "$RI"
+(cd "$t/dev" && git fetch -q && git checkout -q -B pending-optout "origin/ws/$BN" &&
+  sed -i.bak '\|^  - .claude/skills/retire-pending$|d' workspace.yml && rm workspace.yml.bak &&
+  git commit -qam "drop obsolete pending opt-out" && git push -q origin "HEAD:ws/$BN")
+sync "$BN" >"$t/out" 2>&1 || fail "retiring a pending opt-out's source: $(cat "$t/out")"
+o show "ws/$BN:.claude/skills/retire-pending/SKILL.md" | grep -qx 'owned pending' || fail "pending owned copy was lost"
+o show "propose/$BN:$B/.claude/skills/retire-pending/SKILL.md" | grep -qx 'owned pending' || fail "pending owned copy not proposed"
+ok "retiring a source and its opt-out while the owned copy's proposal is pending keeps and proposes the copy"
+
 # A folder can move without changing its dotted workspace name or losing trusted ownership.
 d=$t/stable-name-rename
 git clone -q "$t/seed" "$d"
@@ -1836,6 +1853,41 @@ if (cd "$d" && bash ci/render.sh) >"$t/out" 2>"$t/err"; then fail "new target in
 grep -q 'each workspace has its own .fixture/config.ini' "$t/err" || fail "registry-protected configuration was not enforced"
 [ ! -e "$d/$F/.fixture/config.ini" ] || fail "protected native configuration was written to main"
 ok "new registry entries protect their declared native configuration without validator changes"
+
+# --- 13b. Argos teardown-storage: removes only what run-local recorded (its processes, then each recorded
+# project's containers, volumes, networks and images), now or on a timer; `auto` stores the workspace's minutes
+mkdir -p "$t/dk/bin" "$t/dk/tmp" && git init -q "$t/dk/root"
+cat >"$t/dk/bin/docker" <<EOF
+#!/usr/bin/env bash
+case "\$*" in
+  info) [ ! -e "$t/dk/down" ] ;;
+  "ps -a --filter "*) printf '%s\n' postgres:17.2 odyssey_client-dev-scylla-server postgres:17.2 ;;
+  "ps -aq "*) printf '%s\n' c1 c2 ;;
+  "volume ls "*) echo odyssey_client-dev_db-data ;;
+  "network ls "*) echo odyssey_client-dev_default ;;
+  "system df "*) if [ -e "$t/dk/removed" ]; then echo 1GB; else echo 2.5GB; fi ;;
+  *) echo "docker \$*" >>"$t/dk/log" && touch "$t/dk/removed" && [ "\$*" != "image rm postgres:17.2" ] ;;
+esac
+EOF
+chmod +x "$t/dk/bin/docker" && touch "$t/dk/log"
+td() { PATH="$t/dk/bin:$PATH" TMPDIR=$t/dk/tmp DELPHI_ROOT=$t/dk/root bash "$src/software/application-software/argos/workspace-inherit/.claude/skills/teardown-storage/scripts/teardown.sh" "$@"; }
+gone() { for _ in $(seq 30); do kill -0 "$1" 2>/dev/null || return 0; sleep 0.1; done; return 1; }
+st=$t/dk/tmp/argos-run-local
+{ [ "$(td auto)" = unset ] && [ "$(td auto 90)" = 90 ] && [ "$(td auto off)" = off ] && ! td auto 0 2>/dev/null &&
+  ! td in x 2>/dev/null && [ "$(td)" = "teardown: run-local brought nothing up" ]; } || fail "teardown auto/usage"
+mkdir -p "$st" && echo odyssey_client-dev >"$st/projects" && (sleep 300 >/dev/null 2>&1 & echo $! >"$st/x.pid")
+{ td in 5 >/dev/null && t1=$(cat "$st/timer.pid") && kill -0 "$t1" && td in 7 >/dev/null && t2=$(cat "$st/timer.pid") &&
+  [ "$t1" != "$t2" ] && gone "$t1" && kill -0 "$t2"; } || fail "teardown in <minutes> doesn't replace its timer"
+c=$(cat "$st/x.pid") && touch "$t/dk/down"
+{ ! td 2>"$t/err" && grep -q 'start Docker and re-run for odyssey_client-dev' "$t/err" && gone "$c" && gone "$t2" &&
+  [ -s "$st/projects" ] && [ ! -s "$t/dk/log" ]; } || fail "teardown with Docker stopped: $(cat "$t/err")"
+rm "$t/dk/down" && (sleep 300 >/dev/null 2>&1 & echo $! >"$st/x.pid") && c=$(cat "$st/x.pid") && td in 5 >/dev/null && t3=$(cat "$st/timer.pid")
+{ out=$(td) && gone "$c" && gone "$t3" && [ ! -e "$st" ] && echo "$out" | grep -qx 'removed odyssey_client-dev' &&
+  echo "$out" | grep -qx 'kept image postgres:17.2 (another container uses it)' && echo "$out" | grep -qx 'freed 1.50GB' &&
+  [ "$(cat "$t/dk/log")" = "$(printf '%s\n' 'docker rm -f c1' 'docker rm -f c2' 'docker volume rm odyssey_client-dev_db-data' \
+    'docker network rm odyssey_client-dev_default' 'docker image rm odyssey_client-dev-scylla-server' 'docker image rm postgres:17.2')" ]; } ||
+  fail "teardown: $out $(cat "$t/dk/log")"
+ok "teardown-storage removes only what run-local recorded, now or on a replaceable timer, and stores the workspace's auto minutes"
 
 
 # --- 14. shellcheck, if installed
