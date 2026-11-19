@@ -3,11 +3,11 @@ name: demo
 description: Rerun, fix or start a saved web UI demo (a Playwright script per page, kept in the code repo) to get stills with a walkthrough, or an MP4 with chapters, for a PR. Use when a PR or ticket should show a UI change, a demo step breaks, or a page needs its first demo.
 ---
 
-A demo is `<name>.demo.js` in the code repo, next to the app it shows, so a UI change updates its demo in the same diff. It is a list of named steps, and its first line, `// covers: <path fragment>…`, names the source it shows. `scripts/template.demo.js` documents the format and the helpers a step gets.
+It needs an app that runs in a browser (a web app, or a browser build of one). A demo is `<name>.demo.js` in the code repo, next to the app it shows, so a UI change updates its demo in the same diff. It is a list of named steps, and its first line, `// covers: <path fragment>…`, names the source it shows. `scripts/template.demo.js` documents the format and the helpers a step gets.
 
 A demo lives on the branch with the UI change it shows. To demo the default branch as it is, make a branch off it (the project's new-worktree skill, named by its convention for work without a ticket) and commit the demo there.
 
-Start the branch's app first (the project's run-local skill), then load the data its demos show: a seed script from one of the project's skills where it has one, else whatever the user names. Then use the app's URL:
+Start the branch's app in local development first, then load the data its demos show: a seed script from one of the project's skills where it has one, else whatever the user names. Then use the app's URL:
 
 1. **Which demos:** `bash scripts/affected.sh <repo> <branch> [<base>]` lists the demos whose covered source, or whose own file, the branch changed since `<base>` (default `origin/HEAD`).
 2. **Stills, the quick check:** `bash scripts/run.sh <repo> <branch> <url> [<demo>…]` (every demo if none is named) writes a 2× PNG per step and `walkthrough.md`, each step's caption over its still, to `pictures/<branch>/demo/<demo>/`. Dwells are skipped; waits for data are kept. Open the stills and judge them. Stills and video each replace only their own files, so both can sit in the folder for the PR.
