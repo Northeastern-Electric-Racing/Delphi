@@ -52,15 +52,16 @@ How every ticket reads, on any project:
 
 ## Draft
 
+- Unless the user already said, ask first whether they want to review a draft or have it filed directly.
 - Check the code first: the work may be done or already tracked.
 - One `### <field label>` per field in template order, following each field's description; omit empty optional fields.
 - Diagrams: required on epics, optional on dev work. The project's `ticket-conventions` says what they show.
-- Labels: the template's category (`idea`, `spike`, `epic`, `dev work`), one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they gave the substance, `by: ai` if you wrote it, including rewrites), and at least one of the project's area labels.
+- Labels: the template's category (`idea`, `spike`, `epic`, `dev work`), one written-by (`by: human` if the user dictated it, `by: ai-assisted` if they reviewed your draft or gave the substance, `by: ai` if you filed it directly), and at least one of the project's area labels.
 - Rewriting an old ticket: keep its intent and assignees; bring it up to these rules and update vocabulary, labels, issue type, and parent.
 - Folding one ticket into another: add it as a requirement on the target, then close it as not planned. Every close gets a one-line comment saying why.
 
 ## File
 
-Check for open duplicates, then show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file. File or edit only what the user OKs.
+Check for open duplicates. If the user wants it filed directly, file it without showing a draft. Otherwise show the full draft (title, type if any, labels, parent, body) in the chat, not only in a file, and file or edit only what the user OKs.
 
 Use the REST API (GraphQL may be blocked): POST repos/<owner>/<repo>/issues with title, body, labels, the issue type from the table, and the user as assignee (on a spike, whoever will run it; ask), then, if it has a parent, POST repos/<owner>/<repo>/issues/<parent>/sub_issues with the new issue's id. If it waits on another issue, POST repos/<owner>/<repo>/issues/<n>/dependencies/blocked_by with the blocking issue's id. Report the URL.
