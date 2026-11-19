@@ -11,4 +11,4 @@ bash scripts/run-local.sh <branch>...
 
 It starts the backend if it's down (`client-dev`, or `scylla-dev` plus `cargo run` when a target changes `scylla-server/`), and serves each target's client on the next free port; parallel runs (one per session or agent) each get their own. With no branches it reports what's running.
 
-Report each branch's client URL and the backend. A failed compile or a stale-backend warning is a finding: show it to the user. Stop a client with `kill <pid>` from its line. When every port is taken it lists what holds each; clients from other checkouts are the user's, so ask before stopping them.
+Report each branch's client URL and the backend. A failed compile or a stale-backend warning is a finding: show it to the user. Stop a client with `kill <pid>` from its line. When every port is taken it lists what holds each; clients from other checkouts are the user's, so ask before stopping them. When it brings the stack up it arms `teardown-storage`'s timer if the workspace has one set; on `teardown=unset`, use `teardown-storage` to ask the user once and store their choice.
