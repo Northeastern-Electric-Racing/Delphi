@@ -1309,12 +1309,12 @@ echo "<!doctype html><title>app</title><button onclick=\"this.textContent = 'Pre
 touch "$da/src/tile/tile.ts" "$da/src/graph/graph.ts"
 git -C "$da" init -q && git -C "$da" add . && git -C "$da" commit -qm app
 demo() { DELPHI_ROOT=$dr bash "$ds/$1" app feat "${@:2}"; }
-{ ! demo new.sh tile /index.html 2>/dev/null && [ "$(demo new.sh tile /index.html .)" = "$da/demos/tile.demo.js" ] &&
+{ ! demo new.sh tile /index.html 2>/dev/null && [ "$(demo new.sh tile /index.html .)" = "$da/demos/v1/scripts/tile.demo.js" ] &&
   ! demo new.sh tile /index.html 2>/dev/null && ! demo new.sh graph 'x|y' 2>/dev/null && demo new.sh graph /index.html >/dev/null &&
-  grep -qx '// covers: TODO' "$da/demos/graph.demo.js"; } ||
+  grep -qx '// covers: TODO' "$da/demos/v1/scripts/graph.demo.js"; } ||
   fail "new.sh: the first demo in its app folder, the rest beside it, from the template, once, with a plain route"
-sed -i.bak 's|^// covers: TODO|// covers: src/tile/|' "$da/demos/tile.demo.js" && sed -i.bak 's|^// covers: TODO|// covers: src/graph/|' "$da/demos/graph.demo.js"
-rm "$da"/demos/*.bak
+sed -i.bak 's|^// covers: TODO|// covers: src/tile/|' "$da/demos/v1/scripts/tile.demo.js" && sed -i.bak 's|^// covers: TODO|// covers: src/graph/|' "$da/demos/v1/scripts/graph.demo.js"
+rm "$da"/demos/v1/scripts/*.bak
 git -C "$da" add . && git -C "$da" commit -qm demos && git -C "$da" branch base
 [ -z "$(demo affected.sh base)" ] || fail "affected.sh listed demos with nothing changed: $(demo affected.sh base)"
 echo edit >>"$da/src/tile/tile.ts"
@@ -1323,7 +1323,7 @@ git -C "$da" commit -qam tile && touch "$da/src/graph/new.ts"
 [ "$(demo affected.sh base | tr '\n' ' ')" = "graph tile " ] || fail "affected.sh for a commit and a new file: $(demo affected.sh base)"
 ok "demo skill: new.sh starts the first demo in its app folder and the rest beside it; affected.sh lists the demos whose covered paths changed"
 if command -v node >/dev/null && NODE_PATH=$(npm root -g 2>/dev/null) node -e "require('playwright').chromium.launch().then((b) => b.close())" 2>/dev/null; then
-  cat >"$da/demos/tile.demo.js" <<'EOF'
+  cat >"$da/demos/v1/scripts/tile.demo.js" <<'EOF'
 module.exports = { route: '/index.html', steps: [
   { name: 'Opens', caption: 'The page.', run: async (h) => { await h.dwell(300); } },
   { name: 'Press it', caption: 'Pressed.', run: async (h) => {
@@ -1332,7 +1332,7 @@ module.exports = { route: '/index.html', steps: [
   } },
 ] };
 EOF
-  echo "module.exports = { steps: [{ name: 'Breaks here', run: async () => { throw new Error('gone'); } }] };" >"$da/demos/graph.demo.js"
+  echo "module.exports = { steps: [{ name: 'Breaks here', run: async () => { throw new Error('gone'); } }] };" >"$da/demos/v1/scripts/graph.demo.js"
   out=$dr/pictures/feat/demo
   ! demo run.sh "file://$da" >"$t/out" 2>&1 || fail "run.sh passed a broken demo"
   { [ -f "$out/tile/01-opens.png" ] && [ -f "$out/tile/02-press-it.png" ] && grep -qx 'Pressed\.' "$out/tile/walkthrough.md" &&
