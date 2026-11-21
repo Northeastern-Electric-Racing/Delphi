@@ -81,7 +81,9 @@ async function screencast(ctx, page, dir) {
   fs.mkdirSync(dir, { recursive: true });
   const cdp = await ctx.newCDPSession(page);
   const frames = [], writes = [];
+  let stopped = false;
   cdp.on('Page.screencastFrame', (f) => {
+    if (stopped) return; // a frame already in flight when stopping: its write would outlive the frames dir
     cdp.send('Page.screencastFrameAck', { sessionId: f.sessionId }).catch(() => {});
     const file = `${String(frames.length).padStart(6, '0')}.jpg`;
     frames.push({ file, t: f.metadata.timestamp });
@@ -90,6 +92,7 @@ async function screencast(ctx, page, dir) {
   const { width, height } = page.viewportSize();
   await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 95, maxWidth: width * 2, maxHeight: height * 2 });
   return async () => {
+    stopped = true;
     await cdp.send('Page.stopScreencast');
     await Promise.all(writes);
     return frames;
